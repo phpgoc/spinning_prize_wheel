@@ -38,6 +38,18 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE INDEX IF NOT EXISTS lineup_history_created_at
          ON lineup_history(created_at DESC);",
     ),
+    (
+        3,
+        "WITH ordered AS (
+           SELECT id,
+                  ROW_NUMBER() OVER (ORDER BY rank ASC, name COLLATE NOCASE ASC) AS normalized_rank
+           FROM user
+           WHERE rank < 10000
+         )
+         UPDATE user
+         SET rank = (SELECT normalized_rank FROM ordered WHERE ordered.id = user.id)
+         WHERE id IN (SELECT id FROM ordered);",
+    ),
 ];
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -87,6 +99,18 @@ struct RankedUserInput {
     rank: Option<i64>,
     #[serde(default)]
     aliases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum RankedUserDropTargetInput {
+    Insert { index: usize },
+    Swap { user_id: i64 },
+    Unranked,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -448,6 +472,112 @@ fn list_ranked_users_in(connection: &Connection) -> Result<Vec<RankedUser>, Stri
         .collect()
 }
 
+fn move_ranked_user_in(
+    connection: &mut Connection,
+    dragged_id: i64,
+    target: RankedUserDropTargetInput,
+) -> Result<Vec<RankedUser>, String> {
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("无法开始调整排名：{error}"))?;
+    let source_rank = transaction
+        .query_row(
+            "SELECT rank FROM user WHERE id = ?1",
+            params![dragged_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|error| format!("无法读取拖动人物：{error}"))?
+        .ok_or_else(|| "找不到拖动的人物".to_string())?;
+
+    match target {
+        RankedUserDropTargetInput::Insert { index } => {
+            let ranked_count = transaction
+                .query_row(
+                    "SELECT COUNT(*) FROM user WHERE rank < ?1",
+                    params![UNRANKED_RANK],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| format!("无法读取排名人数：{error}"))?;
+            let mut insert_index = index.min(ranked_count as usize);
+
+            if source_rank < UNRANKED_RANK {
+                let source_index = (source_rank - 1).max(0) as usize;
+                if source_index < insert_index {
+                    insert_index -= 1;
+                }
+                transaction
+                    .execute(
+                        "UPDATE user SET rank = ?1 WHERE id = ?2",
+                        params![UNRANKED_RANK, dragged_id],
+                    )
+                    .map_err(|error| format!("无法移出原排名：{error}"))?;
+                transaction
+                    .execute(
+                        "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
+                        params![source_rank, UNRANKED_RANK],
+                    )
+                    .map_err(|error| format!("无法收拢原排名：{error}"))?;
+            }
+
+            let insert_rank = insert_index as i64 + 1;
+            transaction
+                .execute(
+                    "UPDATE user SET rank = rank + 1 WHERE rank >= ?1 AND rank < ?2",
+                    params![insert_rank, UNRANKED_RANK],
+                )
+                .map_err(|error| format!("无法腾出目标排名：{error}"))?;
+            transaction
+                .execute(
+                    "UPDATE user SET rank = ?1 WHERE id = ?2",
+                    params![insert_rank, dragged_id],
+                )
+                .map_err(|error| format!("无法写入目标排名：{error}"))?;
+        }
+        RankedUserDropTargetInput::Swap { user_id } => {
+            if user_id != dragged_id {
+                let target_rank = transaction
+                    .query_row(
+                        "SELECT rank FROM user WHERE id = ?1",
+                        params![user_id],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .optional()
+                    .map_err(|error| format!("无法读取互换人物：{error}"))?
+                    .ok_or_else(|| "找不到互换的人物".to_string())?;
+                transaction
+                    .execute(
+                        "UPDATE user
+                         SET rank = CASE id WHEN ?1 THEN ?2 WHEN ?3 THEN ?4 END
+                         WHERE id IN (?1, ?3)",
+                        params![dragged_id, target_rank, user_id, source_rank],
+                    )
+                    .map_err(|error| format!("无法互换人物排名：{error}"))?;
+            }
+        }
+        RankedUserDropTargetInput::Unranked => {
+            if source_rank < UNRANKED_RANK {
+                transaction
+                    .execute(
+                        "UPDATE user SET rank = ?1 WHERE id = ?2",
+                        params![UNRANKED_RANK, dragged_id],
+                    )
+                    .map_err(|error| format!("无法设为无排名：{error}"))?;
+                transaction
+                    .execute(
+                        "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
+                        params![source_rank, UNRANKED_RANK],
+                    )
+                    .map_err(|error| format!("无法收拢人物排名：{error}"))?;
+            }
+        }
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交人物排名：{error}"))?;
+    list_ranked_users_in(connection)
+}
+
 #[tauri::command]
 fn save_ranked_user(app: AppHandle, user: RankedUserInput) -> Result<RankedUser, String> {
     let mut connection = app_database(&app)?;
@@ -461,15 +591,42 @@ fn list_ranked_users(app: AppHandle) -> Result<Vec<RankedUser>, String> {
 }
 
 #[tauri::command]
+fn move_ranked_user(
+    app: AppHandle,
+    dragged_id: i64,
+    target: RankedUserDropTargetInput,
+) -> Result<Vec<RankedUser>, String> {
+    let mut connection = app_database(&app)?;
+    move_ranked_user_in(&mut connection, dragged_id, target)
+}
+
+#[tauri::command]
 fn delete_ranked_user(app: AppHandle, id: i64) -> Result<(), String> {
-    let connection = app_database(&app)?;
-    let changed = connection
+    let mut connection = app_database(&app)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("无法开始删除排名人物：{error}"))?;
+    let rank = transaction
+        .query_row("SELECT rank FROM user WHERE id = ?1", params![id], |row| {
+            row.get::<_, i64>(0)
+        })
+        .optional()
+        .map_err(|error| format!("无法读取排名人物：{error}"))?
+        .ok_or_else(|| "找不到要删除的排名人物".to_string())?;
+    transaction
         .execute("DELETE FROM user WHERE id = ?1", params![id])
         .map_err(|error| format!("无法删除排名人物：{error}"))?;
-    if changed == 0 {
-        return Err("找不到要删除的排名人物".to_string());
+    if rank < UNRANKED_RANK {
+        transaction
+            .execute(
+                "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
+                params![rank, UNRANKED_RANK],
+            )
+            .map_err(|error| format!("无法收拢人物排名：{error}"))?;
     }
-    Ok(())
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交删除人物：{error}"))
 }
 
 fn resolve_lineup_names_in(
@@ -624,6 +781,7 @@ pub fn run() {
             clear_draw_histories,
             save_ranked_user,
             list_ranked_users,
+            move_ranked_user,
             delete_ranked_user,
             resolve_lineup_names,
             save_lineup_history,
@@ -671,7 +829,7 @@ mod tests {
             &connection,
             &["draw_history", "user", "alias", "lineup_history"],
         );
-        assert_eq!(versions, vec![1, 2]);
+        assert_eq!(versions, vec![1, 2, 3]);
     }
 
     #[test]
@@ -734,6 +892,47 @@ mod tests {
         assert_eq!(
             list_ranked_users_in(&connection).expect("读取排名").len(),
             1
+        );
+    }
+
+    #[test]
+    fn moving_users_inserts_with_range_updates_and_swaps_ranks() {
+        let mut connection = test_database();
+        let mut save = |name: &str, rank: Option<i64>| {
+            save_ranked_user_in(
+                &mut connection,
+                RankedUserInput {
+                    id: None,
+                    name: name.to_string(),
+                    rank,
+                    aliases: vec![],
+                },
+            )
+            .expect("保存人物")
+        };
+        let first = save("甲", Some(1));
+        let second = save("乙", Some(2));
+        let third = save("丙", None);
+        drop(save);
+
+        move_ranked_user_in(
+            &mut connection,
+            third.id,
+            RankedUserDropTargetInput::Insert { index: 1 },
+        )
+        .expect("插入排名");
+        let users = move_ranked_user_in(
+            &mut connection,
+            first.id,
+            RankedUserDropTargetInput::Swap { user_id: second.id },
+        )
+        .expect("互换排名");
+        assert_eq!(
+            users
+                .iter()
+                .map(|user| (user.name.as_str(), user.rank))
+                .collect::<Vec<_>>(),
+            vec![("乙", 1), ("丙", 2), ("甲", 3)]
         );
     }
 

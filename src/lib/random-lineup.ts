@@ -19,6 +19,11 @@ export interface LineupOrderAvailability {
   rank: boolean;
 }
 
+export type RankedUserDropTarget =
+  | { kind: 'insert'; index: number }
+  | { kind: 'swap'; userId: number }
+  | { kind: 'unranked' };
+
 /** 红名只锁定数据库排名排阵；输入顺序仍可使用。 */
 export function lineupOrderAvailability(
   nameCount: number,

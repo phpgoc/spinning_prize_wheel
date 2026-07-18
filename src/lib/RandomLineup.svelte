@@ -11,6 +11,7 @@
     orderResolvedLineupNames,
     recentLineupHistories,
     unresolvedLineupNameCount,
+    type RankedUserDropTarget,
     type RandomLineup,
   } from './random-lineup';
   import type { RankedUser, ResolvedLineupName, SavedLineup } from './types';
@@ -40,9 +41,11 @@
   let desktopPanel: DesktopPanel | null = 'ranking';
   let editingUserId: number | null = null;
   let userName = '';
-  let userRank = 1;
-  let userUnranked = false;
   let userAliases = '';
+  let userAliasInput: HTMLInputElement | null = null;
+  let draggingUserId: number | null = null;
+  let activeRankDropTarget: RankedUserDropTarget | null = null;
+  let rankingReordering = false;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
   let lineupHistories: SavedLineup[] = [];
@@ -71,6 +74,8 @@
     resolved: resolvedNames[index]?.inputName === name ? resolvedNames[index] : null,
   }));
   $: previewTierStarts = new Set(lineupPreviewTierStarts(names.length, Number(groupCount)));
+  $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
+  $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
   $: orderAvailability = lineupOrderAvailability(
     names.length,
@@ -225,16 +230,16 @@
     }
   }
 
-  function editRankedUser(user: RankedUser) {
+  async function editRankedUser(user: RankedUser, focusAliases = false) {
     desktopPanel = 'ranking';
     editingUserId = user.id;
     userName = user.name;
-    userUnranked = user.rank >= 10_000;
-    userRank = userUnranked ? 1 : user.rank;
     userAliases = user.aliases
       .filter((alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'))
       .map((alias) => alias.name)
       .join(' ');
+    await tick();
+    if (focusAliases) userAliasInput?.focus();
   }
 
   function addUnknownPerson(name: string) {
@@ -326,9 +331,59 @@
   function resetUserForm() {
     editingUserId = null;
     userName = '';
-    userRank = 1;
-    userUnranked = false;
     userAliases = '';
+    userAliasInput = null;
+  }
+
+  function otherAliasSummary(user: RankedUser): string {
+    const aliases = user.aliases
+      .filter((alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'))
+      .map((alias) => alias.name);
+    return aliases.length > 0 ? aliases.join('、') : '暂无其他别名';
+  }
+
+  function beginRankDrag(event: DragEvent, userId: number) {
+    if (rankingReordering) {
+      event.preventDefault();
+      return;
+    }
+    draggingUserId = userId;
+    activeRankDropTarget = null;
+    event.dataTransfer?.setData('text/plain', String(userId));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function markRankDropTarget(target: RankedUserDropTarget) {
+    if (draggingUserId !== null && !rankingReordering) activeRankDropTarget = target;
+  }
+
+  function clearRankDragState() {
+    draggingUserId = null;
+    activeRankDropTarget = null;
+  }
+
+  async function dropRankedUser(event: DragEvent, target: RankedUserDropTarget) {
+    const transferredId = Number.parseInt(event.dataTransfer?.getData('text/plain') ?? '', 10);
+    const userId = Number.isInteger(transferredId) ? transferredId : draggingUserId;
+    if (userId === null || rankingReordering) return;
+
+    if (target.kind === 'swap' && target.userId === userId) {
+      clearRankDragState();
+      return;
+    }
+
+    rankingReordering = true;
+    rankingError = '';
+    try {
+      rankedUsers = await invoke<RankedUser[]>('move_ranked_user', { draggedId: userId, target });
+      await resolveNames();
+    } catch (reason) {
+      rankingError = messageFrom(reason, '无法调整人物排名');
+      await loadRankedUsers();
+    } finally {
+      rankingReordering = false;
+      clearRankDragState();
+    }
   }
 
   async function saveRankedUser() {
@@ -336,11 +391,14 @@
     rankingSaving = true;
     rankingError = '';
     try {
+      const currentRank = editingUserId === null
+        ? 10_000
+        : rankedUsers.find((user) => user.id === editingUserId)?.rank ?? 10_000;
       await invoke('save_ranked_user', {
         user: {
           id: editingUserId,
           name: userName.trim(),
-          rank: userUnranked ? 10_000 : Math.max(1, Math.min(9_999, Math.floor(Number(userRank) || 1))),
+          rank: currentRank,
           aliases: parseOptionText(userAliases),
         },
       });
@@ -405,18 +463,15 @@
             <span>排名与别名</span><strong>{rankedUsers.length} 人</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
-            <div class="desktop-accordion-content rank-manager">
+            <div class:dragging={draggingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
               <form on:submit|preventDefault={saveRankedUser}>
                 <div class="rank-form-heading">
                   <strong>{editingUserId === null ? '添加人物' : '编辑人物'}</strong>
                   {#if editingUserId !== null}<button type="button" on:click={resetUserForm}>取消编辑</button>{/if}
                 </div>
                 <label><span>本名</span><input maxlength="80" required bind:value={userName} placeholder="人物名称" /></label>
-                <div class="rank-input-row">
-                  <label><span>排名</span><input type="number" min="1" max="9999" disabled={userUnranked} bind:value={userRank} /></label>
-                  <label class="unranked-check"><input type="checkbox" bind:checked={userUnranked} /><span>无排名</span></label>
-                </div>
-                <label><span>其他别名</span><input bind:value={userAliases} placeholder="本名会自动加入别名表" /></label>
+                <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="本名会自动加入别名表" /></label>
+                {#if editingUserId === null}<p class="rank-form-note">新人物会先进入无排名区，保存后拖动即可设置排名。</p>{/if}
                 <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存人物'}</button>
               </form>
               {#if rankingError}<div class="ranking-error" role="alert">{rankingError}</div>{/if}
@@ -426,15 +481,95 @@
                 {:else if rankedUsers.length === 0}
                   <p>排名表为空，请先录入人物。</p>
                 {:else}
-                  {#each rankedUsers as user (user.id)}
-                    <article>
-                      <button type="button" class="ranked-user-main" on:click={() => editRankedUser(user)}>
-                        <span>{user.rank >= 10_000 ? '—' : user.rank}</span>
-                        <div><strong>{user.name}</strong><small>{user.aliases.map((alias) => alias.name).join('、')}</small></div>
-                      </button>
-                      <button type="button" class="delete-user" title={`删除 ${user.name}`} on:click={() => deleteRankedUser(user)}>×</button>
-                    </article>
-                  {/each}
+                  <section class="rank-zone">
+                    <div class="rank-zone-heading"><strong>已排名</strong><span>{rankedPeople.length} 人 · 拖到间隙插入，拖到人物互换</span></div>
+                    {#each rankedPeople as user, index (user.id)}
+                      <button
+                        type="button"
+                        class:active={activeRankDropTarget?.kind === 'insert' && activeRankDropTarget.index === index}
+                        class="rank-insert-zone"
+                        tabindex="-1"
+                        aria-label={`插入到第 ${index + 1} 名`}
+                        on:dragenter={() => markRankDropTarget({ kind: 'insert', index })}
+                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'insert', index })}
+                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'insert', index })}
+                      ><span>插入到这里</span></button>
+                      <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <article
+                        class:drop-target={activeRankDropTarget?.kind === 'swap' && activeRankDropTarget.userId === user.id}
+                        class:drag-source={draggingUserId === user.id}
+                        draggable={!rankingReordering}
+                        on:dragstart={(event) => beginRankDrag(event, user.id)}
+                        on:dragenter={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
+                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
+                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'swap', userId: user.id })}
+                        on:dragend={clearRankDragState}
+                      >
+                        <span class="rank-number">{user.rank}</span>
+                        <div class="ranked-user-content">
+                          <div class="ranked-user-heading">
+                            <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
+                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
+                            <button type="button" class="delete-user" on:click={() => deleteRankedUser(user)}>删除</button>
+                          </div>
+                          <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                        </div>
+                        <span class="drag-handle" title="拖动调整排名">⠿</span>
+                      </article>
+                    {/each}
+                    <button
+                      type="button"
+                      class:active={activeRankDropTarget?.kind === 'insert' && activeRankDropTarget.index === rankedPeople.length}
+                      class="rank-insert-zone"
+                      tabindex="-1"
+                      aria-label="插入到排名末尾"
+                      on:dragenter={() => markRankDropTarget({ kind: 'insert', index: rankedPeople.length })}
+                      on:dragover|preventDefault={() => markRankDropTarget({ kind: 'insert', index: rankedPeople.length })}
+                      on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'insert', index: rankedPeople.length })}
+                    ><span>{rankedPeople.length === 0 ? '拖到这里设为第 1 名' : '插入到排名末尾'}</span></button>
+                  </section>
+
+                  <section class="rank-zone unranked-zone">
+                    <div class="rank-zone-heading"><strong>无排名</strong><span>{unrankedPeople.length} 人 · 新人物默认在这里</span></div>
+                    <button
+                      type="button"
+                      class:active={activeRankDropTarget?.kind === 'unranked'}
+                      class="unranked-drop-zone"
+                      tabindex="-1"
+                      on:dragenter={() => markRankDropTarget({ kind: 'unranked' })}
+                      on:dragover|preventDefault={() => markRankDropTarget({ kind: 'unranked' })}
+                      on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'unranked' })}
+                    >拖到这里设为无排名</button>
+                    {#if unrankedPeople.length === 0}
+                      <p class="empty-rank-zone">暂无无排名人物</p>
+                    {/if}
+                    {#each unrankedPeople as user (user.id)}
+                      <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <article
+                        class:drop-target={activeRankDropTarget?.kind === 'swap' && activeRankDropTarget.userId === user.id}
+                        class:drag-source={draggingUserId === user.id}
+                        draggable={!rankingReordering}
+                        on:dragstart={(event) => beginRankDrag(event, user.id)}
+                        on:dragenter={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
+                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
+                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'swap', userId: user.id })}
+                        on:dragend={clearRankDragState}
+                      >
+                        <span class="rank-number">—</span>
+                        <div class="ranked-user-content">
+                          <div class="ranked-user-heading">
+                            <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
+                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
+                            <button type="button" class="delete-user" on:click={() => deleteRankedUser(user)}>删除</button>
+                          </div>
+                          <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                        </div>
+                        <span class="drag-handle" title="拖动调整排名">⠿</span>
+                      </article>
+                    {/each}
+                  </section>
                 {/if}
               </div>
             </div>
@@ -1219,8 +1354,7 @@
     font-size: calc(11px * var(--font-scale, 1));
   }
 
-  .rank-manager form > label,
-  .rank-input-row > label:not(.unranked-check) {
+  .rank-manager form > label {
     display: grid;
     grid-template-columns: 62px minmax(0, 1fr);
     align-items: center;
@@ -1249,23 +1383,10 @@
     border-color: #8a993e;
   }
 
-  .rank-input-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .unranked-check {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .unranked-check input {
-    width: 13px;
-    height: 13px;
-    padding: 0;
+  .rank-form-note {
+    color: var(--lineup-dim-on-light);
+    font-size: calc(10px * var(--font-scale, 1));
+    line-height: 1.45;
   }
 
   .save-user {
@@ -1290,12 +1411,17 @@
 
   .ranked-user-list {
     display: grid;
-    max-height: 245px;
-    gap: 5px;
+    max-height: 460px;
+    gap: 13px;
     margin-top: 10px;
     padding-top: 9px;
     border-top: 1px solid rgba(36, 37, 31, 0.08);
     overflow: auto;
+  }
+
+  .rank-manager.reordering .ranked-user-list {
+    opacity: 0.68;
+    pointer-events: none;
   }
 
   .ranked-user-list > p {
@@ -1305,30 +1431,113 @@
     text-align: center;
   }
 
+  .rank-zone {
+    display: grid;
+    gap: 4px;
+  }
+
+  .rank-zone.unranked-zone {
+    padding-top: 11px;
+    border-top: 1px solid rgba(36, 37, 31, 0.1);
+  }
+
+  .rank-zone-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 3px;
+  }
+
+  .rank-zone-heading strong {
+    color: #303229;
+    font-size: calc(12px * var(--font-scale, 1));
+  }
+
+  .rank-zone-heading span {
+    color: var(--lineup-dim-on-light);
+    font-size: calc(9px * var(--font-scale, 1));
+    text-align: right;
+  }
+
+  .rank-insert-zone {
+    height: 5px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: transparent;
+    color: #727d2f;
+    font-size: calc(9px * var(--font-scale, 1));
+    pointer-events: none;
+    transition: height 120ms ease, background 120ms ease;
+  }
+
+  .rank-insert-zone span { opacity: 0; }
+
+  .rank-manager.dragging .rank-insert-zone {
+    height: 24px;
+    border: 1px dashed rgba(122, 132, 47, 0.34);
+    pointer-events: auto;
+  }
+
+  .rank-manager.dragging .rank-insert-zone span { opacity: 1; }
+
+  .rank-insert-zone.active {
+    border-color: #7a842f;
+    background: rgba(122, 132, 47, 0.12);
+    color: #535b1f;
+  }
+
+  .unranked-drop-zone {
+    padding: 7px;
+    border: 1px dashed rgba(36, 37, 31, 0.16);
+    border-radius: 7px;
+    background: rgba(36, 37, 31, 0.025);
+    color: var(--lineup-dim-on-light);
+    font-size: calc(10px * var(--font-scale, 1));
+  }
+
+  .rank-manager.dragging .unranked-drop-zone {
+    border-color: rgba(122, 132, 47, 0.46);
+    color: #626c26;
+  }
+
+  .unranked-drop-zone.active {
+    border-color: #7a842f;
+    background: rgba(122, 132, 47, 0.12);
+    color: #535b1f;
+  }
+
+  .empty-rank-zone {
+    padding: 4px 3px 1px !important;
+    text-align: left !important;
+  }
+
   .ranked-user-list article {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 24px;
+    min-width: 0;
+    grid-template-columns: 31px minmax(0, 1fr) 17px;
     align-items: center;
+    gap: 6px;
+    padding: 7px;
     border: 1px solid rgba(36, 37, 31, 0.08);
     border-radius: 8px;
     background: #fffdf8;
+    cursor: grab;
+    transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   }
 
-  .ranked-user-main {
-    display: grid;
-    min-width: 0;
-    grid-template-columns: 30px minmax(0, 1fr);
-    align-items: center;
-    gap: 7px;
-    padding: 7px;
-    border: 0;
-    background: transparent;
-    color: #24251f;
-    cursor: pointer;
-    text-align: left;
+  .ranked-user-list article:active { cursor: grabbing; }
+
+  .ranked-user-list article.drop-target {
+    border-color: #7a842f;
+    box-shadow: 0 0 0 2px rgba(122, 132, 47, 0.12);
   }
 
-  .ranked-user-main > span {
+  .ranked-user-list article.drag-source { opacity: 0.44; }
+
+  .rank-number {
     color: #7a842f;
     font-family: var(--font-mono);
     font-size: calc(13px * var(--font-scale, 1));
@@ -1336,30 +1545,62 @@
     text-align: center;
   }
 
-  .ranked-user-main strong,
-  .ranked-user-main small {
+  .ranked-user-content { min-width: 0; }
+
+  .ranked-user-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ranked-user-heading button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .ranked-user-heading .user-name {
+    min-width: 0;
+    flex: 1;
     display: block;
     overflow: hidden;
+    color: #24251f;
+    font-size: calc(12px * var(--font-scale, 1));
+    font-weight: 800;
+    text-align: left;
+    text-overflow: ellipsis;
+  }
+
+  .alias-action,
+  .delete-user {
+    color: #72782e;
+    font-size: calc(9px * var(--font-scale, 1));
+  }
+
+  .delete-user { color: #9b5a4b; }
+
+  .alias-action:hover { color: #4f5819; }
+  .delete-user:hover { color: #ad3822; }
+
+  .ranked-user-content > small {
+    display: block;
+    overflow: hidden;
+    margin-top: 3px;
+    color: var(--lineup-dim-on-light);
+    font-size: calc(10px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ranked-user-main strong { font-size: calc(12px * var(--font-scale, 1)); }
-  .ranked-user-main small { margin-top: 2px; color: var(--lineup-dim-on-light); font-size: calc(10px * var(--font-scale, 1)); }
-
-  .delete-user {
-    width: 21px;
-    height: 21px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
+  .drag-handle {
     color: var(--lineup-dim-on-light);
-    cursor: pointer;
-    font-size: calc(17px * var(--font-scale, 1));
+    font-size: calc(15px * var(--font-scale, 1));
+    line-height: 1;
+    text-align: center;
   }
-
-  .delete-user:hover { background: rgba(210, 83, 54, 0.09); color: #ad4832; }
 
   .history-dates {
     display: grid;
@@ -1449,6 +1690,5 @@
     .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .lineup-actions { flex-direction: column; }
-    .rank-input-row { grid-template-columns: 1fr; }
   }
 </style>
