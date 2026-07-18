@@ -22,7 +22,7 @@
     normalizeResultLimit,
     remainingResultSlots,
   } from './draw-limit';
-  import { downloadFormattedJson } from './file-export';
+  import { downloadCsv, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import {
     DEFAULT_FONT_SCALE,
@@ -1313,9 +1313,32 @@
     };
   }
 
-  function exportRecords() {
+  function exportCurrentStatsCsv() {
     if (records.length === 0) return;
-    downloadFormattedJson('转盘抽奖记录', { exportedAt: new Date().toISOString(), records });
+    const rows: (string | number)[][] = [
+      ['候选项', '权重', '中奖次数', '中奖金额'],
+      ...currentStats.map((stat) => [stat.name, stat.weight, stat.count, stat.rewardTotal]),
+    ];
+    if (retryTotal > 0 || retryEnabled) {
+      rows.push(['重来一次', retryEnabled ? retryWeight : '', retryTotal, 0]);
+    }
+    downloadCsv('转盘当前统计', rows);
+  }
+
+  function exportCurrentStatsJson() {
+    if (records.length === 0) return;
+    downloadFormattedJson('转盘当前统计', {
+      exportedAt: new Date().toISOString(),
+      kind: 'current-draw-statistics',
+      mode,
+      summary: {
+        completed: validCompleted,
+        retries: retryTotal,
+        rewardTotal: totalRewardAmount,
+      },
+      statistics: currentStats,
+      records,
+    });
   }
 
   function exportBatchExperiment() {
@@ -1470,7 +1493,7 @@
     if (shortcutKey === 'w') {
       void openImporter();
     } else if (shortcutKey === 'e') {
-      exportRecords();
+      exportCurrentStatsJson();
     } else if (shortcutKey === 'r') {
       void startNewDraw(true);
     } else if (shortcutKey === 'a') {
@@ -1987,7 +2010,11 @@
               {/each}
             </div>
 
-            <button type="button" class="clear-side-stats" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空当前统计</button>
+            <div class="side-stats-actions">
+              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsCsv}>CSV</button>
+              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsJson}>JSON</button>
+              <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空当前统计</button>
+            </div>
           {/if}
         </aside>
       </div>

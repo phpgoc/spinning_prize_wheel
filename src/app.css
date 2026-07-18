@@ -2484,9 +2484,14 @@ kbd {
   font-size: calc(10px * var(--font-scale, 1));
 }
 
-.clear-side-stats {
-  width: 100%;
+.side-stats-actions {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 6px;
   margin-top: 10px;
+}
+
+.side-stats-actions button {
   padding: 8px;
   border: 1px solid var(--line-subtle);
   border-radius: 8px;
