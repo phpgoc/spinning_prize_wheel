@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
   import LuxuryWheel from './lib/LuxuryWheel.svelte';
   import PrizeEditor from './lib/PrizeEditor.svelte';
@@ -14,6 +15,7 @@
   import type {
     AnimationStyle,
     BatchSimulation,
+    CommonSelection,
     DrawMode,
     DrawOutcome,
     DrawRecord,
@@ -24,6 +26,7 @@
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
   const HISTORY_STORAGE_KEY = 'fortuna-wheel-history-v1';
+  const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
     { id: 'candidate-a', name: '林小满', weight: 1, color: '#ff7557', enabled: true },
@@ -53,7 +56,7 @@
     rewardTotal: number;
   }
 
-  type SidebarPanel = 'settings' | 'batch' | 'history' | 'shortcuts';
+  type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
 
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
@@ -70,6 +73,14 @@
   let activePanel: SidebarPanel | null = 'settings';
   let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
+  let commonSelectionInput: HTMLInputElement;
+  let commonSelections: CommonSelection[] = [];
+  let commonSelectionName = '';
+  let commonSelectionSaveOpen = false;
+  let commonSelectionLoading = true;
+  let commonSelectionSaving = false;
+  let commonSelectionError = '';
+  let desktopRuntime = false;
 
   let rotation = 0;
   let isSpinning = false;
@@ -165,6 +176,8 @@
       localStorage.removeItem(STORAGE_KEY);
     }
     shortcutMod = /Mac|iPhone|iPad/i.test(navigator.platform) ? '⌘' : 'Ctrl';
+    desktopRuntime = isTauriRuntime();
+    void loadCommonSelections();
     hydrated = true;
   });
 
@@ -176,6 +189,125 @@
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function isTauriRuntime(): boolean {
+    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  }
+
+  function isCommonSelection(value: unknown): value is CommonSelection {
+    if (!value || typeof value !== 'object') return false;
+    const selection = value as Partial<CommonSelection>;
+    return selection.version === 1
+      && typeof selection.id === 'string'
+      && typeof selection.name === 'string'
+      && typeof selection.createdAt === 'number'
+      && Array.isArray(selection.prizes)
+      && selection.prizes.length >= 2
+      && selection.prizes.every((prize) => (
+        prize
+        && typeof prize.id === 'string'
+        && typeof prize.name === 'string'
+        && typeof prize.weight === 'number'
+        && typeof prize.color === 'string'
+        && typeof prize.enabled === 'boolean'
+      ));
+  }
+
+  async function loadCommonSelections() {
+    commonSelectionLoading = true;
+    commonSelectionError = '';
+    try {
+      const loaded = desktopRuntime
+        ? await invoke<unknown[]>('list_common_selections')
+        : JSON.parse(localStorage.getItem(COMMON_SELECTION_STORAGE_KEY) ?? '[]') as unknown[];
+      commonSelections = Array.isArray(loaded)
+        ? loaded.filter(isCommonSelection).sort((left, right) => right.createdAt - left.createdAt)
+        : [];
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      commonSelectionLoading = false;
+    }
+  }
+
+  function saveCommonSelectionsToBrowser(next: CommonSelection[]) {
+    localStorage.setItem(COMMON_SELECTION_STORAGE_KEY, JSON.stringify(next));
+  }
+
+  async function openCommonSelectionSaver() {
+    if (isSpinning) return;
+    commonSelectionName = `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
+    commonSelectionSaveOpen = true;
+    commonSelectionError = '';
+    await tick();
+    commonSelectionInput?.select();
+  }
+
+  async function saveCurrentSelection() {
+    const name = commonSelectionName.trim();
+    if (!name || commonSelectionSaving) return;
+
+    const selection: CommonSelection = {
+      version: 1,
+      id: createId('selection'),
+      name: name.slice(0, 40),
+      createdAt: Date.now(),
+      prizes: prizes.map((prize) => ({ ...prize })),
+    };
+
+    commonSelectionSaving = true;
+    commonSelectionError = '';
+    try {
+      if (desktopRuntime) {
+        await invoke('save_common_selection', { selection });
+      } else {
+        saveCommonSelectionsToBrowser([selection, ...commonSelections]);
+      }
+      commonSelections = [selection, ...commonSelections];
+      commonSelectionSaveOpen = false;
+      commonSelectionName = '';
+      result = {
+        eyebrow: '常用选择已保存',
+        title: selection.name,
+        detail: `${selection.prizes.length} 个候选项已保存到${desktopRuntime ? '本地文件' : '浏览器存储'}。`,
+        tone: 'success',
+      };
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      commonSelectionSaving = false;
+    }
+  }
+
+  function applyCommonSelection(selection: CommonSelection) {
+    if (isSpinning) return;
+    updatePrizes(selection.prizes.map((prize) => ({ ...prize })));
+    eliminatedIds = [];
+    rouletteFinished = false;
+    singleAttempt = 0;
+    importOpen = false;
+    result = {
+      eyebrow: '常用选择已导入',
+      title: selection.name,
+      detail: `${selection.prizes.length} 个候选项已放入当前轮盘，其他设置保持不变。`,
+      tone: 'success',
+    };
+  }
+
+  async function deleteCommonSelection(selection: CommonSelection) {
+    if (commonSelectionSaving) return;
+    commonSelectionError = '';
+    try {
+      if (desktopRuntime) {
+        await invoke('delete_common_selection', { id: selection.id });
+      } else {
+        saveCommonSelectionsToBrowser(commonSelections.filter((item) => item.id !== selection.id));
+      }
+      commonSelections = commonSelections.filter((item) => item.id !== selection.id);
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   function togglePanel(panel: SidebarPanel) {
@@ -492,6 +624,16 @@
     }).format(timestamp);
   }
 
+  function formatSelectionDate(timestamp: number): string {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(timestamp);
+  }
+
   function formatAmount(amount: number): string {
     return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(amount);
   }
@@ -521,7 +663,6 @@
   }
 
   async function openImporter() {
-    activePanel = 'settings';
     importOpen = true;
     await tick();
     importTextarea?.focus();
@@ -585,6 +726,7 @@
     if (event.key === 'Escape') {
       activePanel = null;
       if (importOpen && !importText) importOpen = false;
+      commonSelectionSaveOpen = false;
       return;
     }
 
@@ -683,6 +825,7 @@
 
   <main
     class:settings-open={activePanel === 'settings'}
+    class:common-open={activePanel === 'common'}
     class:batch-open={activePanel === 'batch'}
     class:history-open={activePanel === 'history'}
     class:shortcuts-open={activePanel === 'shortcuts'}
@@ -697,7 +840,7 @@
         on:click={() => togglePanel('settings')}
       >
         <span class="accordion-icon">◎</span>
-        <span><strong>设置</strong><small>名单、金额、模式与动画</small></span>
+        <span><strong>设置</strong><small>金额、重来与动画</small></span>
         <i>{activePanel === 'settings' ? '−' : '+'}</i>
       </button>
 
@@ -705,12 +848,11 @@
       <div class="accordion-content settings-content">
       <div class="panel-heading">
         <div>
-          <span class="eyebrow">CANDIDATE LIST</span>
-          <h2>候选项设置</h2>
+          <span class="eyebrow">DRAW SETTINGS</span>
+          <h2>抽奖设置</h2>
         </div>
-        <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
       </div>
-      <p class="section-note">通常用于人员抽奖，也可以填写任何需要随机选择的内容。</p>
+      <p class="section-note">候选项在右侧抽奖区管理，这里只调整抽奖规则和表现。</p>
 
       <label class="reward-setting">
         <span>
@@ -728,40 +870,6 @@
           />
         </span>
       </label>
-
-      <PrizeEditor {prizes} disabled={isSpinning} onChange={updatePrizes} />
-
-      <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
-        <span>⌘</span> 从文本批量导入
-        <small>空格 / 逗号 / Excel</small>
-      </button>
-
-      {#if importOpen}
-        <section class="import-box" aria-label="文本批量导入">
-          <div class="import-heading">
-            <strong>粘贴选项文本</strong>
-            <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
-          </div>
-          <textarea
-            bind:this={importTextarea}
-            bind:value={importText}
-            rows="4"
-            placeholder={'张三 李四 王五\n或从 Excel 复制整列后直接粘贴'}
-          ></textarea>
-          <div class="import-modes">
-            <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换奖池</button>
-            <button type="button" class:active={importMode === 'append'} on:click={() => (importMode = 'append')}>追加选项</button>
-          </div>
-          <div class="import-footer">
-            <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
-            <button
-              type="button"
-              disabled={parsedImportOptions.length === 0 || (importMode === 'replace' && parsedImportOptions.length < 2)}
-              on:click={applyImportedOptions}
-            >确认导入</button>
-          </div>
-        </section>
-      {/if}
 
       <div class="section-divider"></div>
 
@@ -858,6 +966,74 @@
       {/if}
     </aside>
 
+    <aside class:open={activePanel === 'common'} class="accordion-item common-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'common'}
+        on:click={() => togglePanel('common')}
+      >
+        <span class="accordion-icon">▤</span>
+        <span><strong>常用选择</strong><small>导入已保存的候选名单</small></span>
+        <i>{activePanel === 'common' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'common'}
+        <div class="accordion-content common-content">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">SAVED SELECTIONS</span>
+              <h2>导入常用选择</h2>
+            </div>
+            <span class="count-badge">{commonSelections.length}</span>
+          </div>
+          <p class="section-note">这里只保存右侧候选项的名称、权重、颜色和启用状态。</p>
+
+          {#if commonSelectionError}
+            <div class="common-error">{commonSelectionError}</div>
+          {/if}
+
+          {#if commonSelectionLoading}
+            <div class="sidebar-empty-state"><i>···</i><strong>正在读取常用选择</strong></div>
+          {:else if commonSelections.length === 0}
+            <div class="sidebar-empty-state">
+              <i>▤</i>
+              <strong>还没有常用选择</strong>
+              <span>在右侧候选项面板中保存当前名单。</span>
+            </div>
+          {:else}
+            <div class="common-list">
+              {#each commonSelections as selection (selection.id)}
+                <article class="common-card">
+                  <div class="common-card-heading">
+                    <div>
+                      <strong>{selection.name}</strong>
+                      <span>{selection.prizes.length} 项 · {formatSelectionDate(selection.createdAt)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="common-delete"
+                      aria-label={`删除常用选择 ${selection.name}`}
+                      title="删除"
+                      on:click={() => deleteCommonSelection(selection)}
+                    >×</button>
+                  </div>
+                  <p>{selection.prizes.slice(0, 4).map((prize) => prize.name).join('、')}{selection.prizes.length > 4 ? '…' : ''}</p>
+                  <button type="button" disabled={isSpinning} on:click={() => applyCommonSelection(selection)}>
+                    导入到当前轮盘
+                  </button>
+                </article>
+              {/each}
+            </div>
+          {/if}
+
+          <p class="common-storage-note">
+            {desktopRuntime ? '桌面端以独立 JSON 文件保存在应用配置目录。' : 'Web 端保存在当前浏览器的 localStorage。'}
+          </p>
+        </div>
+      {/if}
+    </aside>
+
     <section class="stage-panel">
       <div class="stage-heading">
         <div>
@@ -869,6 +1045,8 @@
         </div>
       </div>
 
+      <div class="draw-workbench">
+        <div class="draw-core">
       {#if mode === 'roulette'}
         <div class="roulette-track">
           <span>第 {rouletteRound} 局</span>
@@ -940,6 +1118,89 @@
       <div class="stage-footer">
         <span><kbd>{shortcutMod}</kbd> + <kbd>ENTER</kbd> 快速开始</span>
         <span>{records.length} 次尝试 · {validCompleted} 个有效结果 · {retryTotal} 次重来</span>
+      </div>
+        </div>
+
+        <aside class="candidate-board" aria-label="当前候选项">
+          <div class="candidate-board-heading">
+            <div>
+              <span class="eyebrow">CURRENT SELECTION</span>
+              <h2>候选项</h2>
+              <p>人员、奖品或任何需要随机选择的内容</p>
+            </div>
+            <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
+          </div>
+
+          <button
+            type="button"
+            class="save-selection-trigger"
+            disabled={isSpinning}
+            on:click={openCommonSelectionSaver}
+          >
+            <span>＋</span>
+            <strong>保存当前选择</strong>
+            <small>存入左侧“常用选择”</small>
+          </button>
+
+          {#if commonSelectionSaveOpen}
+            <form class="save-selection-form" on:submit|preventDefault={saveCurrentSelection}>
+              <label for="common-selection-name">给这组候选项起个名字</label>
+              <div>
+                <input
+                  id="common-selection-name"
+                  bind:this={commonSelectionInput}
+                  bind:value={commonSelectionName}
+                  maxlength="40"
+                  placeholder="例如：周五例会名单"
+                  disabled={commonSelectionSaving}
+                />
+                <button type="submit" disabled={!commonSelectionName.trim() || commonSelectionSaving}>
+                  {commonSelectionSaving ? '保存中' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  aria-label="取消保存"
+                  disabled={commonSelectionSaving}
+                  on:click={() => (commonSelectionSaveOpen = false)}
+                >×</button>
+              </div>
+            </form>
+          {/if}
+
+          <PrizeEditor {prizes} disabled={isSpinning} onChange={updatePrizes} />
+
+          <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
+            <span>⌘</span> 从文本批量导入
+            <small>空格 / 逗号 / Excel</small>
+          </button>
+
+          {#if importOpen}
+            <section class="import-box" aria-label="文本批量导入">
+              <div class="import-heading">
+                <strong>粘贴选项文本</strong>
+                <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
+              </div>
+              <textarea
+                bind:this={importTextarea}
+                bind:value={importText}
+                rows="4"
+                placeholder={'张三 李四 王五\n或从 Excel 复制整列后直接粘贴'}
+              ></textarea>
+              <div class="import-modes">
+                <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换当前选择</button>
+                <button type="button" class:active={importMode === 'append'} on:click={() => (importMode = 'append')}>追加选项</button>
+              </div>
+              <div class="import-footer">
+                <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
+                <button
+                  type="button"
+                  disabled={parsedImportOptions.length === 0 || (importMode === 'replace' && parsedImportOptions.length < 2)}
+                  on:click={applyImportedOptions}
+                >确认导入</button>
+              </div>
+            </section>
+          {/if}
+        </aside>
       </div>
 
       <section class="current-statistics">

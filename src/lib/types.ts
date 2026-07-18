@@ -10,6 +10,14 @@ export interface Prize {
   enabled: boolean;
 }
 
+export interface CommonSelection {
+  version: 1;
+  id: string;
+  name: string;
+  createdAt: number;
+  prizes: Prize[];
+}
+
 export interface WheelOption {
   id: string;
   label: string;
