@@ -140,7 +140,6 @@
     disabled={disabled || spinning}
     on:click={onSpin}
   >
-    <span class="spin-kicker">{spinning ? 'LUCK' : 'SPIN'}</span>
     <strong>{spinning ? '转动中' : centerLabel}</strong>
   </button>
 </div>
@@ -364,15 +363,8 @@
     cursor: not-allowed;
   }
 
-  .spin-kicker {
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    letter-spacing: 0.15em;
-  }
-
   .spin-button strong {
-    margin-top: 2px;
+    margin-top: 0;
     font-size: clamp(12px, 1.25vw, 17px);
     letter-spacing: 0.04em;
   }
@@ -487,10 +479,6 @@
   .simple .spin-button:hover:not(:disabled),
   .simple .spin-button:focus-visible {
     background: #fffdf8;
-  }
-
-  .simple .spin-kicker {
-    color: #d95d43;
   }
 
   .luxury.spinning .orbit-one {

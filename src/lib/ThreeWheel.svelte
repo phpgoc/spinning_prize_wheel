@@ -571,7 +571,6 @@
     disabled={disabled || spinning}
     on:click={onSpin}
   >
-    <span>3D SPIN</span>
     <strong>{spinning ? '转动中' : centerLabel}</strong>
   </button>
 
@@ -685,15 +684,8 @@
     transform: translate(-50%, -50%) scale(1.06);
   }
 
-  .spin-button span {
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 7px;
-    letter-spacing: 0.13em;
-  }
-
   .spin-button strong {
-    margin-top: 3px;
+    margin-top: 0;
     font-size: clamp(12px, 1.25vw, 17px);
   }
 

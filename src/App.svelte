@@ -774,18 +774,17 @@
 </script>
 
 <svelte:head>
-  <title>Fortuna · 幸运转盘</title>
+  <title>幸运转盘</title>
 </svelte:head>
 
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="app-shell">
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="Fortuna 首页">
+    <a class="brand" href="#top" aria-label="幸运转盘首页">
       <span class="brand-mark"><i></i></span>
       <span>
-        <strong>FORTUNA</strong>
-        <small>LUCK LAB / 幸运实验室</small>
+        <strong>幸运转盘</strong>
       </span>
     </a>
 
@@ -811,14 +810,6 @@
     </div>
 
     <div class="topbar-meta">
-      <span class="local-badge"><i></i> 本地运行</span>
-      <button
-        type="button"
-        class="shortcut-trigger"
-        title="查看键盘快捷键"
-        aria-label="查看键盘快捷键"
-        on:click={() => togglePanel('shortcuts')}
-      ><kbd>{shortcutMod}</kbd><kbd>K</kbd></button>
       <button type="button" class="icon-button" title="恢复默认设置" on:click={resetSettings}>↺</button>
     </div>
   </header>
@@ -840,7 +831,7 @@
         on:click={() => togglePanel('settings')}
       >
         <span class="accordion-icon">◎</span>
-        <span><strong>设置</strong><small>金额、重来与动画</small></span>
+        <span><strong>设置</strong></span>
         <i>{activePanel === 'settings' ? '−' : '+'}</i>
       </button>
 
@@ -848,35 +839,13 @@
       <div class="accordion-content settings-content">
       <div class="panel-heading">
         <div>
-          <span class="eyebrow">DRAW SETTINGS</span>
           <h2>抽奖设置</h2>
         </div>
       </div>
-      <p class="section-note">候选项在右侧抽奖区管理，这里只调整抽奖规则和表现。</p>
-
-      <label class="reward-setting">
-        <span>
-          <strong>奖励金额</strong>
-          <small>每次有效命中写入统计，允许为 0</small>
-        </span>
-        <span class="reward-input">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            bind:value={rewardAmount}
-            disabled={isSpinning}
-            on:change={() => (rewardAmount = normalizedRewardAmount())}
-          />
-        </span>
-      </label>
-
-      <div class="section-divider"></div>
 
       <section class="setting-block">
         <div class="setting-title-row">
           <div>
-            <span class="eyebrow">SPECIAL OPTION</span>
             <h3>重来机制</h3>
           </div>
           <button
@@ -908,7 +877,6 @@
       <div class="section-divider"></div>
 
       <section class="setting-block">
-        <span class="eyebrow">MOTION STYLE</span>
         <h3>动画质感</h3>
         <div class="animation-options">
           <button
@@ -939,7 +907,7 @@
           >
             <span class="motion-icon cube-icon">◇</span>
             <strong>3D</strong>
-            <small>Three.js 实体</small>
+            <small>立体轮盘</small>
           </button>
         </div>
       </section>
@@ -947,7 +915,7 @@
       <section class="setting-block duration-block">
         <div class="setting-title-row compact">
           <label for="duration">动画时长</label>
-          <output>{durationSeconds.toFixed(1)}<small>s</small></output>
+          <output>{durationSeconds.toFixed(1)}<small>秒</small></output>
         </div>
         <input
           id="duration"
@@ -974,7 +942,7 @@
         on:click={() => togglePanel('common')}
       >
         <span class="accordion-icon">▤</span>
-        <span><strong>常用选择</strong><small>导入已保存的候选名单</small></span>
+        <span><strong>常用选择</strong></span>
         <i>{activePanel === 'common' ? '−' : '+'}</i>
       </button>
 
@@ -982,12 +950,10 @@
         <div class="accordion-content common-content">
           <div class="panel-heading">
             <div>
-              <span class="eyebrow">SAVED SELECTIONS</span>
-              <h2>导入常用选择</h2>
+              <h2>常用选择</h2>
             </div>
             <span class="count-badge">{commonSelections.length}</span>
           </div>
-          <p class="section-note">这里只保存右侧候选项的名称、权重、颜色和启用状态。</p>
 
           {#if commonSelectionError}
             <div class="common-error">{commonSelectionError}</div>
@@ -1027,9 +993,6 @@
             </div>
           {/if}
 
-          <p class="common-storage-note">
-            {desktopRuntime ? '桌面端以独立 JSON 文件保存在应用配置目录。' : 'Web 端保存在当前浏览器的 localStorage。'}
-          </p>
         </div>
       {/if}
     </aside>
@@ -1037,7 +1000,6 @@
     <section class="stage-panel">
       <div class="stage-heading">
         <div>
-          <span class="eyebrow">LIVE DRAW</span>
           <h1>{mode === 'selected' ? '谁会成为本轮幸运得主？' : '谁能留到最后？'}</h1>
         </div>
         <div class="status-pill" class:busy={isSpinning}>
@@ -1116,7 +1078,6 @@
       </div>
 
       <div class="stage-footer">
-        <span><kbd>{shortcutMod}</kbd> + <kbd>ENTER</kbd> 快速开始</span>
         <span>{records.length} 次尝试 · {validCompleted} 个有效结果 · {retryTotal} 次重来</span>
       </div>
         </div>
@@ -1124,9 +1085,7 @@
         <aside class="candidate-board" aria-label="当前候选项">
           <div class="candidate-board-heading">
             <div>
-              <span class="eyebrow">CURRENT SELECTION</span>
               <h2>候选项</h2>
-              <p>人员、奖品或任何需要随机选择的内容</p>
             </div>
             <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
           </div>
@@ -1139,7 +1098,6 @@
           >
             <span>＋</span>
             <strong>保存当前选择</strong>
-            <small>存入左侧“常用选择”</small>
           </button>
 
           {#if commonSelectionSaveOpen}
@@ -1171,7 +1129,7 @@
 
           <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
             <span>⌘</span> 从文本批量导入
-            <small>空格 / 逗号 / Excel</small>
+            <small>空格 / 逗号 / 表格</small>
           </button>
 
           {#if importOpen}
@@ -1184,7 +1142,7 @@
                 bind:this={importTextarea}
                 bind:value={importText}
                 rows="4"
-                placeholder={'张三 李四 王五\n或从 Excel 复制整列后直接粘贴'}
+                placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
               ></textarea>
               <div class="import-modes">
                 <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换当前选择</button>
@@ -1200,15 +1158,27 @@
               </div>
             </section>
           {/if}
+
+          <label class="reward-setting candidate-reward">
+            <strong>奖励金额</strong>
+            <span class="reward-input">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                bind:value={rewardAmount}
+                disabled={isSpinning}
+                on:change={() => (rewardAmount = normalizedRewardAmount())}
+              />
+            </span>
+          </label>
         </aside>
       </div>
 
       <section class="current-statistics">
         <div class="current-stats-heading">
           <div>
-            <span class="eyebrow">CURRENT DRAW LEDGER</span>
             <h2>当前抽奖统计</h2>
-            <p>单次抽取和批量实验产生的有效结果都会汇总在这里。</p>
           </div>
           <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空当前统计</button>
         </div>
@@ -1246,7 +1216,7 @@
         on:click={() => togglePanel('batch')}
       >
         <span class="accordion-icon">⌁</span>
-        <span><strong>批量实验室</strong><small>模拟多次抽取并写入统计</small></span>
+        <span><strong>批量实验室</strong></span>
         <i>{activePanel === 'batch' ? '−' : '+'}</i>
       </button>
 
@@ -1254,7 +1224,6 @@
       <div class="accordion-content batch-content">
       <div class="panel-heading">
         <div>
-          <span class="eyebrow">BATCH LAB</span>
           <h2>批量实验室</h2>
         </div>
         <span class="flask">⌁</span>
@@ -1339,7 +1308,7 @@
         {/if}
 
         <div class="history-actions">
-          <button type="button" on:click={exportRecords}>导出 JSON</button>
+          <button type="button" on:click={exportRecords}>导出记录</button>
           <button type="button" on:click={clearHistory}>清空记录</button>
         </div>
       {:else}
@@ -1364,7 +1333,7 @@
         on:click={() => togglePanel('history')}
       >
         <span class="accordion-icon">◷</span>
-        <span><strong>历史</strong><small>{records.length} 条尝试记录</small></span>
+        <span><strong>历史</strong></span>
         <i>{activePanel === 'history' ? '−' : '+'}</i>
       </button>
 
@@ -1393,7 +1362,7 @@
         </div>
 
         <div class="history-actions sidebar-history-actions">
-          <button type="button" disabled={records.length === 0} on:click={exportRecords}>导出 JSON</button>
+          <button type="button" disabled={records.length === 0} on:click={exportRecords}>导出记录</button>
           <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空记录</button>
         </div>
       </div>
@@ -1408,13 +1377,12 @@
         on:click={() => togglePanel('shortcuts')}
       >
         <span class="accordion-icon">⌘</span>
-        <span><strong>快捷键</strong><small>组合键操作，避免误触</small></span>
+        <span><strong>快捷键</strong></span>
         <i>{activePanel === 'shortcuts' ? '−' : '+'}</i>
       </button>
 
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
-        <p class="section-note">所有关键操作都要求组合键，适合现场抽奖快速控制。</p>
         <div class="shortcut-list sidebar-shortcut-list">
           <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
           <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
@@ -1431,8 +1399,4 @@
     </aside>
   </main>
 
-  <footer>
-    <span>FORTUNA / 纯本地随机实验</span>
-    <span>配置仅保存在当前设备 · 无服务端 · 无数据上传</span>
-  </footer>
 </div>

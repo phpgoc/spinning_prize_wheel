@@ -142,12 +142,9 @@
     disabled={disabled || spinning}
     on:click={onSpin}
   >
-    <span>{spinning ? 'FORTUNA' : 'GRAND DRAW'}</span>
     <strong>{spinning ? '揭晓中' : centerLabel}</strong>
     <i>✦</i>
   </button>
-
-  <div class="luxury-caption"><i></i><span>FORTUNA · SIGNATURE EDITION</span><i></i></div>
 </div>
 
 <style>
@@ -432,15 +429,8 @@
     transform: translate(-50%, -50%) scale(1.06);
   }
 
-  .luxury-button span {
-    color: #dcb25b;
-    font-family: Georgia, serif;
-    font-size: 7px;
-    letter-spacing: 0.12em;
-  }
-
   .luxury-button strong {
-    margin-top: 2px;
+    margin-top: 0;
     font-family: Georgia, var(--font-sans);
     font-size: clamp(13px, 1.35vw, 18px);
   }
@@ -451,34 +441,6 @@
     font-size: 8px;
     font-style: normal;
   }
-
-  .luxury-caption {
-    position: absolute;
-    bottom: 0.2%;
-    left: 50%;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 10px;
-    border: 1px solid rgba(226, 183, 88, 0.25);
-    border-radius: 999px;
-    background: rgba(20, 12, 7, 0.72);
-    color: #c99e4b;
-    font-family: Georgia, serif;
-    font-size: 6px;
-    letter-spacing: 0.14em;
-    transform: translateX(-50%);
-    white-space: nowrap;
-  }
-
-  .luxury-caption i {
-    width: 18px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #d3aa55);
-  }
-
-  .luxury-caption i:last-child { transform: rotate(180deg); }
 
   @media (max-width: 600px) {
     .luxury-stage { width: min(100%, 440px); }
