@@ -848,7 +848,7 @@ pub fn run() {
             delete_lineup_history
         ])
         .run(tauri::generate_context!())
-        .expect("无法启动转盘工具");
+        .expect("无法启动转盘");
 }
 
 #[cfg(test)]

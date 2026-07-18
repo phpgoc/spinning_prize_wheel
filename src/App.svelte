@@ -71,7 +71,7 @@
 </script>
 
 <svelte:head>
-  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '随机排阵'} · 转盘工具</title>
+  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '随机排阵'} · 转盘</title>
 </svelte:head>
 
 <div class:caimi-variant={variant === 'caimi'} class="app-shell" style={`--font-scale: ${fontScale}`}>

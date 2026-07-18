@@ -20,7 +20,7 @@ rustc --version
 
 当前桌面程序使用 Rust 官方的 MSVC ABI 编译，但 `.cargo/config.toml` 已启用静态 C 运行库。Visual Studio Build Tools 只在编译机器上需要，最终用户不需要单独安装 VC++ Redistributable。SQLite 使用 `rusqlite bundled`，源码会直接编入程序，不会附带或依赖 `sqlite3.dll`。
 
-普通版和猜蜜版各自包含一份 SQLite 引擎，但排名和别名仍使用同一个数据库文件。两个版本目前是独立安装包；保留静态引擎可避免共享 DLL 带来的安装顺序、升级版本和卸载引用问题。
+普通版和猜蜜版各自包含一份 SQLite 引擎，但排名和别名仍使用同一个数据库文件。两个程序由同一个安装包安装；保留静态引擎可避免共享 DLL 带来的加载和升级问题。
 
 Windows 10/11 通常已包含桌面界面所需的 WebView2；精简系统需要先安装 Microsoft Edge WebView2 Runtime。
 
@@ -67,27 +67,19 @@ Compress-Archive -Path dist\* -DestinationPath dist.zip -Force
 
 ## 构建 Windows 桌面版
 
-同时构建普通版和猜蜜版：
+构建包含普通版和猜蜜版的单一安装包：
 
 ```powershell
 bun run build:windows
 ```
 
-也可以分别构建：
-
-```powershell
-bun run tauri:build
-bun run tauri:build:caimi
-```
-
 主要产物：
 
-- `src-tauri\target\release\转盘工具.exe`
-- `src-tauri\target\release\转盘工具-猜蜜版.exe`
-- `src-tauri\target\release\bundle\nsis\转盘工具_版本号_x64-setup.exe`
-- `src-tauri\target\release\bundle\nsis\转盘工具·猜蜜版_版本号_x64-setup.exe`
+- `src-tauri\target\release\转盘.exe`
+- `src-tauri\target\release\转盘-猜蜜版.exe`
+- `src-tauri\target\release\bundle\nsis\转盘_版本号_x64-setup.exe`
 
-NSIS 安装包包含自定义卸载步骤，卸载时由用户决定是否删除本地数据库和配置，因此当前不生成 MSI 安装包。
+NSIS 安装包会把两个 EXE 安装到同一目录，并为两个版本创建独立启动入口。卸载时由用户决定是否删除本地数据库和配置，因此当前不生成 MSI 安装包。
 
 ## 中文文件名与编码
 
