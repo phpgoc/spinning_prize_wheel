@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import caimiIconUrl from './assets/caimi-icon.png?url';
+  import defaultIconUrl from '../src-tauri/icons/app-icon.svg?url';
   import AppHeader from './lib/AppHeader.svelte';
   import CaimiBanner from './lib/CaimiBanner.svelte';
   import DrawPage from './lib/DrawPage.svelte';
@@ -72,6 +74,11 @@
 
 <svelte:head>
   <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '随机排阵'} · 转盘</title>
+  <link
+    rel="icon"
+    type={variant === 'caimi' ? 'image/png' : 'image/svg+xml'}
+    href={variant === 'caimi' ? caimiIconUrl : defaultIconUrl}
+  />
 </svelte:head>
 
 <div class:caimi-variant={variant === 'caimi'} class="app-shell" style={`--font-scale: ${fontScale}`}>

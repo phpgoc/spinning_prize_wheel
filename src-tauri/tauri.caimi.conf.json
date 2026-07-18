@@ -20,5 +20,13 @@
         "fullscreen": false
       }
     ]
+  },
+  "bundle": {
+    "icon": ["icons-caimi/icon.ico", "icons-caimi/icon.png"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons-caimi/icon.ico"
+      }
+    }
   }
 }
