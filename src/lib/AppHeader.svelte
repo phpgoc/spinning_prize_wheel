@@ -14,9 +14,9 @@
 </script>
 
 <header class="topbar">
-  <a class="brand" href={variantRoute(variant, 'draw')} aria-label="幸运转盘首页">
+  <a class="brand" href={variantRoute(variant, 'draw')} aria-label="转盘工具首页">
     <span class="brand-mark"><i></i></span>
-    <span><strong>幸运转盘</strong></span>
+    <span><strong>转盘工具</strong></span>
   </a>
 
   <div class="topbar-controls">

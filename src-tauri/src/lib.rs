@@ -848,7 +848,7 @@ pub fn run() {
             delete_lineup_history
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Fortuna");
+        .expect("无法启动转盘工具");
 }
 
 #[cfg(test)]

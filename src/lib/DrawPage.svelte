@@ -1315,12 +1315,12 @@
 
   function exportRecords() {
     if (records.length === 0) return;
-    downloadJson('fortuna-records', { exportedAt: new Date().toISOString(), records });
+    downloadJson('转盘抽奖记录', { exportedAt: new Date().toISOString(), records });
   }
 
   function exportBatchExperiment() {
     if (!batchResult) return;
-    downloadJson('fortuna-lab', {
+    downloadJson('转盘概率模拟', {
       exportedAt: new Date().toISOString(),
       kind: 'batch-simulation',
       prizes,

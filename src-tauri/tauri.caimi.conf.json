@@ -1,6 +1,6 @@
 {
-  "productName": "Fortuna 猜蜜版",
-  "mainBinaryName": "fortuna-caimi",
+  "productName": "转盘工具·猜蜜版",
+  "mainBinaryName": "转盘工具-猜蜜版",
   "identifier": "com.phpgoc.fortuna.caimi",
   "build": {
     "beforeDevCommand": "bun run dev:caimi",
@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Fortuna · 猜蜜版",
+        "title": "转盘工具 · 猜蜜版",
         "width": 1500,
         "height": 920,
         "minWidth": 960,
