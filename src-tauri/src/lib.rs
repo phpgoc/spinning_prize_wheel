@@ -123,10 +123,7 @@ fn valid_selection_id(id: &str) -> bool {
 }
 
 fn app_database(app: &AppHandle) -> Result<Connection, String> {
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("无法定位历史数据库目录：{error}"))?;
+    let directory = app_database_dir(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建历史数据库目录：{error}"))?;
 
     let mut connection = Connection::open(directory.join("draw-history.sqlite3"))
@@ -136,6 +133,20 @@ fn app_database(app: &AppHandle) -> Result<Connection, String> {
         .map_err(|error| format!("无法配置本地数据库：{error}"))?;
     migrate_database(&mut connection)?;
     Ok(connection)
+}
+
+fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    // 仅 Debug 构建允许把自动化测试数据库隔离到工作区，Release 始终使用正式数据目录。
+    #[cfg(debug_assertions)]
+    if let Some(directory) =
+        std::env::var_os("FORTUNA_TEST_DATA_DIR").filter(|value| !value.is_empty())
+    {
+        return Ok(PathBuf::from(directory));
+    }
+
+    app.path()
+        .app_data_dir()
+        .map_err(|error| format!("无法定位历史数据库目录：{error}"))
 }
 
 fn migrate_database(connection: &mut Connection) -> Result<(), String> {
@@ -345,8 +356,7 @@ fn delete_common_selection(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn save_draw_history(app: AppHandle, draw: SavedDraw) -> Result<(), String> {
+fn save_draw_history_in(connection: &Connection, draw: &SavedDraw) -> Result<(), String> {
     if !valid_selection_id(&draw.id) {
         return Err("抽奖记录编号不合法".to_string());
     }
@@ -360,7 +370,6 @@ fn save_draw_history(app: AppHandle, draw: SavedDraw) -> Result<(), String> {
     let created_at = i64::try_from(draw.created_at).map_err(|_| "抽奖时间不合法".to_string())?;
     let payload =
         serde_json::to_string(&draw).map_err(|error| format!("无法序列化抽奖记录：{error}"))?;
-    let connection = app_database(&app)?;
     connection
         .execute(
             "INSERT INTO draw_history (id, created_at, payload_json)
@@ -375,8 +384,12 @@ fn save_draw_history(app: AppHandle, draw: SavedDraw) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn list_draw_histories(app: AppHandle) -> Result<Vec<SavedDraw>, String> {
+fn save_draw_history(app: AppHandle, draw: SavedDraw) -> Result<(), String> {
     let connection = app_database(&app)?;
+    save_draw_history_in(&connection, &draw)
+}
+
+fn list_draw_histories_in(connection: &Connection) -> Result<Vec<SavedDraw>, String> {
     let mut statement = connection
         .prepare("SELECT payload_json FROM draw_history ORDER BY created_at DESC")
         .map_err(|error| format!("无法读取历史数据库：{error}"))?;
@@ -391,6 +404,12 @@ fn list_draw_histories(app: AppHandle) -> Result<Vec<SavedDraw>, String> {
         }
     }
     Ok(histories)
+}
+
+#[tauri::command]
+fn list_draw_histories(app: AppHandle) -> Result<Vec<SavedDraw>, String> {
+    let connection = app_database(&app)?;
+    list_draw_histories_in(&connection)
 }
 
 #[tauri::command]
@@ -735,6 +754,35 @@ mod tests {
         assert_eq!(histories[0].id, lineup.id);
         assert_eq!(histories[0].input, lineup.input);
         assert_eq!(histories[0].result, lineup.result);
+    }
+
+    #[test]
+    fn draw_history_round_trips_json() {
+        let connection = test_database();
+        let draw = SavedDraw {
+            version: 1,
+            id: "draw-1".to_string(),
+            created_at: 1_700_000_000_000,
+            mode: "selected".to_string(),
+            reward_amount: 88.5,
+            prizes: serde_json::json!([
+                {"id": "prize-1", "name": "一等奖", "weight": 2}
+            ]),
+            records: serde_json::json!([
+                {"id": "record-1", "prizeId": "prize-1", "name": "一等奖"}
+            ]),
+        };
+
+        save_draw_history_in(&connection, &draw).expect("保存抽奖历史");
+        let histories = list_draw_histories_in(&connection).expect("读取抽奖历史");
+
+        assert_eq!(histories.len(), 1);
+        assert_eq!(histories[0].id, draw.id);
+        assert_eq!(histories[0].created_at, draw.created_at);
+        assert_eq!(histories[0].mode, draw.mode);
+        assert_eq!(histories[0].reward_amount, draw.reward_amount);
+        assert_eq!(histories[0].prizes, draw.prizes);
+        assert_eq!(histories[0].records, draw.records);
     }
 
     fn expect_tables(connection: &Connection, expected: &[&str]) {

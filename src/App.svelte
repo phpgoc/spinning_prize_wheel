@@ -6,6 +6,7 @@
   import RandomLineup from './lib/RandomLineup.svelte';
   import ThreeWheel from './lib/ThreeWheel.svelte';
   import Wheel from './lib/Wheel.svelte';
+  import { changeAutoSaveHistory } from './lib/auto-save';
   import {
     RETRY_ID,
     buildWheelOptions,
@@ -464,10 +465,16 @@
   async function startNewDraw(clearCandidates = false) {
     if (isSpinning || drawHistorySaving) return;
     stopContinuousDraw();
+    let archived = false;
     if (desktopRuntime && autoSaveHistory && records.length > 0) {
       const saved = await saveCurrentDrawHistory(false);
       if (!saved) return;
+      archived = true;
     }
+    resetCurrentDraw(clearCandidates, archived);
+  }
+
+  function resetCurrentDraw(clearCandidates = false, archived = false) {
     currentDrawId = createId('draw');
     records = [];
     batchResult = null;
@@ -484,10 +491,44 @@
     result = {
       eyebrow: '新的抽奖',
       title: '准备就绪',
-      detail: clearCandidates || enabledPrizes.length < 2
+      detail: archived
+        ? '上一轮统计已保存到本地历史，可以开始新一轮。'
+        : clearCandidates || enabledPrizes.length < 2
         ? '添加至少两个候选项后才能开始。'
         : '点击转盘中央开始。',
       tone: 'idle',
+    };
+  }
+
+  async function toggleAutoSaveHistory() {
+    if (!desktopRuntime || isSpinning || drawHistorySaving) return;
+    const completedBeforeArchive = validCompleted;
+    const change = await changeAutoSaveHistory(
+      autoSaveHistory,
+      records.length,
+      () => saveCurrentDrawHistory(false),
+      () => resetCurrentDraw(false, true),
+    );
+    if (!change.applied) return;
+
+    autoSaveHistory = change.enabled;
+    if (!change.enabled) {
+      result = {
+        eyebrow: '自动保存已关闭',
+        title: '当前统计不会自动入库',
+        detail: '仍可使用“保存当前抽奖”手动保存。',
+        tone: 'idle',
+      };
+      return;
+    }
+
+    result = {
+      eyebrow: '自动保存已开启',
+      title: change.archived ? '当前统计已入库并清空' : '后续抽奖会自动归档',
+      detail: change.archived
+        ? `已保存 ${completedBeforeArchive} 个有效结果，现在可以开始新一轮。`
+        : '开始新抽奖时，上一轮统计会自动保存到本地历史。',
+      tone: 'success',
     };
   }
 
@@ -1340,7 +1381,7 @@
     } else if (shortcutKey === 'space') {
       spin();
     } else if (shortcutKey === 's' && desktopRuntime) {
-      autoSaveHistory = !autoSaveHistory;
+      void toggleAutoSaveHistory();
     } else if (shortcutKey === 'x') {
       void enterCandidateKeyboard();
     }
@@ -1476,7 +1517,8 @@
               class="switch"
               aria-label={autoSaveHistory ? '关闭自动保存历史' : '开启自动保存历史'}
               aria-pressed={autoSaveHistory}
-              on:click={() => (autoSaveHistory = !autoSaveHistory)}
+              disabled={isSpinning || drawHistorySaving}
+              on:click={() => void toggleAutoSaveHistory()}
             ><span></span></button>
           </div>
         </section>
