@@ -197,13 +197,12 @@
     raf = requestAnimationFrame(tick);
   }
 
-  // 监听抽奖开始状态。
-  let prevTargetId: string | null = null;
-  $: if (spinning && targetOptionId && targetOptionId !== prevTargetId) {
-    prevTargetId = targetOptionId;
-    startAnimation(targetOptionId);
+  // 每次进入旋转状态都重新开始动画，连续抽到同一项也不能跳过。
+  let wasSpinning = false;
+  $: {
+    if (spinning && !wasSpinning && targetOptionId) startAnimation(targetOptionId);
+    wasSpinning = spinning;
   }
-  $: if (!targetOptionId) { prevTargetId = null; }
 
   // 根据小数格子下标计算棋子的响应式位置。
   $: tokenPos = tokenXY(tokenFloatIdx);
