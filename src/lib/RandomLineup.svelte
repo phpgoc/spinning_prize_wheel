@@ -67,6 +67,7 @@
   let rankingReordering = false;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
+  let resultOrderedNames: string[] = [];
   let lineupHistories: SavedLineup[] = [];
   let historyLoading = false;
   let historyError = '';
@@ -208,12 +209,12 @@
         ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
         : generated;
       resultOrderMode = orderMode;
+      resultOrderedNames = orderedNames;
       groupCount = result.groupCount;
       const resolvedSignature = desktopRuntime
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
-      if (desktopRuntime) await saveHistory(orderedNames, result, orderMode);
     } catch (reason) {
       result = null;
       error = messageFrom(reason, '无法生成排阵');
@@ -243,6 +244,17 @@
       historyStatus = 'error';
       error = messageFrom(reason, '排阵已生成，但无法保存历史');
     }
+  }
+
+  async function saveCurrentHistory() {
+    if (
+      !desktopRuntime
+      || !result
+      || resultOutdated
+      || historyStatus === 'saving'
+      || historyStatus === 'saved'
+    ) return;
+    await saveHistory(resultOrderedNames, result, resultOrderMode);
   }
 
   async function loadRankedUsers() {
@@ -365,9 +377,18 @@
       return;
     }
     result = historicalResult as RandomLineup;
-    const input = history.input as Partial<{ orderMode: LineupOrderMode }>;
+    const input = history.input as Partial<{
+      orderMode: LineupOrderMode;
+      orderedNames: unknown[];
+      sourceNames: unknown[];
+    }>;
     resultOrderMode = input.orderMode === 'input' ? 'input' : 'rank';
+    const savedNames = Array.isArray(input.orderedNames) ? input.orderedNames : input.sourceNames;
+    resultOrderedNames = Array.isArray(savedNames)
+      ? savedNames.filter((name): name is string => typeof name === 'string')
+      : [];
     resultSignature = inputSignature;
+    historyStatus = 'saved';
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -969,12 +990,23 @@
       <div class="lineup-result">
         <div class="result-heading">
           <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
-          {#if result}<button type="button" on:click={() => generate(resultOrderMode)}>重新随机</button>{/if}
+          {#if desktopRuntime && result}
+            <div class="history-save-control">
+              <button
+                type="button"
+                class="history-save-button"
+                disabled={resultOutdated || historyStatus === 'saving' || historyStatus === 'saved'}
+                on:click={saveCurrentHistory}
+              >{historyStatus === 'saving' ? '保存中' : historyStatus === 'saved' ? '已保存' : historyStatus === 'error' ? '重试保存' : '保存到历史'}</button>
+              {#if historyStatus === 'idle' || historyStatus === 'error'}
+                <span class:error={historyStatus === 'error'} class="history-status" role="status">
+                  {historyStatus === 'idle' ? '尚未保存' : '保存失败'}
+                </span>
+              {/if}
+            </div>
+          {/if}
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
-        {#if desktopRuntime && historyStatus !== 'idle'}
-          <div class:error={historyStatus === 'error'} class="history-status">{historyStatus === 'saving' ? '正在保存排阵记录…' : historyStatus === 'saved' ? '排阵输入与结果已保存' : '排阵记录保存失败'}</div>
-        {/if}
         {#if result}
           <div class:outdated={resultOutdated} class="lineup-table-wrap">
             <table>
@@ -1283,7 +1315,9 @@
   .result-heading > div { align-items: center; gap: 11px; }
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid rgba(231, 255, 114, 0.18); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
-  .result-heading button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.17); border-radius: 8px; color: var(--accent); }
+  .history-save-control { display: flex; align-items: center; gap: 8px; }
+  .result-heading .history-save-button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.24); border-radius: 8px; color: var(--accent); }
+  .result-heading .history-save-button:disabled { cursor: default; opacity: 0.58; }
 
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
@@ -2169,10 +2203,10 @@
   .lineup-history-list small { color: #7a842f; font-size: calc(10px * var(--font-scale, 1)); }
 
   .history-status {
-    margin-top: 10px;
+    margin: 0;
     color: #909b51;
     font-size: calc(11px * var(--font-scale, 1));
-    text-align: right;
+    white-space: nowrap;
   }
 
   .history-status.error { color: #dc725b; }
