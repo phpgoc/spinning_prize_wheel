@@ -14,8 +14,12 @@
   const size = 360;
   const center = size / 2;
   const radius = 167;
-  const bulbs = Array.from({ length: 32 });
-  const sparkles = Array.from({ length: 12 });
+  const bulbs = Array.from({ length: 48 });
+  const sparkles = Array.from({ length: 18 });
+  const sparkleChars = ['✦','✧','·','✦','✧','✦','·','✧','✦','·','✦','✧','✦','·','✧','✦','✧','·'];
+  const sparkleSizes = [13,11,9,13,11,13,9,11,13,9,13,11,13,9,11,13,11,9];
+
+  function segmentGradientId(index: number) { return `seg-metallic-${index}`; }
 
   function polar(angle: number, distance = radius) {
     const radians = (angle * Math.PI) / 180;
@@ -78,18 +82,19 @@
 
 <div class:spinning class="luxury-stage">
   <div class="velvet-aura"></div>
+  <div class="ring-glow" aria-hidden="true"></div>
   <div class="art-deco-ring ring-one"></div>
   <div class="art-deco-ring ring-two"></div>
 
   <div class="sparkles" aria-hidden="true">
     {#each sparkles as _, index}
-      <i style={`--spark-angle: ${index * 30 + 9}deg; --spark-delay: ${-index * 0.17}s`}>✦</i>
+      <i style={`--spark-angle: ${index * 20 + 9}deg; --spark-delay: ${-index * 0.11}s; --spark-size: ${sparkleSizes[index]}px`}>{sparkleChars[index]}</i>
     {/each}
   </div>
 
   <div class="marquee" aria-hidden="true">
     {#each bulbs as _, index}
-      <i style={`--bulb-angle: ${index * 11.25}deg; --bulb-delay: ${-index * 0.055}s`}></i>
+      <i style={`--bulb-angle: ${index * 7.5}deg; --bulb-delay: ${-index * 0.037}s`}></i>
     {/each}
   </div>
 
@@ -110,6 +115,17 @@
             <stop offset=".42" stop-color="#fff" stop-opacity=".04" />
             <stop offset="1" stop-color="#140b05" stop-opacity=".2" />
           </radialGradient>
+          <radialGradient id="seg-metallic" cx="180" cy="180" r="167" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff" stop-opacity=".28" />
+            <stop offset=".45" stop-color="#e8c46a" stop-opacity=".07" />
+            <stop offset="1" stop-color="#000" stop-opacity=".22" />
+          </radialGradient>
+          <radialGradient id="hub-gem-gradient" cx="36%" cy="28%" r="72%">
+            <stop offset="0" stop-color="#fff8d4" stop-opacity=".95" />
+            <stop offset=".35" stop-color="#f0c84a" stop-opacity=".9" />
+            <stop offset=".7" stop-color="#a0620e" stop-opacity=".85" />
+            <stop offset="1" stop-color="#2a1204" stop-opacity=".92" />
+          </radialGradient>
           <pattern id="luxury-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="7" height="7" fill="rgba(20,13,8,.62)" />
             <rect width="1.5" height="7" fill="rgba(236,203,119,.22)" />
@@ -117,7 +133,7 @@
         </defs>
 
         {#if options.length > 0}
-          {#each options as option, index (option.id)}
+          {#each options as option, index (option.slotId ?? option.id)}
             {@const segment = weightedSegments[index]}
             {@const position = labelPosition(segment)}
             <path
@@ -131,6 +147,7 @@
               <path d={segmentPath(segment)} fill="url(#luxury-hatch)" />
             {/if}
             <path d={segmentPath(segment)} fill="url(#luxury-glass)" class="segment-glass" />
+            <path d={segmentPath(segment)} fill="url(#seg-metallic)" class="segment-metallic" />
             <text
               x={position.x}
               y={position.y}
@@ -146,7 +163,14 @@
         {/if}
 
         <circle cx={center} cy={center} r="61" class="hub-plate" />
-        <circle cx={center} cy={center} r="51" class="hub-shadow" />
+        <circle cx={center} cy={center} r="57" class="hub-gem" />
+        <line x1="132" y1="180" x2="228" y2="180" class="hub-star-line" />
+        <line x1="180" y1="132" x2="180" y2="228" class="hub-star-line" />
+        <line x1="146" y1="146" x2="214" y2="214" class="hub-star-line" />
+        <line x1="214" y1="146" x2="146" y2="214" class="hub-star-line" />
+        <circle cx={center} cy={center} r="44" class="hub-ring" />
+        <circle cx={center} cy={center} r="30" class="hub-ring" />
+        <circle cx={center} cy={center} r="16" class="hub-ring hub-ring-inner" />
       </svg>
     </div>
     <div class="glass-sheen"></div>
@@ -179,9 +203,11 @@
     z-index: -3;
     border-radius: 50%;
     background:
-      radial-gradient(circle, rgba(117, 75, 39, 0.18) 0 47%, transparent 48%),
-      conic-gradient(from 12deg, rgba(220, 178, 85, 0.1), transparent 9% 19%, rgba(220, 178, 85, 0.08) 20%, transparent 31% 44%, rgba(220, 178, 85, 0.09) 45%, transparent 57%);
-    filter: blur(2px) drop-shadow(0 30px 30px rgba(3, 2, 1, 0.5));
+      radial-gradient(circle, rgba(117, 75, 39, 0.28) 0 47%, transparent 48%),
+      conic-gradient(from 12deg, rgba(220, 178, 85, 0.18), transparent 9% 19%, rgba(220, 178, 85, 0.14) 20%, transparent 31% 44%, rgba(220, 178, 85, 0.16) 45%, transparent 57%),
+      conic-gradient(from 65deg, transparent 8%, rgba(220, 178, 85, 0.12) 10% 18%, transparent 22% 38%, rgba(220, 178, 85, 0.10) 40% 48%, transparent 55%),
+      conic-gradient(from 130deg, rgba(180, 120, 40, 0.09) 0 12%, transparent 15% 55%, rgba(180, 120, 40, 0.08) 58%);
+    filter: blur(3px) drop-shadow(0 30px 40px rgba(3, 2, 1, 0.6));
   }
 
   .art-deco-ring {
@@ -204,6 +230,24 @@
     border: 1px dashed rgba(232, 196, 111, 0.08);
   }
 
+  .ring-glow {
+    position: absolute;
+    inset: 8%;
+    z-index: -1;
+    border-radius: 50%;
+    border: 1px solid rgba(232, 196, 111, 0.12);
+    pointer-events: none;
+  }
+
+  .spinning .ring-glow {
+    animation: ring-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes ring-pulse {
+    0%, 100% { box-shadow: 0 0 18px 4px rgba(226, 176, 71, 0.2), inset 0 0 12px rgba(226, 176, 71, 0.1); }
+    50% { box-shadow: 0 0 44px 14px rgba(226, 176, 71, 0.58), inset 0 0 26px rgba(226, 176, 71, 0.28); }
+  }
+
   .gold-frame {
     position: absolute;
     inset: 10.5%;
@@ -218,8 +262,9 @@
       0 0 0 3px #27170c,
       0 0 0 6px #f0cf78,
       0 0 0 10px #5a3817,
-      0 20px 55px rgba(0, 0, 0, 0.58),
-      0 0 42px rgba(226, 176, 71, 0.18);
+      0 20px 55px rgba(0, 0, 0, 0.65),
+      0 0 60px rgba(226, 176, 71, 0.36),
+      0 0 100px rgba(226, 176, 71, 0.16);
   }
 
   .gold-frame::before {
@@ -230,6 +275,12 @@
     border-radius: 50%;
     content: '';
     pointer-events: none;
+    animation: dotted-ring-spin 14s linear infinite;
+  }
+
+  @keyframes dotted-ring-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .luxury-rotor {
@@ -279,11 +330,31 @@
     stroke-width: 3;
   }
 
-  .hub-shadow {
-    fill: #21130b;
-    stroke: #fff0b7;
-    stroke-width: 1.5;
+  .hub-gem {
+    fill: url(#hub-gem-gradient);
+    stroke: rgba(255, 240, 188, 0.4);
+    stroke-width: 1;
   }
+
+  .hub-star-line {
+    stroke: rgba(255, 240, 188, 0.45);
+    stroke-width: 0.9;
+    pointer-events: none;
+  }
+
+  .hub-ring {
+    fill: none;
+    stroke: rgba(255, 240, 188, 0.3);
+    stroke-width: 0.9;
+    pointer-events: none;
+  }
+
+  .hub-ring-inner {
+    stroke: rgba(255, 240, 188, 0.5);
+    stroke-width: 1.1;
+  }
+
+  .segment-metallic { pointer-events: none; }
 
   .glass-sheen {
     position: absolute;
@@ -333,7 +404,7 @@
 
   @keyframes bulb-chase {
     0%, 45%, 100% { opacity: 0.28; transform: translateX(-50%) scale(0.72); }
-    18% { opacity: 1; background: #fff; box-shadow: 0 0 13px #ffd66d; transform: translateX(-50%) scale(1.22); }
+    18% { opacity: 1; background: #fff; box-shadow: 0 0 14px #ffd66d; transform: translateX(-50%) scale(1.28); }
   }
 
   .sparkles {
@@ -348,7 +419,7 @@
     position: absolute;
     inset: 0;
     color: #f1cb73;
-    font-size: calc(13px * var(--font-scale, 1));
+    font-size: calc(var(--spark-size, 13px) * var(--font-scale, 1));
     font-style: normal;
     text-shadow: 0 0 9px rgba(241, 203, 115, 0.9);
     transform: rotate(var(--spark-angle));
@@ -387,6 +458,12 @@
     background: linear-gradient(135deg, #fff3b3, #d39931 70%);
     box-shadow: inset 0 0 0 2px #ffeaa4;
     transform: translateX(-50%) rotate(45deg);
+    animation: gem-spin 8s linear infinite;
+  }
+
+  @keyframes gem-spin {
+    from { transform: translateX(-50%) rotate(45deg); }
+    to { transform: translateX(-50%) rotate(405deg); }
   }
 
   .pointer-tip {

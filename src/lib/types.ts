@@ -30,6 +30,7 @@ export interface SavedDraw {
 
 export interface WheelOption {
   id: string;
+  slotId?: string;
   label: string;
   weight: number;
   color: string;

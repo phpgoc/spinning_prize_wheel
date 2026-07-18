@@ -113,7 +113,7 @@
         <circle cx={center} cy={center} r="158" class="outer-rim" />
 
         {#if options.length > 0}
-          {#each options as option, index (option.id)}
+          {#each options as option, index (option.slotId ?? option.id)}
             {@const segment = weightedSegments[index]}
             {@const position = labelPosition(segment)}
             <path

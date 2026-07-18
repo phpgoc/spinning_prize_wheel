@@ -749,6 +749,35 @@ p {
   filter: grayscale(1);
 }
 
+/* 俄罗斯轮盘中显示每个候选项的剩余生命数。 */
+.life-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  transition: opacity 200ms ease, filter 200ms ease, transform 200ms ease;
+}
+
+.life-badge small {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 0 3px rgba(0,0,0,0.8);
+}
+
+.life-badge.out {
+  opacity: 0.2;
+  filter: grayscale(1);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: scale(0.8);
+}
+
 .wheel-wrap {
   position: relative;
   display: grid;
@@ -1407,7 +1436,7 @@ kbd {
   .panel { padding: 23px 16px; }
 }
 
-/* Two-column draw workspace and accordion navigation */
+/* 双栏抽奖工作区与折叠导航。 */
 .workspace {
   grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
   grid-template-rows: repeat(5, 58px) 1fr;

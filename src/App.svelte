@@ -2,9 +2,9 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
   import LuxuryWheel from './lib/LuxuryWheel.svelte';
+  import MonopolyWheel from './lib/MonopolyWheel.svelte';
   import PrizeEditor from './lib/PrizeEditor.svelte';
   import RandomLineup from './lib/RandomLineup.svelte';
-  import ThreeWheel from './lib/ThreeWheel.svelte';
   import Wheel from './lib/Wheel.svelte';
   import { changeAutoSaveHistory } from './lib/auto-save';
   import {
@@ -27,7 +27,11 @@
     normalizeFontScale,
     positiveNumberOrFallback,
   } from './lib/ui-settings';
-  import { createWeightedSegments } from './lib/wheel-geometry';
+  import {
+    createRouletteWheelSlots,
+    createWeightedSegments,
+    pickWheelSegmentIndex,
+  } from './lib/wheel-geometry';
   import type {
     AnimationStyle,
     BatchSimulation,
@@ -43,6 +47,8 @@
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
   const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
+  const ROULETTE_STATE_KEY = 'fortuna-roulette-state-v1';
+  const MAX_ROULETTE_ROUNDS = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
     { id: 'candidate-a', name: '林小满', weight: 1, color: '#ff7557', enabled: true },
@@ -124,10 +130,12 @@
 
   let rotation = 0;
   let isSpinning = false;
-  let eliminatedIds: string[] = [];
+  // 记录本局每个候选项已经被命中的次数；剩余权重就是剩余生命数。
+  let rouletteHits: Record<string, number> = {};
   let rouletteFinished = false;
   let rouletteRound = 1;
   let singleAttempt = 0;
+  let monopolyTargetId: string | null = null;
   let singleCompleted = 0;
   let records: DrawRecord[] = [];
   let currentDrawId = createId('draw');
@@ -147,8 +155,9 @@
   $: wheelOptions = enabledPrizes.length === 0
     ? []
     : buildWheelOptions(prizes, retryEnabled, retryWeight);
-  $: eliminatedSet = new Set(eliminatedIds);
-  $: rouletteRemaining = enabledPrizes.filter((prize) => !eliminatedSet.has(prize.id));
+  $: rouletteRemaining = enabledPrizes.filter(
+    (p) => (p.weight - (rouletteHits[p.id] ?? 0)) > 0,
+  );
   $: validCompleted = records.filter(
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
@@ -175,6 +184,19 @@
   $: parsedImportOptions = parseOptionText(importText);
   $: continuousCompleted = validCompleted;
   $: continuousRemaining = remainingResultSlots(continuousTarget, continuousCompleted);
+  // 这里直接读取 rouletteHits，确保每次命中后圆盘立即减少一个生命扇区。
+  $: activeDrawOptions = (() => {
+    if (mode !== 'roulette') return wheelOptions;
+    const effective = prizes
+      .filter((p) => p.enabled)
+      .map((p) => ({ ...p, weight: Math.max(0, p.weight - (rouletteHits[p.id] ?? 0)) }))
+      .filter((p) => p.weight > 0);
+    if (effective.length === 0) return wheelOptions;
+    return buildWheelOptions(effective, retryEnabled, retryWeight);
+  })();
+  $: displayedWheelOptions = mode === 'roulette'
+    ? createRouletteWheelSlots(activeDrawOptions)
+    : wheelOptions;
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -381,7 +403,7 @@
 
   function applyCommonSelection(selection: CommonSelection) {
     if (!updatePrizes(selection.prizes.map((prize) => ({ ...prize })))) return;
-    eliminatedIds = [];
+    rouletteHits = {};
     rouletteFinished = false;
     singleAttempt = 0;
     importOpen = false;
@@ -489,11 +511,13 @@
     records = [];
     batchResult = null;
     batchRunAt = null;
-    eliminatedIds = [];
+    rouletteHits = {};
     rouletteFinished = false;
     rouletteRound = 1;
     singleAttempt = 0;
     singleCompleted = 0;
+    monopolyTargetId = null;
+    localStorage.removeItem(ROULETTE_STATE_KEY);
     drawSidePanel = 'candidates';
     exitCandidateKeyboard();
     exitCommonKeyboard();
@@ -736,10 +760,12 @@
   function setMode(next: DrawMode) {
     if (isSpinning || mode === next) return;
     mode = next;
-    eliminatedIds = [];
+    rouletteHits = {};
     rouletteFinished = false;
     rouletteRound = 1;
     singleAttempt = 0;
+    monopolyTargetId = null;
+    localStorage.removeItem(ROULETTE_STATE_KEY);
     result = next === 'selected'
       ? {
           eyebrow: '选中模式',
@@ -792,17 +818,27 @@
     if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
       selectedPrizeId = null;
     }
-    eliminatedIds = eliminatedIds.filter((id) => next.some((prize) => prize.id === id));
+    // 删除已经不存在的候选项对应的命中状态。
+    const validIds = new Set(next.map((p) => p.id));
+    rouletteHits = Object.fromEntries(
+      Object.entries(rouletteHits).filter(([id]) => validIds.has(id)),
+    );
     if (mode === 'roulette') {
       rouletteFinished = false;
     }
     return true;
   }
 
+  /** 返回按本局命中次数扣除生命后的候选项。 */
+  function rouletteEffectivePrizes(): Prize[] {
+    return prizes
+      .filter((p) => p.enabled)
+      .map((p) => ({ ...p, weight: Math.max(0, p.weight - (rouletteHits[p.id] ?? 0)) }))
+      .filter((p) => p.weight > 0);
+  }
+
   function currentDrawOptions(): WheelOption[] {
-    return mode === 'selected'
-      ? wheelOptions
-      : buildWheelOptions(prizes, retryEnabled, retryWeight, eliminatedSet);
+    return activeDrawOptions;
   }
 
   function normalizeContinuousTarget() {
@@ -859,18 +895,28 @@
     }
 
     const picked = pickWeighted(options);
-    const index = wheelOptions.findIndex((option) => option.id === picked.id);
-    const weightedSegment = createWeightedSegments(wheelOptions)[index];
-    const current = ((rotation % 360) + 360) % 360;
-    const targetAngle = (weightedSegment.startRatio + weightedSegment.sizeRatio / 2) * 360;
-    const target = ((-targetAngle % 360) + 360) % 360;
-    const extraTurns = animationStyle === 'simple' ? 4 : animationStyle === 'luxury' ? 7 : 6;
-    const delta = ((target - current + 360) % 360) + (extraTurns + Math.floor(Math.random() * 2)) * 360;
+    const usesMonopoly = animationStyle === 'threeD' && mode !== 'roulette';
 
-    rotation += delta;
+    if (usesMonopoly) {
+      // 大富翁棋盘由组件根据候选项编号计算走格终点。
+      monopolyTargetId = picked.id;
+    } else {
+      // 俄罗斯模式从多个同名生命扇区中选择一个真实落点。
+      const rotationOptions = mode === 'roulette' ? displayedWheelOptions : wheelOptions;
+      const index = pickWheelSegmentIndex(rotationOptions, picked.id);
+      if (index < 0) return;
+      const weightedSegment = createWeightedSegments(rotationOptions)[index];
+      const current = ((rotation % 360) + 360) % 360;
+      const targetAngle = (weightedSegment.startRatio + weightedSegment.sizeRatio / 2) * 360;
+      const target = ((-targetAngle % 360) + 360) % 360;
+      const extraTurns = animationStyle === 'simple' ? 4 : 7;
+      const delta = ((target - current + 360) % 360) + (extraTurns + Math.floor(Math.random() * 2)) * 360;
+      rotation += delta;
+    }
+
     isSpinning = true;
     result = {
-      eyebrow: animationStyle === 'threeD' ? '空间旋转中' : '命运正在选择',
+      eyebrow: usesMonopoly ? '棋盘走格中' : '命运正在选择',
       title: '别眨眼…',
       detail: `全程 ${durationSeconds.toFixed(1)} 秒，末段会平滑减速后揭晓`,
       tone: 'idle',
@@ -996,15 +1042,25 @@
       return;
     }
 
-    const activeBefore = enabledPrizes.filter((prize) => !eliminatedSet.has(prize.id));
-    const hit = activeBefore.find((prize) => prize.id === picked.id);
+    const activeBefore = rouletteEffectivePrizes();
+    const hit = activeBefore.find((p) => p.id === picked.id);
     if (!hit) return;
 
-    const remaining = activeBefore.filter((prize) => prize.id !== picked.id);
-    eliminatedIds = [...eliminatedIds, picked.id];
+    // 每次命中只扣除一条命。
+    const hitsBefore = rouletteHits[picked.id] ?? 0;
+    rouletteHits = { ...rouletteHits, [picked.id]: hitsBefore + 1 };
 
-    if (remaining.length === 1) {
-      const winner = remaining[0];
+    const originalWeight = prizes.find((p) => p.id === picked.id)?.weight ?? 1;
+    const hitsNow = hitsBefore + 1;
+    const fullyEliminated = hitsNow >= originalWeight;
+    const livesLeft = originalWeight - hitsNow;
+
+    // 命中后重新计算存活候选项。
+    const activeAfter = rouletteEffectivePrizes();
+
+    if (activeAfter.length <= 1) {
+      const winner = activeAfter[0] ?? enabledPrizes.find((p) => p.id !== picked.id);
+      if (!winner) return;
       rouletteFinished = true;
       addRecord({
         round: rouletteRound,
@@ -1012,10 +1068,10 @@
         optionId: winner.id,
         label: winner.name,
         outcome: 'winner',
-        detail: `${hit.name} 淘汰，${winner.name} 成为第 ${rouletteRound} 局赢家`,
+        detail: `${hit.name} 最后出局，${winner.name} 成为第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局赢家`,
       });
       result = {
-        eyebrow: `第 ${rouletteRound} 局 · 最终赢家`,
+        eyebrow: `第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局 · 最终赢家`,
         title: winner.name,
         detail: normalizedRewardAmount() > 0
           ? `${hit.name} 最后出局 · 奖励金额 ${formatAmount(normalizedRewardAmount())}`
@@ -1029,12 +1085,16 @@
         optionId: hit.id,
         label: hit.name,
         outcome: 'eliminated',
-        detail: `${hit.name} 淘汰，剩余 ${remaining.length} 项`,
+        detail: fullyEliminated
+          ? `${hit.name} 全部命中 · 彻底出局，剩余 ${activeAfter.length} 项`
+          : `${hit.name} 命中 · 还剩 ${livesLeft} 命，比例缩小，剩余 ${activeAfter.length} 项`,
       });
       result = {
-        eyebrow: `第 ${rouletteRound} 局 · 淘汰`,
+        eyebrow: `第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局 · ${fullyEliminated ? '淘汰' : '命中'}`,
         title: hit.name,
-        detail: `离开轮盘，场上还剩 ${remaining.length} 个候选项。`,
+        detail: fullyEliminated
+          ? `${hit.name} 彻底出局，场上还剩 ${activeAfter.length} 个候选项。`
+          : `${hit.name} 损失1命，还剩 ${livesLeft} 命，转盘比例已缩小。`,
         tone: 'danger',
       };
     }
@@ -1057,16 +1117,26 @@
 
   function startNewRouletteRound() {
     if (isSpinning) return;
+    if (rouletteRound >= MAX_ROULETTE_ROUNDS) {
+      result = {
+        eyebrow: `俄罗斯轮盘 · 已达 ${MAX_ROULETTE_ROUNDS} 局上限`,
+        title: '本次轮盘已结束',
+        detail: '点击"新的抽奖"开始新一轮。',
+        tone: 'idle',
+      };
+      return;
+    }
     if (resultLimitReached) {
       showResultLimitReached();
       return;
     }
     rouletteRound += 1;
     singleAttempt = 0;
-    eliminatedIds = [];
+    rouletteHits = {};
     rouletteFinished = false;
+    monopolyTargetId = null;
     result = {
-      eyebrow: `俄罗斯轮盘 · 第 ${rouletteRound} 局`,
+      eyebrow: `俄罗斯轮盘 · 第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局`,
       title: '所有选项重新入场',
       detail: '继续旋转，逐一淘汰，直到最后的赢家出现。',
       tone: 'idle',
@@ -1215,7 +1285,7 @@
     retryWeight = 0.65;
     continuousTarget = 0;
     fontScale = DEFAULT_FONT_SCALE;
-    eliminatedIds = [];
+    rouletteHits = {};
     rouletteFinished = false;
     result = {
       eyebrow: '设置已还原',
@@ -1576,7 +1646,7 @@
             on:click={() => (animationStyle = 'simple')}
           >
             <span class="motion-icon simple-icon"><i></i></span>
-            <strong>简单</strong>
+            <strong>平凡</strong>
             <small>清爽直接</small>
           </button>
           <button
@@ -1586,8 +1656,8 @@
             on:click={() => (animationStyle = 'luxury')}
           >
             <span class="motion-icon luxury-icon">✦</span>
-            <strong>奢华</strong>
-            <small>光环粒子</small>
+            <strong>高级</strong>
+            <small>璀璨华丽</small>
           </button>
           <button
             type="button"
@@ -1595,9 +1665,9 @@
             disabled={isSpinning}
             on:click={() => (animationStyle = 'threeD')}
           >
-            <span class="motion-icon cube-icon">◇</span>
-            <strong>3D</strong>
-            <small>立体轮盘</small>
+            <span class="motion-icon board-icon">⬡</span>
+            <strong>大富翁</strong>
+            <small>棋盘走格</small>
           </button>
         </div>
       </section>
@@ -1721,14 +1791,19 @@
         <div class="draw-core">
       {#if mode === 'roulette'}
         <div class="roulette-track">
-          <span>第 {rouletteRound} 局</span>
+          <span>第 {rouletteRound}/{MAX_ROULETTE_ROUNDS} 局</span>
           <div class="survivor-dots" aria-label={`剩余 ${rouletteRemaining.length} 项`}>
             {#each enabledPrizes as prize (prize.id)}
-              <i
-                class:out={eliminatedSet.has(prize.id)}
-                style:background={prize.color}
-                title={`${prize.name}${eliminatedSet.has(prize.id) ? '（已淘汰）' : ''}`}
-              ></i>
+              {@const livesLeft = Math.max(0, prize.weight - (rouletteHits[prize.id] ?? 0))}
+              {@const alive = livesLeft > 0}
+              <span
+                class="life-badge"
+                class:out={!alive}
+                style:background={alive ? prize.color : 'rgba(80,80,80,0.4)'}
+                title={alive ? `${prize.name}（剩 ${livesLeft} 命）` : `${prize.name}（已出局）`}
+              >
+                {#if prize.weight > 1}<small>{livesLeft}</small>{/if}
+              </span>
             {/each}
           </div>
           <strong>{rouletteRemaining.length} 项存活</strong>
@@ -1736,23 +1811,23 @@
       {/if}
 
       <div class="wheel-wrap">
-        {#if animationStyle === 'threeD'}
-          <ThreeWheel
+        {#if animationStyle === 'threeD' && mode !== 'roulette'}
+          <!-- 大富翁棋盘：俄罗斯模式降级到高级转盘 -->
+          <MonopolyWheel
             options={wheelOptions}
-            {rotation}
+            targetOptionId={monopolyTargetId}
             duration={durationSeconds * 1000}
-            {eliminatedIds}
             spinning={isSpinning}
             disabled={spinDisabled}
             centerLabel={rouletteFinished ? '结束' : '开始'}
             onSpin={spin}
           />
-        {:else if animationStyle === 'luxury'}
+        {:else if animationStyle === 'luxury' || (animationStyle === 'threeD' && mode === 'roulette')}
           <LuxuryWheel
-            options={wheelOptions}
+            options={displayedWheelOptions}
             {rotation}
             duration={durationSeconds * 1000}
-            {eliminatedIds}
+            eliminatedIds={[]}
             spinning={isSpinning}
             disabled={spinDisabled}
             centerLabel={rouletteFinished ? '结束' : '开启'}
@@ -1760,11 +1835,11 @@
           />
         {:else}
           <Wheel
-            options={wheelOptions}
+            options={displayedWheelOptions}
             {rotation}
             duration={durationSeconds * 1000}
             {animationStyle}
-            {eliminatedIds}
+            eliminatedIds={[]}
             spinning={isSpinning}
             disabled={spinDisabled}
             centerLabel={rouletteFinished ? '结束' : '开始'}
@@ -1784,8 +1859,12 @@
             <span>{result.eyebrow}</span>
             <strong>{result.title}</strong>
             {#if mode === 'roulette' && rouletteFinished}
-              <button type="button" disabled={resultLimitReached} on:click={startNewRouletteRound}>
-                {resultLimitReached ? '已达上限' : '新一局'}
+              <button
+                type="button"
+                disabled={resultLimitReached || rouletteRound >= MAX_ROULETTE_ROUNDS}
+                on:click={startNewRouletteRound}
+              >
+                {resultLimitReached ? '已达上限' : rouletteRound >= MAX_ROULETTE_ROUNDS ? `满 ${MAX_ROULETTE_ROUNDS} 局` : '新一局'}
               </button>
             {/if}
           </div>
