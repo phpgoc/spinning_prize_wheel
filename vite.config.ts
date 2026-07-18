@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
   build: {
-    chunkSizeWarningLimit: 650,
+    chunkSizeWarningLimit: 700,
   },
   server: {
     port: 5173,

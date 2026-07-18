@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import LuxuryWheel from './lib/LuxuryWheel.svelte';
   import PrizeEditor from './lib/PrizeEditor.svelte';
+  import ThreeWheel from './lib/ThreeWheel.svelte';
   import Wheel from './lib/Wheel.svelte';
   import {
     RETRY_ID,
@@ -47,8 +48,6 @@
     percent: number;
   }
 
-  type ThreeWheelComponent = typeof import('./lib/ThreeWheel.svelte').default;
-
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
   let animationStyle: AnimationStyle = 'luxury';
@@ -63,8 +62,6 @@
   let shortcutsOpen = false;
   let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
-  let ThreeWheelRenderer: ThreeWheelComponent | null = null;
-  let threeWheelLoading = false;
 
   let rotation = 0;
   let isSpinning = false;
@@ -99,9 +96,6 @@
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
   $: parsedImportOptions = parseOptionText(importText);
-  $: if (animationStyle === 'threeD' && !ThreeWheelRenderer && !threeWheelLoading) {
-    loadThreeWheel();
-  }
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -155,15 +149,6 @@
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  async function loadThreeWheel() {
-    threeWheelLoading = true;
-    try {
-      ThreeWheelRenderer = (await import('./lib/ThreeWheel.svelte')).default;
-    } finally {
-      threeWheelLoading = false;
-    }
   }
 
   function setMode(next: DrawMode) {
@@ -779,21 +764,16 @@
 
       <div class="wheel-wrap">
         {#if animationStyle === 'threeD'}
-          {#if ThreeWheelRenderer}
-            <svelte:component
-              this={ThreeWheelRenderer}
-              options={wheelOptions}
-              {rotation}
-              duration={durationSeconds * 1000}
-              {eliminatedIds}
-              spinning={isSpinning}
-              disabled={spinDisabled}
-              centerLabel={rouletteFinished ? '结束' : '开始'}
-              onSpin={spin}
-            />
-          {:else}
-            <div class="three-loading"><i></i><span>正在载入 Three.js 立体轮盘…</span></div>
-          {/if}
+          <ThreeWheel
+            options={wheelOptions}
+            {rotation}
+            duration={durationSeconds * 1000}
+            {eliminatedIds}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开始'}
+            onSpin={spin}
+          />
         {:else if animationStyle === 'luxury'}
           <LuxuryWheel
             options={wheelOptions}

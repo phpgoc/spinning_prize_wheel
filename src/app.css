@@ -782,31 +782,6 @@ p {
   place-items: center;
 }
 
-.three-loading {
-  display: flex;
-  min-height: 360px;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-  color: #8e9184;
-  font-family: var(--font-mono);
-  font-size: 8px;
-}
-
-.three-loading i {
-  width: 34px;
-  height: 34px;
-  border: 2px solid rgba(231, 255, 114, 0.12);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: loading-spin 800ms linear infinite;
-}
-
-@keyframes loading-spin {
-  to { transform: rotate(360deg); }
-}
-
 .result-card {
   position: relative;
   z-index: 3;
