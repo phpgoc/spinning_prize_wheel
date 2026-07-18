@@ -1385,6 +1385,19 @@
     const editing = target?.matches('input, textarea, select, button, [contenteditable="true"]') ?? false;
     const shortcutKey = event.code === 'Space' ? 'space' : key;
 
+    if (event.key === 'Enter' && event.altKey && target === importTextarea) {
+      event.preventDefault();
+      applyImportedOptions();
+      return;
+    }
+
+    if (event.key === 'Enter' && !modifier && !event.altKey && !event.shiftKey && target?.classList.contains('name-input')) {
+      event.preventDefault();
+      (target as HTMLInputElement).blur();
+      candidateKeyboardActive = true;
+      return;
+    }
+
     if (event.key === 'Escape') {
       if (candidateKeyboardActive) {
         event.preventDefault();
@@ -2301,7 +2314,8 @@
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
             <div><span>选择奖励金额</span><kbd>X</kbd></div>
-            <div><span>编辑当前文字</span><kbd>Enter</kbd></div>
+            <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
+            <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
           </div>
         </section>
 

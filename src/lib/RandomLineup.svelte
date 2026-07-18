@@ -41,6 +41,7 @@
   let rankingError = '';
   let desktopPanel: DesktopPanel | null = 'ranking';
   let editingUserId: number | null = null;
+  let editingRankField: 'name' | 'aliases' = 'name';
   let selectedRankedUserId: number | null = null;
   let userName = '';
   let userAliases = '';
@@ -253,17 +254,18 @@
     }
   }
 
-  async function editRankedUser(user: RankedUser, focus: 'none' | 'name' | 'aliases' = 'none') {
+  async function editRankedUser(user: RankedUser, focus: 'name' | 'aliases') {
     desktopPanel = 'ranking';
     selectedRankedUserId = user.id;
     editingUserId = user.id;
+    editingRankField = focus;
     userName = user.name;
     userAliases = user.aliases
       .filter((alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'))
       .map((alias) => alias.name)
       .join(' ');
     await tick();
-    if (focus === 'name') {
+    if (editingRankField === 'name') {
       userNameInput?.focus();
       userNameInput?.select();
     } else if (focus === 'aliases') {
@@ -359,6 +361,7 @@
 
   function resetUserForm() {
     editingUserId = null;
+    editingRankField = 'name';
     userName = '';
     userAliases = '';
     userNameInput = null;
@@ -398,7 +401,7 @@
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
     selectedRankedUserId = userId;
     if (rankingReordering || event.button !== 0) return;
-    if ((event.target as HTMLElement).closest('button')) return;
+    if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
     pendingRankDragUserId = userId;
     rankDragPointerId = event.pointerId;
     rankDragStartX = event.clientX;
@@ -675,7 +678,7 @@
       <aside class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
-            <span>排名与别名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
+            <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
             <div class:dragging={draggingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
@@ -707,12 +710,30 @@
                       >
                         <span class="rank-number">{user.rank}</span>
                         <div class="ranked-user-content">
-                          <div class="ranked-user-heading">
-                            <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                            <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                          </div>
-                          <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                          {#if editingUserId === user.id}
+                            <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
+                              <div>
+                                {#if editingRankField === 'name'}
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                {:else}
+                                  <strong>{userName}</strong>
+                                {/if}
+                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
+                              </div>
+                              {#if editingRankField === 'aliases'}
+                                <input bind:this={userAliasInput} bind:value={userAliases} aria-label="添加别名" placeholder="输入别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                              {:else}
+                                <small>{otherAliasSummary(user)}</small>
+                              {/if}
+                            </form>
+                          {:else}
+                            <div class="ranked-user-heading">
+                              <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                              <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                              <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                            </div>
+                            <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                          {/if}
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
                         {#if draggingUserId !== null && draggingUserId !== user.id}
@@ -743,12 +764,30 @@
                       >
                         <span class="rank-number">—</span>
                         <div class="ranked-user-content">
-                          <div class="ranked-user-heading">
-                            <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                            <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                          </div>
-                          <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                          {#if editingUserId === user.id}
+                            <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
+                              <div>
+                                {#if editingRankField === 'name'}
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                {:else}
+                                  <strong>{userName}</strong>
+                                {/if}
+                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
+                              </div>
+                              {#if editingRankField === 'aliases'}
+                                <input bind:this={userAliasInput} bind:value={userAliases} aria-label="添加别名" placeholder="输入别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                              {:else}
+                                <small>{otherAliasSummary(user)}</small>
+                              {/if}
+                            </form>
+                          {:else}
+                            <div class="ranked-user-heading">
+                              <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                              <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                              <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                            </div>
+                            <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                          {/if}
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
                         {#if draggingUserId !== null && draggingUserId !== user.id}<div class="swap-drop-guide" aria-hidden="true"></div>{/if}
@@ -757,15 +796,16 @@
                   </section>
                 {/if}
               </div>
+              {#if editingUserId === null}
               <form class="rank-person-form" on:submit|preventDefault={saveRankedUser}>
                 <div class="rank-form-heading">
-                  <strong>{editingUserId === null ? '添加' : '编辑'}</strong>
-                  {#if editingUserId !== null}<button type="button" on:click={resetUserForm}>取消编辑</button>{/if}
+                  <strong>添加</strong>
                 </div>
                 <label><span>名称</span><input bind:this={userNameInput} maxlength="80" required bind:value={userName} placeholder="名称" /></label>
                 <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="当前名称会自动加入别名表" /></label>
                 <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
               </form>
+              {/if}
             </div>
           {/if}
         </section>
@@ -1579,15 +1619,6 @@
     font-size: calc(13px * var(--font-scale, 1));
   }
 
-  .rank-form-heading button {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--lineup-dim-on-light);
-    cursor: pointer;
-    font-size: calc(11px * var(--font-scale, 1));
-  }
-
   .rank-manager form > label {
     display: grid;
     grid-template-columns: 62px minmax(0, 1fr);
@@ -1827,6 +1858,63 @@
     margin-top: 7px;
     color: var(--lineup-dim-on-light);
     font-size: calc(12px * var(--font-scale, 1));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inline-rank-edit {
+    display: grid;
+    min-width: 0;
+    gap: 6px !important;
+  }
+
+  .inline-rank-edit > div {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .inline-rank-edit > div > input,
+  .inline-rank-edit > div > strong {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .inline-rank-edit > div > strong {
+    overflow: hidden;
+    font-size: calc(14px * var(--font-scale, 1));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inline-rank-edit input {
+    padding: 5px 7px;
+    font-size: calc(12px * var(--font-scale, 1));
+  }
+
+  .inline-rank-edit > div > span {
+    display: flex;
+    gap: 4px;
+  }
+
+  .inline-rank-edit button {
+    width: 25px;
+    height: 25px;
+    padding: 0;
+    border: 1px solid rgba(36, 37, 31, 0.12);
+    border-radius: 6px;
+    background: #f4f2eb;
+    color: #68752b;
+    cursor: pointer;
+  }
+
+  .inline-rank-edit button:last-child { color: #9b5a4b; }
+
+  .inline-rank-edit small {
+    overflow: hidden;
+    color: var(--lineup-dim-on-light);
+    font-size: calc(11px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
