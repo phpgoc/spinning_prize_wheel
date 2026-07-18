@@ -4,6 +4,7 @@ import {
   MAX_FONT_SCALE,
   MIN_FONT_SCALE,
   normalizeFontScale,
+  positiveNumberOrFallback,
 } from './ui-settings';
 
 describe('界面字号设置', () => {
@@ -19,5 +20,17 @@ describe('界面字号设置', () => {
 
   test('字号按十分之一倍保存', () => {
     expect(normalizeFontScale(1.26)).toBe(1.3);
+  });
+
+  test('正数输入接受任意正小数', () => {
+    expect(positiveNumberOrFallback('0.0001', 0.65)).toBe(0.0001);
+    expect(positiveNumberOrFallback(128.75, 0.65)).toBe(128.75);
+  });
+
+  test('非法正数输入恢复到编辑前数值', () => {
+    expect(positiveNumberOrFallback('', 0.65)).toBe(0.65);
+    expect(positiveNumberOrFallback(0, 0.65)).toBe(0.65);
+    expect(positiveNumberOrFallback(-2, 0.65)).toBe(0.65);
+    expect(positiveNumberOrFallback('oops', 0.65)).toBe(0.65);
   });
 });

@@ -9,3 +9,12 @@ export function normalizeFontScale(value: unknown): number {
   const clamped = Math.min(MAX_FONT_SCALE, Math.max(MIN_FONT_SCALE, parsed));
   return Math.round(clamped * 10) / 10;
 }
+
+/** 只接受有限正数；编辑中的空值或非法值恢复到上一次有效值。 */
+export function positiveNumberOrFallback(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+  const safeFallback = Number(fallback);
+  return Number.isFinite(safeFallback) && safeFallback > 0 ? safeFallback : 1;
+}

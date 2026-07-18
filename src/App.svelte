@@ -22,7 +22,11 @@
     remainingResultSlots,
   } from './lib/draw-limit';
   import { parseOptionText } from './lib/parse-options';
-  import { DEFAULT_FONT_SCALE, normalizeFontScale } from './lib/ui-settings';
+  import {
+    DEFAULT_FONT_SCALE,
+    normalizeFontScale,
+    positiveNumberOrFallback,
+  } from './lib/ui-settings';
   import { createWeightedSegments } from './lib/wheel-geometry';
   import type {
     AnimationStyle,
@@ -87,6 +91,7 @@
   let rewardAmount = 0;
   let retryEnabled = true;
   let retryWeight = 0.65;
+  let retryWeightBeforeEdit = retryWeight;
   let batchCount = 100;
   let batchTab: 'stats' | 'history' = 'stats';
   let importOpen = false;
@@ -221,7 +226,7 @@
           rewardAmount = Math.max(0, parsed.rewardAmount);
         }
         if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
-        if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
+        retryWeight = positiveNumberOrFallback(parsed.retryWeight, 0.65);
         if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
         if (typeof parsed.continuousTarget === 'number') {
           continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
@@ -802,6 +807,17 @@
 
   function normalizeContinuousTarget() {
     continuousTarget = normalizeResultLimit(continuousTarget, validCompleted);
+  }
+
+  function beginRetryWeightEdit(event: FocusEvent) {
+    retryWeightBeforeEdit = positiveNumberOrFallback(retryWeight, 0.65);
+    (event.currentTarget as HTMLInputElement).select();
+  }
+
+  function finishRetryWeightEdit(event: FocusEvent) {
+    const input = event.currentTarget as HTMLInputElement;
+    retryWeight = positiveNumberOrFallback(input.value, retryWeightBeforeEdit);
+    input.value = String(retryWeight);
   }
 
   function showResultLimitReached() {
@@ -1519,12 +1535,12 @@
           <label class="inline-number">
             <span>重来权重</span>
             <input
-              type="number"
-              min="0.01"
-              max="100"
-              step="0.05"
-              bind:value={retryWeight}
+              type="text"
+              inputmode="decimal"
+              value={retryWeight}
               disabled={isSpinning}
+              on:focus={beginRetryWeightEdit}
+              on:blur={finishRetryWeightEdit}
             />
           </label>
         {/if}
