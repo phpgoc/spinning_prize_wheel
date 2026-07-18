@@ -13,6 +13,7 @@
     simulateBatch,
   } from './lib/draw';
   import {
+    areCandidateChangesLocked,
     clampRequestedResults,
     isResultLimitReached,
     normalizeResultLimit,
@@ -143,6 +144,11 @@
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
   $: resultLimitReached = isResultLimitReached(continuousTarget, validCompleted);
+  $: candidateChangesLocked = areCandidateChangesLocked(
+    continuousTarget,
+    records.length,
+    isSpinning,
+  );
   $: spinDisabled =
     enabledPrizes.length < 2 ||
     resultLimitReached ||
@@ -357,8 +363,7 @@
   }
 
   function applyCommonSelection(selection: CommonSelection) {
-    if (isSpinning) return;
-    updatePrizes(selection.prizes.map((prize) => ({ ...prize })));
+    if (!updatePrizes(selection.prizes.map((prize) => ({ ...prize })))) return;
     eliminatedIds = [];
     rouletteFinished = false;
     singleAttempt = 0;
@@ -605,9 +610,8 @@
   }
 
   function addPrize() {
-    if (isSpinning) return;
     const id = createId('prize');
-    updatePrizes([
+    if (!updatePrizes([
       ...prizes,
       {
         id,
@@ -616,7 +620,7 @@
         color: importPalette[prizes.length % importPalette.length],
         enabled: true,
       },
-    ]);
+    ])) return;
     void selectPrize(id);
   }
 
@@ -632,7 +636,7 @@
   }
 
   function toggleSelectedPrize() {
-    if (isSpinning || !selectedPrizeId) return;
+    if (!selectedPrizeId) return;
     const selected = prizes.find((prize) => prize.id === selectedPrizeId);
     if (!selected) return;
     updatePrizes(prizes.map((prize) => (
@@ -641,7 +645,7 @@
   }
 
   function adjustSelectedPrizeWeight(delta: -1 | 1) {
-    if (isSpinning || !selectedPrizeId) return;
+    if (!selectedPrizeId) return;
     updatePrizes(prizes.map((prize) => (
       prize.id === selectedPrizeId
         ? { ...prize, weight: Math.max(1, prize.weight + delta) }
@@ -659,12 +663,12 @@
   }
 
   function deleteSelectedPrize() {
-    if (isSpinning || !selectedPrizeId) return;
+    if (!selectedPrizeId) return;
     const currentIndex = prizes.findIndex((prize) => prize.id === selectedPrizeId);
     if (currentIndex < 0) return;
     const next = prizes.filter((prize) => prize.id !== selectedPrizeId);
     const nextSelected = next[Math.min(currentIndex, next.length - 1)]?.id ?? null;
-    updatePrizes(next);
+    if (!updatePrizes(next)) return;
     void selectPrize(nextSelected);
   }
 
@@ -690,7 +694,25 @@
         };
   }
 
-  function updatePrizes(next: Prize[]) {
+  function candidateChangesAreLocked(): boolean {
+    return areCandidateChangesLocked(continuousTarget, records.length, isSpinning);
+  }
+
+  function guardCandidateChanges(): boolean {
+    if (!candidateChangesAreLocked()) return false;
+    if (!isSpinning) {
+      result = {
+        eyebrow: '候选项已锁定',
+        title: '当前受限抽奖已经开始',
+        detail: '开始新的抽奖，或把有效结果上限设为 0 后再修改候选项。',
+        tone: 'danger',
+      };
+    }
+    return true;
+  }
+
+  function updatePrizes(next: Prize[]): boolean {
+    if (guardCandidateChanges()) return false;
     prizes = normalizePrizes(next);
     if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
       selectedPrizeId = null;
@@ -699,6 +721,7 @@
     if (mode === 'roulette') {
       rouletteFinished = false;
     }
+    return true;
   }
 
   function currentDrawOptions(): WheelOption[] {
@@ -1119,7 +1142,7 @@
   }
 
   function resetSettings() {
-    if (isSpinning) return;
+    if (guardCandidateChanges()) return;
     prizes = defaultPrizes.map((prize) => ({ ...prize }));
     selectedPrizeId = null;
     animationStyle = 'luxury';
@@ -1139,13 +1162,15 @@
   }
 
   async function openImporter() {
+    if (guardCandidateChanges()) return;
+    drawSidePanel = 'candidates';
     importOpen = true;
     await tick();
     importTextarea?.focus();
   }
 
   function applyImportedOptions() {
-    if (parsedImportOptions.length === 0) return;
+    if (parsedImportOptions.length === 0 || guardCandidateChanges()) return;
     const existingNames = new Set(
       prizes.map((prize) => prize.name.toLocaleLowerCase('zh-CN')),
     );
@@ -1162,7 +1187,7 @@
       }));
 
     const next = [...base, ...additions];
-    updatePrizes(next);
+    if (!updatePrizes(next)) return;
     importText = '';
     importOpen = false;
     result = {
@@ -1551,7 +1576,7 @@
                     >×</button>
                   </div>
                   <p>{selection.prizes.slice(0, 4).map((prize) => prize.name).join('、')}{selection.prizes.length > 4 ? '…' : ''}</p>
-                  <button type="button" disabled={isSpinning} on:click={() => applyCommonSelection(selection)}>
+                  <button type="button" disabled={candidateChangesLocked} on:click={() => applyCommonSelection(selection)}>
                     导入到当前轮盘
                   </button>
                 </article>
@@ -1681,6 +1706,10 @@
             <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
           </div>
 
+          {#if candidateChangesLocked && !isSpinning}
+            <div class="candidate-lock-note">当前受限抽奖已经开始；新建抽奖或把有效结果上限设为 0 后可修改名单。</div>
+          {/if}
+
           <button
             type="button"
             class="save-selection-trigger"
@@ -1719,13 +1748,13 @@
           <PrizeEditor
             {prizes}
             selectedId={selectedPrizeId}
-            disabled={isSpinning}
+            disabled={candidateChangesLocked}
             onChange={updatePrizes}
             onSelect={(id) => void selectPrize(id)}
             onAdd={addPrize}
           />
 
-          <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
+          <button type="button" class="import-trigger" disabled={candidateChangesLocked} on:click={openImporter}>
             <span>⌘</span> 从文本批量导入
             <small>空格 / 逗号 / 表格</small>
           </button>
@@ -1746,7 +1775,7 @@
                 <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
                 <button
                   type="button"
-                  disabled={parsedImportOptions.length === 0}
+                  disabled={parsedImportOptions.length === 0 || candidateChangesLocked}
                   on:click={applyImportedOptions}
                 >添加</button>
               </div>

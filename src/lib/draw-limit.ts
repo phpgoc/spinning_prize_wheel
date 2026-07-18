@@ -31,6 +31,20 @@ export function isResultLimitReached(limit: number, completed: number): boolean 
 }
 
 /**
+ * 有明确上限的抽奖一旦产生记录，就锁定候选项，避免中途改变概率。
+ */
+export function areCandidateChangesLocked(
+  limit: number,
+  recordCount: number,
+  isSpinning: boolean,
+): boolean {
+  return isSpinning || (
+    Math.floor(Number(limit) || 0) > 0
+    && Math.max(0, Math.floor(Number(recordCount) || 0)) > 0
+  );
+}
+
+/**
  * 批量抽奖也不能越过有效结果上限。
  */
 export function clampRequestedResults(

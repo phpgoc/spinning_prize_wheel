@@ -1889,6 +1889,17 @@ kbd {
   letter-spacing: -0.04em;
 }
 
+.candidate-lock-note {
+  margin: -3px 0 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(190, 102, 75, 0.22);
+  border-radius: 9px;
+  background: rgba(190, 102, 75, 0.08);
+  color: #92503e;
+  font-size: 8px;
+  line-height: 1.55;
+}
+
 .save-selection-trigger {
   display: flex;
   width: 100%;
