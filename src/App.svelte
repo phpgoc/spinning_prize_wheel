@@ -16,6 +16,7 @@
     areCandidateChangesLocked,
     clampRequestedResults,
     isResultLimitReached,
+    isRewardAmountLocked,
     normalizeResultLimit,
     remainingResultSlots,
   } from './lib/draw-limit';
@@ -146,6 +147,11 @@
   $: resultLimitReached = isResultLimitReached(continuousTarget, validCompleted);
   $: candidateChangesLocked = areCandidateChangesLocked(
     continuousTarget,
+    records.length,
+    isSpinning,
+  );
+  $: rewardAmountLocked = isRewardAmountLocked(
+    desktopRuntime,
     records.length,
     isSpinning,
   );
@@ -561,6 +567,10 @@
   }
 
   async function selectRewardInput() {
+    if (rewardAmountIsLocked()) {
+      showRewardAmountLocked();
+      return;
+    }
     candidateKeyboardActive = true;
     selectedPrizeId = null;
     drawSidePanel = 'statistics';
@@ -696,6 +706,20 @@
 
   function candidateChangesAreLocked(): boolean {
     return areCandidateChangesLocked(continuousTarget, records.length, isSpinning);
+  }
+
+  function rewardAmountIsLocked(): boolean {
+    return isRewardAmountLocked(desktopRuntime, records.length, isSpinning);
+  }
+
+  function showRewardAmountLocked() {
+    if (isSpinning) return;
+    result = {
+      eyebrow: '奖励金额已锁定',
+      title: '本轮桌面抽奖已有记录',
+      detail: '开始新的抽奖后才能设置另一笔奖励金额。',
+      tone: 'danger',
+    };
   }
 
   function guardCandidateChanges(): boolean {
@@ -1143,11 +1167,12 @@
 
   function resetSettings() {
     if (guardCandidateChanges()) return;
+    const preserveRewardAmount = rewardAmountIsLocked();
     prizes = defaultPrizes.map((prize) => ({ ...prize }));
     selectedPrizeId = null;
     animationStyle = 'luxury';
     durationSeconds = 4;
-    rewardAmount = 0;
+    if (!preserveRewardAmount) rewardAmount = 0;
     retryEnabled = true;
     retryWeight = 0.65;
     continuousTarget = 0;
@@ -1156,7 +1181,9 @@
     result = {
       eyebrow: '设置已还原',
       title: '回到默认幸运池',
-      detail: '候选项、奖励金额、动画和重来权重已经恢复。',
+      detail: preserveRewardAmount
+        ? '候选项、动画和重来权重已经恢复；当前奖励金额保持不变。'
+        : '候选项、奖励金额、动画和重来权重已经恢复。',
       tone: 'idle',
     };
   }
@@ -1833,12 +1860,19 @@
                   min="0"
                   step="0.01"
                   bind:value={rewardAmount}
-                  disabled={isSpinning}
+                  disabled={rewardAmountLocked}
+                  title={rewardAmountLocked ? '桌面端产生抽奖记录后，奖励金额会锁定到下一轮' : '设置每个有效结果的奖励金额'}
                   on:focus={() => {
                     candidateKeyboardActive = true;
                     selectedPrizeId = null;
                   }}
-                  on:change={() => (rewardAmount = normalizedRewardAmount())}
+                  on:change={() => {
+                    if (rewardAmountIsLocked()) {
+                      showRewardAmountLocked();
+                    } else {
+                      rewardAmount = normalizedRewardAmount();
+                    }
+                  }}
                 />
               </span>
             </label>

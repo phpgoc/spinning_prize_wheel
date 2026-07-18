@@ -3,6 +3,7 @@ import {
   areCandidateChangesLocked,
   clampRequestedResults,
   isResultLimitReached,
+  isRewardAmountLocked,
   normalizeResultLimit,
   remainingResultSlots,
 } from './draw-limit';
@@ -37,5 +38,12 @@ describe('有效结果上限', () => {
     expect(areCandidateChangesLocked(3, 1, false)).toBeTrue();
     expect(areCandidateChangesLocked(0, 10, false)).toBeFalse();
     expect(areCandidateChangesLocked(0, 0, true)).toBeTrue();
+  });
+
+  test('奖励金额只在桌面端产生记录后锁定', () => {
+    expect(isRewardAmountLocked(true, 0, false)).toBeFalse();
+    expect(isRewardAmountLocked(true, 1, false)).toBeTrue();
+    expect(isRewardAmountLocked(false, 10, false)).toBeFalse();
+    expect(isRewardAmountLocked(false, 0, true)).toBeTrue();
   });
 });

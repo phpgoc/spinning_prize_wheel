@@ -45,6 +45,20 @@ export function areCandidateChangesLocked(
 }
 
 /**
+ * 桌面端需要把奖励金额作为本轮统计的一部分，首条记录产生后不再允许修改。
+ */
+export function isRewardAmountLocked(
+  desktopRuntime: boolean,
+  recordCount: number,
+  isSpinning: boolean,
+): boolean {
+  return isSpinning || (
+    desktopRuntime
+    && Math.max(0, Math.floor(Number(recordCount) || 0)) > 0
+  );
+}
+
+/**
  * 批量抽奖也不能越过有效结果上限。
  */
 export function clampRequestedResults(
