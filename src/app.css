@@ -71,29 +71,142 @@ button:disabled {
 .page-hidden { display: none; }
 
 .caimi-banner {
+  position: relative;
   display: flex;
+  min-height: 178px;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   margin: 0 12px 5px;
-  padding: 10px 18px;
-  border: 1px solid rgba(255, 220, 118, 0.55);
-  border-radius: 12px;
+  border: 2px solid rgba(255, 220, 118, 0.7);
+  border-radius: 18px;
+  overflow: hidden;
   background:
-    linear-gradient(100deg, rgba(255, 224, 126, 0.96), rgba(255, 151, 174, 0.94));
-  color: #3f1721;
-  box-shadow: 0 10px 30px rgba(255, 132, 159, 0.16);
-  font-size: calc(13px * var(--font-scale, 1));
+    radial-gradient(circle at 25% 45%, rgba(255, 234, 133, 0.34), transparent 30%),
+    linear-gradient(110deg, #f6c84f, #f17c9f 52%, #b768c7);
+  color: #35151e;
+  box-shadow: 0 18px 45px rgba(255, 105, 149, 0.22);
   text-align: center;
 }
 
-.caimi-banner strong {
-  font-size: calc(15px * var(--font-scale, 1));
+.caimi-banner-track {
+  position: absolute;
+  top: -11px;
+  left: 0;
+  display: flex;
+  width: max-content;
+  gap: 30px;
+  color: rgba(57, 15, 29, 0.21);
+  font-size: clamp(31px, 4.2vw, 64px);
   font-weight: 950;
-  letter-spacing: 0.08em;
+  letter-spacing: -0.06em;
+  line-height: 1;
+  white-space: nowrap;
+  animation: caimi-banner-scroll 24s linear infinite;
 }
 
-.caimi-banner span { font-weight: 750; }
+.caimi-banner-track.reverse {
+  top: auto;
+  right: 0;
+  bottom: -13px;
+  left: auto;
+  animation-direction: reverse;
+}
+
+.caimi-banner-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  padding: 30px 18px;
+}
+
+.caimi-banner-main i {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(53, 21, 30, 0.86);
+  color: #ffe26f;
+  font-size: calc(11px * var(--font-scale, 1));
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.caimi-banner-main strong {
+  margin-top: 7px;
+  font-size: clamp(
+    calc(34px * var(--font-scale, 1)),
+    calc(4.2vw * var(--font-scale, 1)),
+    calc(68px * var(--font-scale, 1))
+  );
+  font-weight: 1000;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  text-shadow: 0 2px rgba(255, 243, 185, 0.55);
+}
+
+.caimi-banner-main p {
+  margin-top: 9px;
+  font-size: calc(15px * var(--font-scale, 1));
+  font-weight: 850;
+}
+
+@keyframes caimi-banner-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-32%); }
+}
+
+.caimi-floaters {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.caimi-floaters span {
+  position: absolute;
+  left: 0;
+  padding: 9px 18px;
+  border: 2px solid rgba(255, 232, 120, 0.88);
+  border-radius: 999px;
+  background: rgba(52, 18, 31, 0.9);
+  color: #ffe66e;
+  font-size: clamp(24px, 3vw, 48px);
+  font-weight: 1000;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  box-shadow: 0 8px 28px rgba(255, 84, 139, 0.28);
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.caimi-floaters span:nth-child(1) {
+  top: 36%;
+  animation: caimi-float-across 17s -4s linear infinite;
+}
+
+.caimi-floaters span:nth-child(2) {
+  top: 53%;
+  color: #35151e;
+  background: rgba(255, 202, 83, 0.93);
+  animation: caimi-float-back 21s -13s linear infinite;
+}
+
+.caimi-floaters span:nth-child(3) {
+  top: 69%;
+  animation: caimi-float-across 25s -18s linear infinite;
+}
+
+@keyframes caimi-float-across {
+  from { transform: translate3d(-115%, -24px, 0) rotate(-2deg); }
+  to { transform: translate3d(calc(100vw + 15%), 24px, 0) rotate(2deg); }
+}
+
+@keyframes caimi-float-back {
+  from { transform: translate3d(calc(100vw + 15%), 18px, 0) rotate(2deg); }
+  to { transform: translate3d(-115%, -18px, 0) rotate(-2deg); }
+}
 
 .caimi-variant .brand-mark {
   border-color: rgba(255, 151, 174, 0.78);
@@ -1363,7 +1476,9 @@ kbd {
 
 @media (max-width: 760px) {
   .app-shell { padding: 0; }
-  .caimi-banner { margin: 10px 10px 0; flex-direction: column; gap: 2px; }
+  .caimi-banner { min-height: 150px; margin: 10px 10px 0; border-radius: 14px; }
+  .caimi-banner-main { padding: 25px 12px; }
+  .caimi-banner-main p { max-width: 300px; font-size: calc(12px * var(--font-scale, 1)); }
   .topbar {
     grid-template-columns: 1fr auto;
     padding: 14px 16px;
@@ -1376,6 +1491,12 @@ kbd {
   .wheel-wrap { min-height: 410px; }
   .batch-panel .batch-runner { display: block; }
   .batch-runner .quick-counts, .batch-runner .run-button { margin-top: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caimi-banner-track,
+  .caimi-floaters span { animation: none; }
+  .caimi-floaters { display: none; }
 }
 
 @media (max-width: 460px) {
