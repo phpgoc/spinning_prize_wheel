@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { createRandomLineup, groupName } from './random-lineup';
+import {
+  createRandomLineup,
+  groupName,
+  orderResolvedLineupNames,
+  recentLineupHistories,
+} from './random-lineup';
+import type { ResolvedLineupName, SavedLineup } from './types';
 
 function sequence(values: number[]): () => number {
   let index = 0;
@@ -41,5 +47,37 @@ describe('随机排阵', () => {
     expect(groupName(0)).toBe('A');
     expect(groupName(25)).toBe('Z');
     expect(groupName(26)).toBe('AA');
+  });
+
+  test('桌面排名不受粘贴顺序影响并把别名统一为本名', () => {
+    const people: ResolvedLineupName[] = [
+      { inputName: '小B', known: true, userId: 2, canonicalName: 'B', rank: 2 },
+      { inputName: '小A', known: true, userId: 1, canonicalName: 'A', rank: 1 },
+      { inputName: '另一个A', known: true, userId: 3, canonicalName: 'C', rank: 2 },
+    ];
+
+    expect(orderResolvedLineupNames(people)).toEqual(['A', 'B', 'C']);
+    expect(orderResolvedLineupNames([...people].reverse())).toEqual(['A', 'B', 'C']);
+  });
+
+  test('桌面排名拒绝未识别人物', () => {
+    expect(() => orderResolvedLineupNames([
+      { inputName: '陌生人', known: false, userId: null, canonicalName: null, rank: null },
+    ])).toThrow('排名名单中存在未识别人物');
+  });
+
+  test('排阵历史按日期筛选并只保留最新 5 条', () => {
+    const histories: SavedLineup[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `history-${index}`,
+      createdAt: new Date(2026, 6, index + 1, 12).getTime(),
+      input: {},
+      result: {},
+    }));
+
+    expect(recentLineupHistories(histories).map((history) => history.id)).toEqual([
+      'history-7', 'history-6', 'history-5', 'history-4', 'history-3',
+    ]);
+    expect(recentLineupHistories(histories, '2026-07-03', '2026-07-05').map((history) => history.id))
+      .toEqual(['history-4', 'history-3', 'history-2']);
   });
 });

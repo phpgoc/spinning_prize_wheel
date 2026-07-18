@@ -1,3 +1,5 @@
+import type { ResolvedLineupName, SavedLineup } from './types';
+
 export interface LineupEntry {
   name: string;
   sourceIndex: number;
@@ -22,6 +24,42 @@ export function groupName(index: number): string {
   } while (value >= 0);
 
   return name;
+}
+
+export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]): string[] {
+  if (people.some((person) => !person.known || person.canonicalName === null || person.rank === null)) {
+    throw new Error('排名名单中存在未识别人物');
+  }
+
+  return [...people]
+    .sort((left, right) => (
+      left.rank! - right.rank!
+      || left.canonicalName!.localeCompare(right.canonicalName!, 'zh-CN')
+    ))
+    .map((person) => person.canonicalName!);
+}
+
+export function recentLineupHistories(
+  histories: readonly SavedLineup[],
+  startDate = '',
+  endDate = '',
+  limit = 5,
+): SavedLineup[] {
+  const startAt = dateBoundary(startDate, false);
+  const endAt = dateBoundary(endDate, true);
+  return [...histories]
+    .filter((history) => history.createdAt >= startAt && history.createdAt <= endAt)
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, Math.max(0, Math.floor(limit)));
+}
+
+function dateBoundary(value: string, endOfDay: boolean): number {
+  if (!value) return endOfDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return endOfDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  return endOfDay
+    ? new Date(year, month - 1, day, 23, 59, 59, 999).getTime()
+    : new Date(year, month - 1, day).getTime();
 }
 
 function secureRandom(): number {

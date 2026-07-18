@@ -69,3 +69,31 @@ export interface BatchSimulation {
   prizeCounts: Record<string, number>;
   events: SimulationEvent[];
 }
+
+export interface AliasRecord {
+  id: number;
+  name: string;
+  userId: number;
+}
+
+export interface RankedUser {
+  id: number;
+  name: string;
+  rank: number;
+  aliases: AliasRecord[];
+}
+
+export interface ResolvedLineupName {
+  inputName: string;
+  known: boolean;
+  userId: number | null;
+  canonicalName: string | null;
+  rank: number | null;
+}
+
+export interface SavedLineup {
+  id: string;
+  createdAt: number;
+  input: unknown;
+  result: unknown;
+}

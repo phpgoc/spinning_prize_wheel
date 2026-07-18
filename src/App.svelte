@@ -2033,7 +2033,7 @@
     </aside>
   </main>
   {:else}
-    <RandomLineup />
+    <RandomLineup {desktopRuntime} />
   {/if}
 
 </div>
