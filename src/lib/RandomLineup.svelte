@@ -439,6 +439,15 @@
     });
   }
 
+  async function openLineupDatabaseFolder() {
+    historyError = '';
+    try {
+      await invoke('open_database_folder');
+    } catch (reason) {
+      historyError = messageFrom(reason, '无法打开数据库文件夹');
+    }
+  }
+
   function viewHistory(history: SavedLineup) {
     const historicalResult = history.result as Partial<RandomLineup>;
     if (!Array.isArray(historicalResult.groupNames) || !Array.isArray(historicalResult.tiers)) {
@@ -989,6 +998,7 @@
               <div class="history-export-actions">
                 <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesCsv}>CSV</button>
                 <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesJson}>JSON</button>
+                <button type="button" on:click={openLineupDatabaseFolder}>打开文件夹</button>
               </div>
             </div>
           {/if}

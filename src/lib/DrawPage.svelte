@@ -603,6 +603,15 @@
     });
   }
 
+  async function openDrawDatabaseFolder() {
+    drawHistoryError = '';
+    try {
+      await invoke('open_database_folder');
+    } catch (reason) {
+      drawHistoryError = reason instanceof Error ? reason.message : String(reason);
+    }
+  }
+
   function togglePanel(panel: SidebarPanel) {
     activePanel = activePanel === panel ? null : panel;
   }
@@ -2226,12 +2235,13 @@
               {/each}
             </div>
 
-            <div class="history-actions sidebar-history-actions">
-              <button type="button" on:click={exportDrawHistoriesCsv}>CSV</button>
-              <button type="button" on:click={exportDrawHistoriesJson}>JSON</button>
-              <button type="button" on:click={clearDrawHistories}>清空历史</button>
-            </div>
           {/if}
+          <div class="history-actions sidebar-history-actions">
+            <button type="button" disabled={drawHistories.length === 0} on:click={exportDrawHistoriesCsv}>CSV</button>
+            <button type="button" disabled={drawHistories.length === 0} on:click={exportDrawHistoriesJson}>JSON</button>
+            <button type="button" on:click={openDrawDatabaseFolder}>打开文件夹</button>
+            <button type="button" disabled={drawHistories.length === 0} on:click={clearDrawHistories}>清空历史</button>
+          </div>
         {/if}
       </div>
       {/if}

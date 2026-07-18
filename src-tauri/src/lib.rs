@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, path::PathBuf, process::Command, time::Duration};
 use tauri::{AppHandle, Manager};
 
 const UNRANKED_RANK: i64 = 10_000;
@@ -188,6 +188,17 @@ fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .parent()
         .map(|parent| parent.join(SHARED_DATA_DIRECTORY))
         .unwrap_or(app_directory))
+}
+
+#[tauri::command]
+fn open_database_folder(app: AppHandle) -> Result<(), String> {
+    let directory = app_database_dir(&app)?;
+    fs::create_dir_all(&directory).map_err(|error| format!("无法创建数据库目录：{error}"))?;
+    Command::new("explorer.exe")
+        .arg(&directory)
+        .spawn()
+        .map_err(|error| format!("无法打开数据库文件夹：{error}"))?;
+    Ok(())
 }
 
 fn validate_variant(variant: &str) -> Result<&str, String> {
@@ -845,7 +856,8 @@ pub fn run() {
             resolve_lineup_names,
             save_lineup_history,
             list_lineup_histories,
-            delete_lineup_history
+            delete_lineup_history,
+            open_database_folder
         ])
         .run(tauri::generate_context!())
         .expect("无法启动转盘");
