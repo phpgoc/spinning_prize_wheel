@@ -1,15 +1,15 @@
 export type CsvCell = string | number | boolean | null | undefined;
 
 /** 生成带 UTF-8 BOM 的 CSV，保证 Windows Excel 直接打开时中文不乱码。 */
-export function createExcelCsv(rows: readonly (readonly CsvCell[])[]): string {
+export function createCsv(rows: readonly (readonly CsvCell[])[]): string {
   const content = rows
     .map((row) => row.map((cell) => escapeCsvCell(cell)).join(','))
     .join('\r\n');
   return `\uFEFF${content}`;
 }
 
-export function downloadExcelCsv(prefix: string, rows: readonly (readonly CsvCell[])[]) {
-  downloadFile(prefix, 'csv', createExcelCsv(rows), 'text/csv;charset=utf-8');
+export function downloadCsv(prefix: string, rows: readonly (readonly CsvCell[])[]) {
+  downloadFile(prefix, 'csv', createCsv(rows), 'text/csv;charset=utf-8');
 }
 
 export function downloadFormattedJson(prefix: string, value: unknown) {

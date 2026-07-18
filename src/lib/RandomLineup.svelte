@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
-  import { downloadExcelCsv, downloadFormattedJson } from './file-export';
+  import { downloadCsv, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import {
     applyCaimiLineupSwap,
@@ -281,9 +281,9 @@
     });
   }
 
-  function exportLineupExcel() {
+  function exportLineupCsv() {
     if (!result) return;
-    downloadExcelCsv('排阵结果', [
+    downloadCsv('排阵结果', [
       ['档位', ...result.groupNames.map((group) => `${group}组`)],
       ...result.tiers.map((tier, tierIndex) => [
         `t${tierIndex + 1}`,
@@ -1030,7 +1030,7 @@
           <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
-              <button type="button" class="result-export-button" on:click={exportLineupExcel}>Excel</button>
+              <button type="button" class="result-export-button" on:click={exportLineupCsv}>CSV</button>
               <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
               {#if desktopRuntime}
                 <div class="history-save-control">
