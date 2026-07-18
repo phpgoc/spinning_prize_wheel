@@ -10,6 +10,8 @@
     "build:windows": "tauri build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "bun test",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "tauri": "tauri"
   },
   "devDependencies": {

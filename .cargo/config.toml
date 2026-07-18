@@ -1,0 +1,3 @@
+# Windows 使用官方 MSVC ABI，但把 C 运行库静态链接进可执行文件。
+[target.'cfg(all(target_os = "windows", target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
