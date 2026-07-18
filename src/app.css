@@ -246,7 +246,7 @@ p {
   border-radius: 999px;
   background: #dedbd2;
   color: #6f7067;
-  font-family: var(--font-mono);
+  font-family: var(--font-mono), system-ui;
   font-size: 9px;
 }
 
@@ -1761,6 +1761,13 @@ kbd {
   border: 1px solid var(--line-subtle);
   border-radius: 12px;
   background: var(--surface-raised);
+}
+
+.common-card.selected {
+  border-color: #899b36;
+  background: #fbffe8;
+  box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.65), 0 8px 18px rgba(87, 99, 34, 0.12);
+  transform: translateX(3px);
 }
 
 .common-card-heading {

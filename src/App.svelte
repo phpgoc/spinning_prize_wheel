@@ -76,9 +76,12 @@
   let importOpen = false;
   let importText = '';
   let activePanel: SidebarPanel | null = 'settings';
-  let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
   let selectedPrizeId: string | null = null;
+  let selectedCommonId: string | null = null;
+  let candidateKeyboardActive = false;
+  let commonKeyboardActive = false;
+  let rewardInput: HTMLInputElement;
   let commonSelectionInput: HTMLInputElement;
   let commonSelections: CommonSelection[] = [];
   let commonSelectionName = '';
@@ -91,6 +94,7 @@
   let drawHistoryLoading = true;
   let drawHistorySaving = false;
   let drawHistoryError = '';
+  let autoSaveHistory = true;
 
   let rotation = 0;
   let isSpinning = false;
@@ -141,6 +145,7 @@
         rewardAmount,
         retryEnabled,
         retryWeight,
+        autoSaveHistory,
       }),
     );
   }
@@ -157,6 +162,7 @@
           rewardAmount: number;
           retryEnabled: boolean;
           retryWeight: number;
+          autoSaveHistory: boolean;
         }>;
 
         if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
@@ -172,11 +178,11 @@
         }
         if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
         if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
+        if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
-    shortcutMod = /Mac|iPhone|iPad/i.test(navigator.platform) ? '⌘' : 'Ctrl';
     desktopRuntime = isTauriRuntime();
     void loadCommonSelections();
     void loadDrawHistories();
@@ -302,6 +308,8 @@
     rouletteFinished = false;
     singleAttempt = 0;
     importOpen = false;
+    commonKeyboardActive = false;
+    selectedCommonId = null;
     result = {
       eyebrow: '常用选择已导入',
       title: selection.name,
@@ -320,6 +328,9 @@
         saveCommonSelectionsToBrowser(commonSelections.filter((item) => item.id !== selection.id));
       }
       commonSelections = commonSelections.filter((item) => item.id !== selection.id);
+      if (selectedCommonId === selection.id) {
+        selectedCommonId = commonSelections[0]?.id ?? null;
+      }
     } catch (error) {
       commonSelectionError = error instanceof Error ? error.message : String(error);
     }
@@ -344,8 +355,8 @@
     }
   }
 
-  async function saveCurrentDrawHistory() {
-    if (!desktopRuntime || records.length === 0 || drawHistorySaving) return;
+  async function saveCurrentDrawHistory(announce = true): Promise<boolean> {
+    if (!desktopRuntime || records.length === 0 || drawHistorySaving) return false;
     const draw: SavedDraw = {
       version: 1,
       id: currentDrawId,
@@ -361,12 +372,15 @@
     try {
       await invoke('save_draw_history', { draw });
       drawHistories = [draw, ...drawHistories.filter((history) => history.id !== draw.id)];
-      result = {
-        eyebrow: '当前抽奖已保存',
-        title: `${validCompleted} 个有效结果`,
-        detail: '可以在左侧历史中查看。',
-        tone: 'success',
-      };
+      if (announce) {
+        result = {
+          eyebrow: '当前抽奖已保存',
+          title: `${validCompleted} 个有效结果`,
+          detail: '可以在左侧历史中查看。',
+          tone: 'success',
+        };
+      }
+      return true;
     } catch (error) {
       drawHistoryError = error instanceof Error ? error.message : String(error);
       result = {
@@ -375,13 +389,18 @@
         detail: drawHistoryError,
         tone: 'danger',
       };
+      return false;
     } finally {
       drawHistorySaving = false;
     }
   }
 
-  function startNewDraw() {
-    if (isSpinning) return;
+  async function startNewDraw(clearCandidates = false) {
+    if (isSpinning || drawHistorySaving) return;
+    if (desktopRuntime && autoSaveHistory && records.length > 0) {
+      const saved = await saveCurrentDrawHistory(false);
+      if (!saved) return;
+    }
     currentDrawId = createId('draw');
     records = [];
     batchResult = null;
@@ -391,10 +410,15 @@
     rouletteRound = 1;
     singleAttempt = 0;
     singleCompleted = 0;
+    exitCandidateKeyboard();
+    exitCommonKeyboard();
+    if (clearCandidates) updatePrizes([]);
     result = {
       eyebrow: '新的抽奖',
       title: '准备就绪',
-      detail: enabledPrizes.length < 2 ? '至少启用两个候选项后才能开始。' : '点击转盘中央开始。',
+      detail: clearCandidates || enabledPrizes.length < 2
+        ? '添加至少两个候选项后才能开始。'
+        : '点击转盘中央开始。',
       tone: 'idle',
     };
   }
@@ -450,11 +474,75 @@
 
   async function selectPrize(id: string | null) {
     selectedPrizeId = id && prizes.some((prize) => prize.id === id) ? id : null;
+    if (selectedPrizeId) candidateKeyboardActive = true;
     if (!selectedPrizeId) return;
     await tick();
     const row = Array.from(document.querySelectorAll<HTMLElement>('[data-prize-id]'))
       .find((element) => element.dataset.prizeId === selectedPrizeId);
     row?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function enterCandidateKeyboard() {
+    commonKeyboardActive = false;
+    selectedCommonId = null;
+    candidateKeyboardActive = true;
+    if (prizes.length > 0) {
+      await selectPrize(selectedPrizeId ?? prizes[0].id);
+    }
+  }
+
+  function exitCandidateKeyboard() {
+    candidateKeyboardActive = false;
+    selectedPrizeId = null;
+    rewardInput?.blur();
+  }
+
+  async function selectRewardInput() {
+    candidateKeyboardActive = true;
+    selectedPrizeId = null;
+    await tick();
+    rewardInput?.focus();
+    rewardInput?.select();
+  }
+
+  async function enterCommonKeyboard() {
+    candidateKeyboardActive = false;
+    selectedPrizeId = null;
+    commonKeyboardActive = true;
+    activePanel = 'common';
+    selectedCommonId = commonSelections[0]?.id ?? null;
+    await scrollSelectedCommonIntoView();
+  }
+
+  function exitCommonKeyboard() {
+    commonKeyboardActive = false;
+    selectedCommonId = null;
+  }
+
+  async function moveCommonSelection(direction: -1 | 1) {
+    if (commonSelections.length === 0) return;
+    const currentIndex = selectedCommonId
+      ? commonSelections.findIndex((selection) => selection.id === selectedCommonId)
+      : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : commonSelections.length - 1)
+      : (currentIndex + direction + commonSelections.length) % commonSelections.length;
+    selectedCommonId = commonSelections[nextIndex].id;
+    await scrollSelectedCommonIntoView();
+  }
+
+  async function scrollSelectedCommonIntoView() {
+    if (!selectedCommonId) return;
+    await tick();
+    const card = Array.from(document.querySelectorAll<HTMLElement>('[data-common-id]'))
+      .find((element) => element.dataset.commonId === selectedCommonId);
+    card?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function applySelectedCommon() {
+    if (!selectedCommonId) return;
+    const selection = commonSelections.find((item) => item.id === selectedCommonId);
+    if (selection) applyCommonSelection(selection);
   }
 
   function addPrize() {
@@ -500,6 +588,15 @@
         ? { ...prize, weight: Math.max(1, prize.weight + delta) }
         : prize
     )));
+  }
+
+  async function editSelectedPrizeName() {
+    if (!selectedPrizeId) return;
+    await tick();
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-prize-id] .name-input'))
+      .find((element) => element.closest<HTMLElement>('[data-prize-id]')?.dataset.prizeId === selectedPrizeId);
+    input?.focus();
+    input?.select();
   }
 
   function deleteSelectedPrize() {
@@ -845,7 +942,7 @@
   }
 
   function clearCurrentDraw() {
-    startNewDraw();
+    void startNewDraw();
   }
 
   function resetSettings() {
@@ -918,11 +1015,17 @@
     const key = event.key.toLowerCase();
     const modifier = event.ctrlKey || event.metaKey;
     const editing = target?.matches('input, textarea, select, button, [contenteditable="true"]') ?? false;
+    const shortcutKey = event.code === 'Space' ? 'space' : key;
 
     if (event.key === 'Escape') {
-      if (selectedPrizeId) {
+      if (candidateKeyboardActive) {
         event.preventDefault();
-        selectedPrizeId = null;
+        exitCandidateKeyboard();
+        return;
+      }
+      if (commonKeyboardActive) {
+        event.preventDefault();
+        exitCommonKeyboard();
         return;
       }
       activePanel = null;
@@ -931,81 +1034,88 @@
       return;
     }
 
-    if (!modifier && event.altKey && event.shiftKey) {
-      if (key === 'a') {
+    if (candidateKeyboardActive) {
+      if (key === 'q' && (!editing || target === rewardInput)) {
         event.preventDefault();
-        addPrize();
-      } else if (key === 's') {
-        event.preventDefault();
-        void openCommonSelectionSaver();
-      } else if (key === 'd') {
-        event.preventDefault();
-        deleteSelectedPrize();
-      }
-      return;
-    }
-
-    if (!modifier && event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault();
-      movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
-      return;
-    }
-
-    if (modifier && !event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault();
-      adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
-      return;
-    }
-
-    if (!modifier && !event.altKey && !event.shiftKey && selectedPrizeId && !editing) {
-      if (event.key === ' ') {
-        event.preventDefault();
-        toggleSelectedPrize();
+        exitCandidateKeyboard();
         return;
       }
-      if (event.key === 'Enter') {
+      if (!editing && !modifier && !event.shiftKey && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         event.preventDefault();
-        addPrize();
+        movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (!modifier && event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey) {
+        if (key === 'd') {
+          event.preventDefault();
+          deleteSelectedPrize();
+          return;
+        }
+        if (shortcutKey === 'space') {
+          event.preventDefault();
+          toggleSelectedPrize();
+          return;
+        }
+        if (key === 'x') {
+          event.preventDefault();
+          void selectRewardInput();
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void editSelectedPrizeName();
+          return;
+        }
+      }
+    }
+
+    if (commonKeyboardActive) {
+      if (key === 'q' && !editing) {
+        event.preventDefault();
+        exitCommonKeyboard();
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        void moveCommonSelection(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey && key === 'f') {
+        event.preventDefault();
+        applySelectedCommon();
         return;
       }
     }
 
-    if (!modifier) return;
+    const webShortcut = !desktopRuntime && !modifier && event.altKey && event.shiftKey;
+    const desktopShortcut = desktopRuntime && !editing && !modifier && !event.altKey && !event.shiftKey;
+    if (!webShortcut && !desktopShortcut) return;
 
-    if (key === 'k' && !event.shiftKey && !event.altKey) {
-      event.preventDefault();
-      togglePanel('shortcuts');
-      return;
-    }
+    if (!['w', 'e', 'r', 'a', 'z', 'x', 's', 'space'].includes(shortcutKey)) return;
+    if (!desktopRuntime && shortcutKey === 's') return;
+    event.preventDefault();
 
-    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
-      event.preventDefault();
-      spin();
-      return;
-    }
-
-    if (key === 'b' && event.shiftKey && !event.altKey) {
-      event.preventDefault();
-      activePanel = 'batch';
-      runBatch();
-    } else if (key === 'i' && event.shiftKey && !event.altKey) {
-      event.preventDefault();
-      openImporter();
-    } else if (key === 'e' && event.shiftKey && !event.altKey) {
-      event.preventDefault();
+    if (shortcutKey === 'w') {
+      void openImporter();
+    } else if (shortcutKey === 'e') {
       exportRecords();
-    } else if (key === 'n' && event.shiftKey && !event.altKey && mode === 'roulette') {
-      event.preventDefault();
-      startNewRouletteRound();
-    } else if (event.altKey && !event.shiftKey && event.key === '1') {
-      event.preventDefault();
-      setMode('selected');
-    } else if (event.altKey && !event.shiftKey && event.key === '2') {
-      event.preventDefault();
-      setMode('roulette');
-    } else if (event.altKey && !event.shiftKey && event.key === 'Backspace') {
-      event.preventDefault();
-      resetSettings();
+    } else if (shortcutKey === 'r') {
+      void startNewDraw(true);
+    } else if (shortcutKey === 'a') {
+      void enterCommonKeyboard();
+    } else if (shortcutKey === 'z') {
+      togglePanel('shortcuts');
+    } else if (shortcutKey === 'space') {
+      spin();
+    } else if (shortcutKey === 's' && desktopRuntime) {
+      autoSaveHistory = !autoSaveHistory;
+    } else if (shortcutKey === 'x') {
+      void enterCandidateKeyboard();
     }
   }
 </script>
@@ -1111,6 +1221,23 @@
         {/if}
       </section>
 
+      {#if desktopRuntime}
+        <div class="section-divider"></div>
+        <section class="setting-block auto-save-setting">
+          <div class="setting-title-row">
+            <div><h3>自动保存历史</h3></div>
+            <button
+              type="button"
+              class:active={autoSaveHistory}
+              class="switch"
+              aria-label={autoSaveHistory ? '关闭自动保存历史' : '开启自动保存历史'}
+              aria-pressed={autoSaveHistory}
+              on:click={() => (autoSaveHistory = !autoSaveHistory)}
+            ><span></span></button>
+          </div>
+        </section>
+      {/if}
+
       <div class="section-divider"></div>
 
       <section class="setting-block">
@@ -1207,7 +1334,17 @@
           {:else}
             <div class="common-list">
               {#each commonSelections as selection (selection.id)}
-                <article class="common-card">
+                <article
+                  class:selected={selectedCommonId === selection.id}
+                  class="common-card"
+                  data-common-id={selection.id}
+                  role="group"
+                  aria-label={`常用选择：${selection.name}`}
+                  on:pointerdown={() => {
+                    commonKeyboardActive = true;
+                    selectedCommonId = selection.id;
+                  }}
+                >
                   <div class="common-card-heading">
                     <div>
                       <strong>{selection.name}</strong>
@@ -1240,13 +1377,13 @@
           <h1>{mode === 'selected' ? '谁会成为本轮幸运得主？' : '谁能留到最后？'}</h1>
         </div>
         <div class="draw-session-actions">
-          <button type="button" disabled={isSpinning} on:click={startNewDraw}>新的抽奖</button>
+          <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新的抽奖</button>
           <button
             type="button"
             class="save-draw-button"
             title={desktopRuntime ? '保存到本地历史数据库' : '桌面版可保存历史'}
             disabled={!desktopRuntime || records.length === 0 || drawHistorySaving}
-            on:click={saveCurrentDrawHistory}
+            on:click={() => void saveCurrentDrawHistory()}
           >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
           <div class="status-pill" class:busy={isSpinning}>
             <i></i>{isSpinning ? '旋转中' : '等待开始'}
@@ -1413,11 +1550,16 @@
             <strong>奖励金额</strong>
             <span class="reward-input">
               <input
+                bind:this={rewardInput}
                 type="number"
                 min="0"
                 step="0.01"
                 bind:value={rewardAmount}
                 disabled={isSpinning}
+                on:focus={() => {
+                  candidateKeyboardActive = true;
+                  selectedPrizeId = null;
+                }}
                 on:change={() => (rewardAmount = normalizedRewardAmount())}
               />
             </span>
@@ -1659,33 +1801,55 @@
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
         <section class="shortcut-group">
-          <h3>全局生效</h3>
+          <h3>全局生效 · {desktopRuntime ? '桌面端' : '网页版'}</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>选择上一候选行</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
-            <div><span>选择下一候选行</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
-            <div><span>添加候选项</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>A</kbd></div>
-            <div><span>保存当前选择</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>S</kbd></div>
-            <div><span>删除选中候选行</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>D</kbd></div>
-            <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
-            <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
-            <div><span>打开文本导入</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>I</kbd></div>
-            <div><span>导出抽奖记录</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>E</kbd></div>
-            <div><span>新建轮盘局</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>N</kbd></div>
-            <div><span>切换选中模式</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>1</kbd></div>
-            <div><span>切换俄罗斯轮盘</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>2</kbd></div>
-            <div><span>恢复默认配置</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>⌫</kbd></div>
-            <div><span>展开 / 收起快捷键</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
+            {#if desktopRuntime}
+              <div><span>打开文本导入</span><kbd>W</kbd></div>
+              <div><span>导出抽奖统计</span><kbd>E</kbd></div>
+              <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
+              <div><span>打开常用选择</span><kbd>A</kbd></div>
+              <div><span>打开快捷键</span><kbd>Z</kbd></div>
+              <div><span>开始抽奖</span><kbd>空格</kbd></div>
+              <div><span>切换自动保存历史</span><kbd>S</kbd></div>
+              <div><span>进入候选项</span><kbd>X</kbd></div>
+            {:else}
+              {#each [
+                ['打开文本导入', 'W'],
+                ['导出抽奖统计', 'E'],
+                ['新的抽奖并清空候选项', 'R'],
+                ['打开常用选择', 'A'],
+                ['打开快捷键', 'Z'],
+                ['开始抽奖', '空格'],
+                ['进入候选项', 'X'],
+              ] as shortcut}
+                <div><span>{shortcut[0]}</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>{shortcut[1]}</kbd></div>
+              {/each}
+            {/if}
           </div>
         </section>
 
         <section class="shortcut-group selected-shortcuts">
-          <h3>选中候选行后</h3>
+          <h3>候选项内</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>取消选中</span><kbd>Esc</kbd></div>
+            <div><span>上一候选项</span><kbd>↑</kbd></div>
+            <div><span>下一候选项</span><kbd>↓</kbd></div>
+            <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
+            <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
+            <div><span>退出候选项</span><kbd>Q</kbd></div>
+            <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
-            <div><span>权重加 1</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑</kbd></div>
-            <div><span>权重减 1</span><kbd>Ctrl</kbd><b>＋</b><kbd>↓</kbd></div>
-            <div><span>添加候选项</span><kbd>Enter</kbd></div>
+            <div><span>选择奖励金额</span><kbd>X</kbd></div>
+            <div><span>编辑当前文字</span><kbd>Enter</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group">
+          <h3>常用选择内</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>上一条</span><kbd>↑</kbd></div>
+            <div><span>下一条</span><kbd>↓</kbd></div>
+            <div><span>引入候选项</span><kbd>F</kbd></div>
+            <div><span>退出常用选择</span><kbd>Q</kbd></div>
           </div>
         </section>
       </div>
