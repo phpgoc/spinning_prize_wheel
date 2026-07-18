@@ -140,7 +140,7 @@
   let animStartTime = 0;
   let raf = 0;
 
-  function easeOut5(t: number): number { return 1 - Math.pow(1 - t, 5); }
+  function easeOutCubic(t: number): number { return 1 - Math.pow(1 - t, 3); }
 
   function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
@@ -174,7 +174,8 @@
     }, targetIndices[0]);
 
     const dist = ((best - Math.floor(cur) + n) % n) || n;
-    const extraLaps = 5;
+    // 格子多时减少圈数，控制首段速度，避免棋子一开始跨格过快。
+    const extraLaps = n <= 24 ? 3 : 2;
     const totalDist = extraLaps * n + dist;
 
     startIdx = tokenFloatIdx;
@@ -185,7 +186,7 @@
 
     function tick(now: number) {
       const t = Math.min(1, (now - animStartTime) / duration);
-      tokenFloatIdx = lerp(startIdx, endIdx, easeOut5(t));
+      tokenFloatIdx = lerp(startIdx, endIdx, easeOutCubic(t));
       if (t < 1) {
         raf = requestAnimationFrame(tick);
       } else {
@@ -310,13 +311,22 @@
         </g>
       {/each}
 
-      <!-- 移动棋子 -->
+      <!-- 原创小吉祥物棋子，不使用第三方游戏角色形象。 -->
       {#if positions.length > 0}
-        <g class="token" transform={`translate(${tokenPos.x} ${tokenPos.y})`}>
-          <circle r="20" class="token-shadow" cx="2" cy="3" />
-          <circle r="20" class="token-body" />
-          <circle r="16" class="token-inner" />
-          <text class="token-label" text-anchor="middle" dominant-baseline="middle">★</text>
+        <g class="token" transform={`translate(${tokenPos.x} ${tokenPos.y})`} aria-hidden="true">
+          <ellipse cx="2" cy="17" rx="15" ry="5" class="token-shadow" />
+          <g class="mascot">
+            <circle cx="12" cy="-5" r="8" class="mascot-ponytail" />
+            <path d="M-14 17 Q-13 7 -7 4 L7 4 Q13 8 14 17 Z" class="mascot-body" />
+            <path d="M-7 5 L0 11 L7 5" class="mascot-collar" />
+            <circle cy="-4" r="14" class="mascot-hair" />
+            <circle cy="-2" r="10.5" class="mascot-face" />
+            <path d="M-10 -7 Q-4 -16 1 -10 Q7 -15 11 -6 Q3 -9 -10 -7 Z" class="mascot-fringe" />
+            <circle cx="-4" cy="-2" r="1.2" class="mascot-eye" />
+            <circle cx="4" cy="-2" r="1.2" class="mascot-eye" />
+            <path d="M-3 3 Q0 6 3 3" class="mascot-smile" />
+            <path d="M8 -14 L10 -10 L14 -8 L10 -6 L8 -2 L6 -6 L2 -8 L6 -10 Z" class="mascot-hairpin" />
+          </g>
         </g>
       {/if}
     </svg>
@@ -431,39 +441,58 @@
   }
 
   /* ── 棋子 ── */
+  .token {
+    pointer-events: none;
+    will-change: transform;
+  }
+
   .token-shadow {
     fill: rgba(0,0,0,0.35);
     filter: blur(3px);
   }
 
-  .token-body {
-    fill: #f5c842;
-    stroke: #a07820;
-    stroke-width: 2.5;
-    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4));
+  .mascot {
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.38));
+    transform-box: fill-box;
+    transform-origin: center bottom;
   }
 
-  .token-inner {
-    fill: none;
-    stroke: rgba(255,255,255,0.55);
+  .mascot-hair,
+  .mascot-ponytail {
+    fill: #393047;
+    stroke: #171320;
     stroke-width: 1.5;
-    stroke-dasharray: 3 2;
   }
 
-  .token-label {
-    font-size: 15px;
-    fill: #7a4800;
-    pointer-events: none;
+  .mascot-face {
+    fill: #ffd7bb;
+    stroke: #a86655;
+    stroke-width: 1.1;
   }
 
-  /* 抽奖过程中让棋子呼吸闪烁。 */
-  .spinning .token-body {
-    animation: token-pulse 0.45s ease-in-out infinite alternate;
+  .mascot-fringe { fill: #393047; }
+  .mascot-body { fill: #ff715f; stroke: #8f302c; stroke-width: 1.4; }
+  .mascot-collar { fill: none; stroke: #ffe36e; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .mascot-eye { fill: #2a2031; }
+  .mascot-smile { fill: none; stroke: #a94848; stroke-width: 1.3; stroke-linecap: round; }
+  .mascot-hairpin { fill: #ffe36e; stroke: #a66d16; stroke-width: 0.8; }
+
+  /* 只让吉祥物自身轻微跑动，不干扰沿棋盘移动的位置。 */
+  .spinning .mascot {
+    animation: mascot-run 260ms ease-in-out infinite alternate;
   }
 
-  @keyframes token-pulse {
-    from { fill: #f5c842; }
-    to   { fill: #fff27a; filter: drop-shadow(0 0 10px rgba(255,220,80,0.9)); }
+  .spinning .mascot-hairpin {
+    animation: mascot-spark 520ms ease-in-out infinite alternate;
+  }
+
+  @keyframes mascot-run {
+    from { transform: translateY(-1px) rotate(-2deg); }
+    to { transform: translateY(-5px) rotate(2deg); }
+  }
+
+  @keyframes mascot-spark {
+    to { filter: drop-shadow(0 0 5px rgba(255,227,110,0.95)); }
   }
 
   /* ── 抽奖按钮 ── */
@@ -527,5 +556,10 @@
   @media (max-width: 600px) {
     .board-stage { width: min(100%, 420px); }
     .cell-label { font-size: 11px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinning .mascot,
+    .spinning .mascot-hairpin { animation: none; }
   }
 </style>
