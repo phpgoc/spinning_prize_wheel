@@ -354,30 +354,42 @@
     justify-content: center;
     flex-direction: column;
     padding: 0;
-    border: 0;
+    border: 3px solid var(--accent);
     border-radius: 50%;
     outline: 0;
-    background: #1b1c16;
+    background: radial-gradient(circle at 38% 28%, #34372a 0, #171812 68%);
     color: #fffdf7;
     cursor: pointer;
     font-family: var(--font-sans);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 0 0 5px rgba(231, 255, 114, 0.14),
+      0 0 30px rgba(231, 255, 114, 0.22),
+      0 11px 24px rgba(0, 0, 0, 0.48),
+      inset 0 0 16px rgba(231, 255, 114, 0.08);
     transform: translate(-50%, -50%);
-    transition: transform 180ms ease, background 180ms ease;
+    transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease, filter 180ms ease;
   }
 
   .spin-button:hover:not(:disabled),
   .spin-button:focus-visible {
     background: #26281e;
+    box-shadow:
+      0 0 0 6px rgba(231, 255, 114, 0.22),
+      0 0 38px rgba(231, 255, 114, 0.34),
+      0 13px 26px rgba(0, 0, 0, 0.5),
+      inset 0 0 18px rgba(231, 255, 114, 0.12);
+    filter: brightness(1.08);
     transform: translate(-50%, -50%) scale(1.06);
   }
 
   .spin-button:focus-visible {
-    box-shadow: 0 0 0 4px rgba(235, 255, 123, 0.3);
+    box-shadow: 0 0 0 6px rgba(235, 255, 123, 0.38), 0 0 35px rgba(231, 255, 114, 0.3);
   }
 
   .spin-button:disabled {
     cursor: not-allowed;
+    filter: saturate(0.45);
+    opacity: 0.72;
   }
 
   .spin-button strong {
@@ -491,15 +503,22 @@
   }
 
   .simple .spin-button {
-    border: 1px solid #292a23;
+    border: 3px solid #ff7657;
     background: #f2efe7;
     color: #24251f;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+    box-shadow:
+      0 0 0 5px rgba(255, 118, 87, 0.16),
+      0 0 25px rgba(255, 118, 87, 0.2),
+      0 7px 15px rgba(0, 0, 0, 0.24);
   }
 
   .simple .spin-button:hover:not(:disabled),
   .simple .spin-button:focus-visible {
     background: #fffdf8;
+    box-shadow:
+      0 0 0 6px rgba(255, 118, 87, 0.24),
+      0 0 30px rgba(255, 118, 87, 0.28),
+      0 9px 18px rgba(0, 0, 0, 0.26);
   }
 
   .luxury.spinning .orbit-one {

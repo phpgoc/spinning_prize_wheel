@@ -474,27 +474,41 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    border: 2px solid #4a7abf;
+    border: 3px solid #79adf5;
     border-radius: 12px;
+    outline: 0;
     background: linear-gradient(160deg, #1e3356 0%, #0f1e35 100%);
     color: #a8c8f0;
     cursor: pointer;
     box-shadow:
-      0 0 0 3px rgba(74,122,191,0.22),
+      0 0 0 5px rgba(74,122,191,0.28),
+      0 0 28px rgba(87, 151, 238, 0.34),
       0 6px 18px rgba(0,0,0,0.5),
       inset 0 1px 0 rgba(255,255,255,0.08);
     transition: transform 150ms ease, filter 150ms ease, border-color 150ms ease;
   }
 
-  .board-button:hover:not(:disabled) {
+  .board-button:hover:not(:disabled),
+  .board-button:focus-visible {
     border-color: #6fa0e8;
     filter: brightness(1.15);
+    box-shadow:
+      0 0 0 6px rgba(94, 160, 244, 0.38),
+      0 0 36px rgba(87, 151, 238, 0.52),
+      0 8px 22px rgba(0,0,0,0.54),
+      inset 0 1px 0 rgba(255,255,255,0.12);
     transform: translate(-50%, -50%) scale(1.04) !important;
   }
 
+  .board-button:focus-visible {
+    outline: 3px solid rgba(200, 222, 255, 0.8);
+    outline-offset: 7px;
+  }
+
   .board-button:disabled {
-    cursor: default;
-    opacity: 0.7;
+    cursor: not-allowed;
+    filter: saturate(0.45);
+    opacity: 0.68;
   }
 
   .btn-star {
@@ -505,8 +519,9 @@
   .board-button strong {
     font-family: -apple-system, 'PingFang SC', sans-serif;
     font-size: 13px;
-    font-weight: 600;
-    color: #c8deff;
+    font-weight: 750;
+    color: #e3efff;
+    text-shadow: 0 2px 9px rgba(87, 151, 238, 0.48);
   }
 
   @media (max-width: 600px) {

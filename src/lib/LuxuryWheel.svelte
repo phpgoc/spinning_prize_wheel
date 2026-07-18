@@ -503,24 +503,43 @@
     justify-content: center;
     flex-direction: column;
     padding: 0;
-    border: 2px solid #f0cf78;
+    border: 3px solid #ffe49a;
     border-radius: 50%;
+    outline: 0;
     background: radial-gradient(circle at 36% 28%, #3d2817, #160d08 72%);
     color: #fff4cf;
     cursor: pointer;
     box-shadow:
-      0 0 0 4px #6c451c,
-      0 0 0 6px #f2d581,
+      0 0 0 5px #6c451c,
+      0 0 0 8px rgba(242, 213, 129, 0.86),
+      0 0 34px rgba(239, 199, 100, 0.38),
       0 8px 22px rgba(0, 0, 0, 0.52),
       inset 0 0 16px rgba(239, 199, 100, 0.16);
     transform: translate(-50%, -50%);
-    transition: transform 180ms ease, filter 180ms ease;
+    transition: transform 180ms ease, filter 180ms ease, box-shadow 180ms ease;
   }
 
   .luxury-button:hover:not(:disabled),
   .luxury-button:focus-visible {
     filter: brightness(1.18);
+    box-shadow:
+      0 0 0 6px #7e5524,
+      0 0 0 9px #ffe49a,
+      0 0 42px rgba(239, 199, 100, 0.58),
+      0 11px 26px rgba(0, 0, 0, 0.56),
+      inset 0 0 20px rgba(239, 199, 100, 0.22);
     transform: translate(-50%, -50%) scale(1.06);
+  }
+
+  .luxury-button:focus-visible {
+    outline: 3px solid rgba(255, 244, 207, 0.85);
+    outline-offset: 10px;
+  }
+
+  .luxury-button:disabled {
+    cursor: not-allowed;
+    filter: saturate(0.4);
+    opacity: 0.72;
   }
 
   .luxury-button strong {
@@ -531,6 +550,7 @@
       calc(1.35vw * var(--font-scale, 1)),
       calc(21px * var(--font-scale, 1))
     );
+    text-shadow: 0 2px 9px rgba(239, 199, 100, 0.38);
   }
 
   .luxury-button i {

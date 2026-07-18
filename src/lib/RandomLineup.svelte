@@ -96,7 +96,6 @@
   $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
   $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
-  $: caimiSwapCount = result?.tiers.flat().filter((entry) => entry?.caimiSwap?.kind === 'favored').length ?? 0;
   $: orderAvailability = lineupOrderAvailability(
     names.length,
     desktopRuntime,
@@ -973,9 +972,6 @@
           {#if result}<button type="button" on:click={() => generate(resultOrderMode)}>重新随机</button>{/if}
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
-        {#if variant === 'caimi' && caimiSwapCount > 0}
-          <div class="caimi-cheat-note"><strong>正义调度</strong><span>已为整体平衡协调 {caimiSwapCount} 项</span></div>
-        {/if}
         {#if desktopRuntime && historyStatus !== 'idle'}
           <div class:error={historyStatus === 'error'} class="history-status">{historyStatus === 'saving' ? '正在保存排阵记录…' : historyStatus === 'saved' ? '排阵输入与结果已保存' : '排阵记录保存失败'}</div>
         {/if}
@@ -1288,22 +1284,6 @@
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid rgba(231, 255, 114, 0.18); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-heading button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.17); border-radius: 8px; color: var(--accent); }
-
-  .caimi-cheat-note {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 16px;
-    padding: 10px 13px;
-    border: 1px solid rgba(255, 210, 90, 0.48);
-    border-radius: 10px;
-    background: linear-gradient(100deg, rgba(255, 210, 90, 0.17), rgba(255, 115, 155, 0.16));
-    color: #ffd85f;
-    font-size: calc(11px * var(--font-scale, 1));
-  }
-
-  .caimi-cheat-note strong { font-size: calc(13px * var(--font-scale, 1)); letter-spacing: 0.12em; }
 
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }

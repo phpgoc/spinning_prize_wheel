@@ -1738,15 +1738,17 @@
             disabled={!desktopRuntime || records.length === 0 || drawHistorySaving}
             on:click={() => void saveCurrentDrawHistory()}
           >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
-          <div class="status-pill" class:busy={isSpinning}>
-            <i></i>{isSpinning ? '旋转中' : '等待开始'}
-          </div>
         </div>
       </div>
 
       <div class="draw-workbench">
         <div class="draw-core">
       <div class="wheel-wrap">
+        <div class="wheel-stack">
+          <div class="wheel-status" class:busy={isSpinning} role="status" aria-live="polite">
+            <i aria-hidden="true"></i>
+            <span>{isSpinning ? '旋转中' : '等待开始'}</span>
+          </div>
         {#if animationStyle === 'threeD' && mode !== 'roulette'}
           <!-- 大富翁棋盘：俄罗斯模式降级到高级转盘 -->
           <MonopolyWheel
@@ -1782,6 +1784,7 @@
             onSpin={spin}
           />
         {/if}
+        </div>
 
         {#if !isSpinning && result.tone !== 'idle'}
           <div
