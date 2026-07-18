@@ -587,15 +587,24 @@
     const key = event.key.toLowerCase();
 
     if (pendingDeleteUser || pendingAliasClearUser) {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
         pendingDeleteUser = null;
         pendingAliasClearUser = null;
-      } else if (event.key === 'Enter') {
+      } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
         if (pendingDeleteUser) void confirmDeleteRankedUser();
         else void confirmClearRankedUserAliases();
       }
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      resetUserForm();
+      selectedRankedUserId = null;
+      clearRankDragState();
       return;
     }
 

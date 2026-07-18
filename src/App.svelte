@@ -633,9 +633,9 @@
   }
 
   function exitCandidateKeyboard() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     candidateKeyboardActive = false;
     selectedPrizeId = null;
-    rewardInput?.blur();
   }
 
   async function selectRewardInput() {
@@ -691,7 +691,7 @@
     if (selection) applyCommonSelection(selection);
   }
 
-  function addPrize() {
+  async function addPrize() {
     const id = createId('prize');
     if (!updatePrizes([
       ...prizes,
@@ -703,7 +703,8 @@
         enabled: true,
       },
     ])) return;
-    void selectPrize(id);
+    await selectPrize(id);
+    await editSelectedPrizeName();
   }
 
   function movePrizeSelection(direction: -1 | 1) {
@@ -1416,11 +1417,6 @@
     }
 
     if (candidateKeyboardActive) {
-      if (key === 'q' && (!editing || target === rewardInput)) {
-        event.preventDefault();
-        exitCandidateKeyboard();
-        return;
-      }
       if (!editing && !modifier && !event.shiftKey && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         event.preventDefault();
         movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
@@ -1437,12 +1433,17 @@
           deleteSelectedPrize();
           return;
         }
+        if (key === 'a') {
+          event.preventDefault();
+          void addPrize();
+          return;
+        }
         if (shortcutKey === 'space') {
           event.preventDefault();
           toggleSelectedPrize();
           return;
         }
-        if (key === 'x') {
+        if (key === 'm') {
           event.preventDefault();
           void selectRewardInput();
           return;
@@ -2300,6 +2301,7 @@
                 <div><span>{shortcut[0]}</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>{shortcut[1]}</kbd></div>
               {/each}
             {/if}
+            <div><span>滚屏</span><kbd>↑ / ↓</kbd></div>
           </div>
         </section>
 
@@ -2310,10 +2312,11 @@
             <div><span>下一候选项</span><kbd>↓</kbd></div>
             <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
             <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
-            <div><span>退出候选项</span><kbd>Q</kbd></div>
+            <div><span>退出候选项</span><kbd>Esc</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
+            <div><span>添加选项</span><kbd>A</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
-            <div><span>选择奖励金额</span><kbd>X</kbd></div>
+            <div><span>选择奖励金额</span><kbd>M</kbd></div>
             <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
             <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
           </div>
@@ -2328,6 +2331,19 @@
             <div><span>退出常用选择</span><kbd>Q</kbd></div>
           </div>
         </section>
+
+        {#if desktopRuntime}
+          <section class="shortcut-group">
+            <h3>随机排阵</h3>
+            <div class="shortcut-list sidebar-shortcut-list">
+              <div><span>排名 / 历史</span><kbd>A / Z</kbd></div>
+              <div><span>选择</span><kbd>↑ / ↓</kbd></div>
+              <div><span>名称 / 别名</span><kbd>Enter / E</kbd></div>
+              <div><span>删除 / 清空别名</span><kbd>D / F</kbd></div>
+              <div><span>确认 / 取消</span><kbd>Enter/Y · Esc/N</kbd></div>
+            </div>
+          </section>
+        {/if}
       </div>
       {/if}
     </aside>

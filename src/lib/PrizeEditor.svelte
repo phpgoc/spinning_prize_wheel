@@ -60,6 +60,7 @@
         value={prize.name}
         maxlength="18"
         {disabled}
+        on:focus={(event) => (event.currentTarget as HTMLInputElement).select()}
         on:input={(event) => updatePrize(prize.id, { name: textValue(event) })}
       />
 
