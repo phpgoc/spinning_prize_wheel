@@ -41,11 +41,15 @@
   let rankingError = '';
   let desktopPanel: DesktopPanel | null = 'ranking';
   let editingUserId: number | null = null;
+  let selectedRankedUserId: number | null = null;
   let userName = '';
   let userAliases = '';
+  let userNameInput: HTMLInputElement | null = null;
   let userAliasInput: HTMLInputElement | null = null;
   let pendingDeleteUser: RankedUser | null = null;
+  let pendingAliasClearUser: RankedUser | null = null;
   let deletingUserId: number | null = null;
+  let clearingAliasesUserId: number | null = null;
   let pendingRankDragUserId: number | null = null;
   let draggingUserId: number | null = null;
   let activeRankDropTarget: RankedUserDropTarget | null = null;
@@ -112,6 +116,11 @@
     mounted = false;
     if (resolveTimer) clearTimeout(resolveTimer);
   });
+
+  function isTextEditingTarget(target: EventTarget | null): boolean {
+    return target instanceof HTMLElement
+      && target.matches('input, textarea, select, button, [contenteditable="true"]');
+  }
 
   async function initializeDesktop() {
     desktopInitialized = true;
@@ -221,6 +230,9 @@
     rankingError = '';
     try {
       rankedUsers = await invoke<RankedUser[]>('list_ranked_users');
+      if (!rankedUsers.some((user) => user.id === selectedRankedUserId)) {
+        selectedRankedUserId = rankedUsers[0]?.id ?? null;
+      }
     } catch (reason) {
       rankingError = messageFrom(reason, '无法读取排名表');
     } finally {
@@ -241,8 +253,9 @@
     }
   }
 
-  async function editRankedUser(user: RankedUser, focusAliases = false) {
+  async function editRankedUser(user: RankedUser, focus: 'none' | 'name' | 'aliases' = 'none') {
     desktopPanel = 'ranking';
+    selectedRankedUserId = user.id;
     editingUserId = user.id;
     userName = user.name;
     userAliases = user.aliases
@@ -250,7 +263,12 @@
       .map((alias) => alias.name)
       .join(' ');
     await tick();
-    if (focusAliases) userAliasInput?.focus();
+    if (focus === 'name') {
+      userNameInput?.focus();
+      userNameInput?.select();
+    } else if (focus === 'aliases') {
+      userAliasInput?.focus();
+    }
   }
 
   function addUnknownPerson(name: string) {
@@ -343,7 +361,31 @@
     editingUserId = null;
     userName = '';
     userAliases = '';
+    userNameInput = null;
     userAliasInput = null;
+  }
+
+  async function selectRankedUser(userId: number) {
+    selectedRankedUserId = userId;
+    await tick();
+    document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function moveRankedUserSelection(delta: -1 | 1) {
+    if (rankedUsers.length === 0) return;
+    const currentIndex = rankedUsers.findIndex((user) => user.id === selectedRankedUserId);
+    const nextIndex = currentIndex < 0
+      ? delta > 0 ? 0 : rankedUsers.length - 1
+      : (currentIndex + delta + rankedUsers.length) % rankedUsers.length;
+    void selectRankedUser(rankedUsers[nextIndex].id);
+  }
+
+  async function openDesktopPanel(panel: DesktopPanel) {
+    desktopPanel = panel;
+    if (panel === 'ranking' && rankedUsers.length > 0) {
+      await selectRankedUser(selectedRankedUserId ?? rankedUsers[0].id);
+    }
   }
 
   function otherAliasSummary(user: RankedUser): string {
@@ -354,6 +396,7 @@
   }
 
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
+    selectedRankedUserId = userId;
     if (rankingReordering || event.button !== 0) return;
     if ((event.target as HTMLElement).closest('button')) return;
     pendingRankDragUserId = userId;
@@ -483,7 +526,18 @@
   }
 
   function requestDeleteRankedUser(user: RankedUser) {
+    selectedRankedUserId = user.id;
     pendingDeleteUser = user;
+    rankingError = '';
+  }
+
+  function requestClearRankedUserAliases(user: RankedUser) {
+    const hasOtherAliases = user.aliases.some(
+      (alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'),
+    );
+    if (!hasOtherAliases) return;
+    selectedRankedUserId = user.id;
+    pendingAliasClearUser = user;
     rankingError = '';
   }
 
@@ -502,6 +556,85 @@
       rankingError = messageFrom(reason, '无法删除排名选项');
     } finally {
       deletingUserId = null;
+    }
+  }
+
+  async function confirmClearRankedUserAliases() {
+    const user = pendingAliasClearUser;
+    if (!user || clearingAliasesUserId !== null) return;
+    clearingAliasesUserId = user.id;
+    rankingError = '';
+    try {
+      await invoke('save_ranked_user', {
+        user: { id: user.id, name: user.name, rank: user.rank, aliases: [] },
+      });
+      pendingAliasClearUser = null;
+      if (editingUserId === user.id) resetUserForm();
+      await loadRankedUsers();
+      await resolveNames();
+    } catch (reason) {
+      rankingError = messageFrom(reason, '无法清空选项别名');
+    } finally {
+      clearingAliasesUserId = null;
+    }
+  }
+
+  function handleLineupKeydown(event: KeyboardEvent) {
+    if (!desktopRuntime || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    const key = event.key.toLowerCase();
+
+    if (pendingDeleteUser || pendingAliasClearUser) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        pendingDeleteUser = null;
+        pendingAliasClearUser = null;
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        if (pendingDeleteUser) void confirmDeleteRankedUser();
+        else void confirmClearRankedUserAliases();
+      }
+      return;
+    }
+
+    if (isTextEditingTarget(event.target)) return;
+    if (key === 'a') {
+      event.preventDefault();
+      void openDesktopPanel('ranking');
+      return;
+    }
+    if (key === 'z') {
+      event.preventDefault();
+      void openDesktopPanel('history');
+      return;
+    }
+    if (desktopPanel !== 'ranking') {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        document.querySelector<HTMLElement>('.desktop-accordion.open .desktop-accordion-content')
+          ?.scrollBy({ top: event.key === 'ArrowUp' ? -240 : 240, behavior: 'smooth' });
+      }
+      return;
+    }
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveRankedUserSelection(event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+
+    const selected = rankedUsers.find((user) => user.id === selectedRankedUserId);
+    if (!selected) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void editRankedUser(selected, 'name');
+    } else if (key === 'e') {
+      event.preventDefault();
+      void editRankedUser(selected, 'aliases');
+    } else if (key === 'd') {
+      event.preventDefault();
+      requestDeleteRankedUser(selected);
+    } else if (key === 'f') {
+      event.preventDefault();
+      requestClearRankedUserAliases(selected);
     }
   }
 
@@ -524,6 +657,8 @@
     return typeof reason === 'string' && reason ? reason : fallback;
   }
 </script>
+
+<svelte:window on:keydown={handleLineupKeydown} />
 
 <main class="lineup-page" id="lineup">
   <header class="lineup-hero">
@@ -558,6 +693,7 @@
                       <!-- 卡片用纵向四分区处理插入与替换，内部按钮保留独立操作。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
+                        class:keyboard-selected={selectedRankedUserId === user.id}
                         class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:insert-before={activeRankDropCardId === user.id && activeRankDropPosition === 'before'}
                         class:insert-after={activeRankDropCardId === user.id && activeRankDropPosition === 'after'}
@@ -572,8 +708,8 @@
                         <span class="rank-number">{user.rank}</span>
                         <div class="ranked-user-content">
                           <div class="ranked-user-heading">
-                            <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
-                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
+                            <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                             <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                           </div>
                           <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
@@ -596,6 +732,7 @@
                       <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
+                        class:keyboard-selected={selectedRankedUserId === user.id}
                         class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:drag-source={draggingUserId === user.id}
                         data-rank-user-id={user.id}
@@ -607,8 +744,8 @@
                         <span class="rank-number">—</span>
                         <div class="ranked-user-content">
                           <div class="ranked-user-heading">
-                            <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
-                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
+                            <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                            <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                             <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                           </div>
                           <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
@@ -625,7 +762,7 @@
                   <strong>{editingUserId === null ? '添加' : '编辑'}</strong>
                   {#if editingUserId !== null}<button type="button" on:click={resetUserForm}>取消编辑</button>{/if}
                 </div>
-                <label><span>名称</span><input maxlength="80" required bind:value={userName} placeholder="名称" /></label>
+                <label><span>名称</span><input bind:this={userNameInput} maxlength="80" required bind:value={userName} placeholder="名称" /></label>
                 <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="当前名称会自动加入别名表" /></label>
                 <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
               </form>
@@ -811,6 +948,20 @@
       <div>
         <button type="button" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}>取消</button>
         <button type="button" class="confirm-delete" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}>{deletingUserId === null ? '确认删除' : '删除中…'}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if pendingAliasClearUser}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog alias-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-alias-title" aria-describedby="clear-alias-detail" tabindex="-1">
+      <span class="delete-confirm-icon">−</span>
+      <h2 id="clear-alias-title">清空“{pendingAliasClearUser.name}”的别名？</h2>
+      <p id="clear-alias-detail">当前名称会保留，其他别名会全部清空。</p>
+      <div>
+        <button type="button" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}>取消</button>
+        <button type="button" class="confirm-delete" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}>{clearingAliasesUserId === null ? '确认清空' : '清空中…'}</button>
       </div>
     </div>
   </div>
@@ -1600,6 +1751,11 @@
 
   .ranked-user-list article:active { cursor: grabbing; }
 
+  .ranked-user-list article.keyboard-selected {
+    outline: 2px solid rgba(56, 111, 171, 0.48);
+    outline-offset: 1px;
+  }
+
   .ranked-user-list article.drop-target {
     border-color: #7a842f;
     box-shadow: 0 0 0 3px rgba(122, 132, 47, 0.14);
@@ -1815,6 +1971,11 @@
     border-color: #b84832;
     background: #b84832;
     color: white;
+  }
+
+  .alias-confirm-dialog button.confirm-delete {
+    border-color: #69772b;
+    background: #69772b;
   }
 
   .history-dates {

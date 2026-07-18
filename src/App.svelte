@@ -1364,6 +1364,19 @@
     URL.revokeObjectURL(url);
   }
 
+  function scrollOpenPanel(direction: -1 | 1) {
+    const candidates = [
+      document.querySelector<HTMLElement>('.accordion-item.open .accordion-content'),
+      document.querySelector<HTMLElement>('.candidate-board'),
+    ];
+    const scroller = candidates.find((element) => element && element.scrollHeight > element.clientHeight);
+    if (scroller) {
+      scroller.scrollBy({ top: direction * Math.max(180, scroller.clientHeight * 0.72), behavior: 'smooth' });
+    } else {
+      window.scrollBy({ top: direction * Math.max(240, window.innerHeight * 0.72), behavior: 'smooth' });
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (currentPage !== 'draw') return;
     const target = event.target as HTMLElement | null;
@@ -1445,6 +1458,20 @@
         applySelectedCommon();
         return;
       }
+    }
+
+    if (
+      !editing
+      && !candidateKeyboardActive
+      && !commonKeyboardActive
+      && !modifier
+      && !event.altKey
+      && !event.shiftKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.preventDefault();
+      scrollOpenPanel(event.key === 'ArrowUp' ? -1 : 1);
+      return;
     }
 
     const webShortcut = !desktopRuntime && !modifier && event.altKey && event.shiftKey;
