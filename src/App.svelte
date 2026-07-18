@@ -12,6 +12,12 @@
     pickWeighted,
     simulateBatch,
   } from './lib/draw';
+  import {
+    clampRequestedResults,
+    isResultLimitReached,
+    normalizeResultLimit,
+    remainingResultSlots,
+  } from './lib/draw-limit';
   import { parseOptionText } from './lib/parse-options';
   import { createWeightedSegments } from './lib/wheel-geometry';
   import type {
@@ -102,7 +108,7 @@
   let drawHistorySaving = false;
   let drawHistoryError = '';
   let autoSaveHistory = true;
-  let continuousTarget = 10;
+  let continuousTarget = 0;
   let continuousIntervalSeconds = 3;
   let continuousRunning = false;
 
@@ -133,22 +139,22 @@
     : buildWheelOptions(prizes, retryEnabled, retryWeight);
   $: eliminatedSet = new Set(eliminatedIds);
   $: rouletteRemaining = enabledPrizes.filter((prize) => !eliminatedSet.has(prize.id));
-  $: spinDisabled =
-    enabledPrizes.length < 2 ||
-    (mode === 'roulette' && rouletteFinished);
   $: validCompleted = records.filter(
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
+  $: resultLimitReached = isResultLimitReached(continuousTarget, validCompleted);
+  $: spinDisabled =
+    enabledPrizes.length < 2 ||
+    resultLimitReached ||
+    (mode === 'roulette' && rouletteFinished);
   $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
   $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
   $: currentStats = createCurrentStats(prizes, records, validCompleted);
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
   $: parsedImportOptions = parseOptionText(importText);
-  $: continuousCompleted = records.filter(
-    (record) => record.outcome === 'selected' || record.outcome === 'winner',
-  ).length;
-  $: continuousRemaining = Math.max(0, continuousTarget - continuousCompleted);
+  $: continuousCompleted = validCompleted;
+  $: continuousRemaining = remainingResultSlots(continuousTarget, continuousCompleted);
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -201,7 +207,7 @@
         if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
         if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
         if (typeof parsed.continuousTarget === 'number') {
-          continuousTarget = Math.min(1000, Math.max(1, Math.floor(parsed.continuousTarget)));
+          continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
         }
         if (typeof parsed.continuousIntervalSeconds === 'number') {
           continuousIntervalSeconds = Math.min(30, Math.max(0.5, parsed.continuousIntervalSeconds));
@@ -701,12 +707,30 @@
       : buildWheelOptions(prizes, retryEnabled, retryWeight, eliminatedSet);
   }
 
+  function normalizeContinuousTarget() {
+    continuousTarget = normalizeResultLimit(continuousTarget, validCompleted);
+  }
+
+  function showResultLimitReached() {
+    stopContinuousDraw();
+    result = {
+      eyebrow: '有效结果上限',
+      title: `已完成 ${validCompleted} 个结果`,
+      detail: '把上限调高后可以继续；设为 0 则不限制次数。',
+      tone: 'success',
+    };
+  }
+
   function spin() {
     if (
       isSpinning ||
       enabledPrizes.length < 2 ||
       (mode === 'roulette' && rouletteFinished)
     ) return;
+    if (resultLimitReached) {
+      showResultLimitReached();
+      return;
+    }
     if (continuousTimer) {
       window.clearTimeout(continuousTimer);
       continuousTimer = undefined;
@@ -751,14 +775,24 @@
 
   function startContinuousDraw() {
     if (isSpinning || continuousRunning || enabledPrizes.length < 2) return;
-    continuousTarget = Math.min(1000, Math.max(1, Math.floor(Number(continuousTarget) || 1)));
+    normalizeContinuousTarget();
     continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(continuousIntervalSeconds) || 3));
     drawSidePanel = 'statistics';
 
-    if (continuousCompleted >= continuousTarget) {
+    if (continuousTarget === 0) {
       result = {
         eyebrow: '连续抽奖',
-        title: '目标已经完成',
+        title: '请先设置有效结果上限',
+        detail: '0 表示手动抽奖不限次数；连续抽奖需要一个明确的结束数量。',
+        tone: 'idle',
+      };
+      return;
+    }
+
+    if (isResultLimitReached(continuousTarget, continuousCompleted)) {
+      result = {
+        eyebrow: '连续抽奖',
+        title: '已达到有效结果上限',
         detail: `当前已有 ${continuousCompleted} 个有效结果。`,
         tone: 'success',
       };
@@ -785,7 +819,7 @@
     ).length;
     const delay = continuousIntervalSeconds * 1000;
 
-    if (completed >= continuousTarget) {
+    if (isResultLimitReached(continuousTarget, completed)) {
       continuousTimer = window.setTimeout(() => {
         continuousRunning = false;
         continuousTimer = undefined;
@@ -914,6 +948,10 @@
 
   function startNewRouletteRound() {
     if (isSpinning) return;
+    if (resultLimitReached) {
+      showResultLimitReached();
+      return;
+    }
     rouletteRound += 1;
     singleAttempt = 0;
     eliminatedIds = [];
@@ -941,7 +979,15 @@
     try {
       stopContinuousDraw();
       drawSidePanel = 'statistics';
-      const safeCount = Math.min(1000, Math.max(1, Math.floor(Number(batchCount) || 1)));
+      const safeCount = clampRequestedResults(
+        batchCount,
+        continuousTarget,
+        validCompleted,
+      );
+      if (safeCount === 0) {
+        showResultLimitReached();
+        return;
+      }
       batchCount = safeCount;
       const simulation = simulateBatch(
         mode,
@@ -1081,6 +1127,7 @@
     rewardAmount = 0;
     retryEnabled = true;
     retryWeight = 0.65;
+    continuousTarget = 0;
     eliminatedIds = [];
     rouletteFinished = false;
     result = {
@@ -1603,7 +1650,9 @@
             <span>{result.eyebrow}</span>
             <strong>{result.title}</strong>
             {#if mode === 'roulette' && rouletteFinished}
-              <button type="button" on:click={startNewRouletteRound}>新一局</button>
+              <button type="button" disabled={resultLimitReached} on:click={startNewRouletteRound}>
+                {resultLimitReached ? '已达上限' : '新一局'}
+              </button>
             {/if}
           </div>
         {/if}
@@ -1707,8 +1756,18 @@
             <section class="continuous-control">
               <div class="continuous-fields">
                 <label>
-                  <span>目标结果</span>
-                  <input type="number" min="1" max="1000" step="1" bind:value={continuousTarget} disabled={continuousRunning} />
+                  <span>有效结果上限</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={Math.max(1000, continuousCompleted)}
+                    step="1"
+                    title="0 表示不限次数"
+                    bind:value={continuousTarget}
+                    disabled={continuousRunning}
+                    on:change={normalizeContinuousTarget}
+                    on:blur={normalizeContinuousTarget}
+                  />
                 </label>
                 <label>
                   <span>结果停留</span>
@@ -1720,13 +1779,18 @@
               </div>
               <div class="continuous-progress">
                 <span>已完成 {continuousCompleted}</span>
-                <strong>还差 {continuousRemaining}</strong>
+                <strong>{continuousRemaining === null ? '不限次数' : `还差 ${continuousRemaining}`}</strong>
               </div>
               {#if continuousRunning}
                 <button type="button" class="continuous-stop" on:click={stopContinuousDraw}>停止连续抽奖</button>
               {:else}
-                <button type="button" class="continuous-start" disabled={enabledPrizes.length < 2 || continuousRemaining === 0} on:click={startContinuousDraw}>
-                  开始连续抽奖
+                <button
+                  type="button"
+                  class="continuous-start"
+                  disabled={enabledPrizes.length < 2 || continuousTarget === 0 || continuousRemaining === 0}
+                  on:click={startContinuousDraw}
+                >
+                  {continuousTarget === 0 ? '设置上限后连续抽奖' : continuousRemaining === 0 ? '已达到上限' : '开始连续抽奖'}
                 </button>
               {/if}
             </section>
