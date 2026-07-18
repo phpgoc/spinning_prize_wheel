@@ -14,6 +14,47 @@ export interface RandomLineup {
   groupCount: number;
 }
 
+export interface LineupOrderAvailability {
+  input: boolean;
+  rank: boolean;
+}
+
+/** 红名只锁定数据库排名排阵；输入顺序仍可使用。 */
+export function lineupOrderAvailability(
+  nameCount: number,
+  desktopRuntime: boolean,
+  resolvingNames: boolean,
+  unresolvedCount: number,
+): LineupOrderAvailability {
+  const input = Math.max(0, Math.floor(Number(nameCount) || 0)) >= 2
+    && (!desktopRuntime || !resolvingNames);
+  return {
+    input,
+    rank: input && (!desktopRuntime || Math.max(0, unresolvedCount) === 0),
+  };
+}
+
+/** 预览项只有和当前输入逐项对应、且具备本名与排名时，才不显示红名。 */
+export function isResolvedLineupName(
+  inputName: string,
+  person: ResolvedLineupName | null | undefined,
+): person is ResolvedLineupName {
+  return person?.inputName === inputName
+    && person.known
+    && person.canonicalName !== null
+    && person.rank !== null;
+}
+
+export function unresolvedLineupNameCount(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+): number {
+  return names.reduce(
+    (count, name, index) => count + (isResolvedLineupName(name, people[index]) ? 0 : 1),
+    0,
+  );
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';

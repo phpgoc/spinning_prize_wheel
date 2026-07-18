@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   createRandomLineup,
   groupName,
+  isResolvedLineupName,
+  lineupOrderAvailability,
   orderResolvedLineupNames,
   recentLineupHistories,
+  unresolvedLineupNameCount,
 } from './random-lineup';
 import type { ResolvedLineupName, SavedLineup } from './types';
 
@@ -64,6 +67,35 @@ describe('随机排阵', () => {
     expect(() => orderResolvedLineupNames([
       { inputName: '陌生人', known: false, userId: null, canonicalName: null, rank: null },
     ])).toThrow('排名名单中存在未识别人物');
+  });
+
+  test('红名统计同时识别缺失、错位和无排名人物', () => {
+    const names = ['已知', '陌生', '错位', '缺排名'];
+    const people: ResolvedLineupName[] = [
+      { inputName: '已知', known: true, userId: 1, canonicalName: '已知', rank: 1 },
+      { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
+      { inputName: '另一个名字', known: true, userId: 2, canonicalName: '错位', rank: 2 },
+      { inputName: '缺排名', known: true, userId: 3, canonicalName: '缺排名', rank: null },
+    ];
+
+    expect(isResolvedLineupName(names[0], people[0])).toBeTrue();
+    expect(unresolvedLineupNameCount(names, people)).toBe(3);
+    expect(unresolvedLineupNameCount(names, [people[0]])).toBe(3);
+  });
+
+  test('红名只锁定排名排阵，输入顺序仍然可用', () => {
+    expect(lineupOrderAvailability(4, true, false, 2)).toEqual({
+      input: true,
+      rank: false,
+    });
+    expect(lineupOrderAvailability(4, true, false, 0)).toEqual({
+      input: true,
+      rank: true,
+    });
+    expect(lineupOrderAvailability(4, true, true, 0)).toEqual({
+      input: false,
+      rank: false,
+    });
   });
 
   test('排阵历史按日期筛选并只保留最新 5 条', () => {

@@ -4,8 +4,11 @@
   import { parseOptionText } from './parse-options';
   import {
     createRandomLineup,
+    isResolvedLineupName,
+    lineupOrderAvailability,
     orderResolvedLineupNames,
     recentLineupHistories,
+    unresolvedLineupNameCount,
     type RandomLineup,
   } from './random-lineup';
   import type { RankedUser, ResolvedLineupName, SavedLineup } from './types';
@@ -54,18 +57,22 @@
   $: inputSignature = `${groupCount}|${namesSignature}|${desktopRankSignature}`;
   $: resultOutdated = result !== null && resultSignature !== inputSignature;
   $: tierPreview = names.length > 0 ? Math.ceil(names.length / Math.max(2, Number(groupCount) || 2)) : 0;
-  $: unknownNames = resolvedNames.filter((person) => !person.known);
+  $: unresolvedPreviewCount = desktopRuntime
+    ? unresolvedLineupNameCount(names, resolvedNames)
+    : 0;
   $: previewRows = names.map((name, index) => ({
     name,
     resolved: resolvedNames[index]?.inputName === name ? resolvedNames[index] : null,
   }));
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
-  $: canGenerateByInput = names.length >= 2 && (!desktopRuntime || !resolvingNames);
-  $: canGenerateByRank = canGenerateByInput
-    && (!desktopRuntime || (
-      resolvedNames.length === names.length
-      && unknownNames.length === 0
-    ));
+  $: orderAvailability = lineupOrderAvailability(
+    names.length,
+    desktopRuntime,
+    resolvingNames,
+    unresolvedPreviewCount,
+  );
+  $: canGenerateByInput = orderAvailability.input;
+  $: canGenerateByRank = orderAvailability.rank;
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
@@ -140,7 +147,7 @@
         await resolveNames();
         if (
           orderMode === 'rank'
-          && (resolvedNames.length !== names.length || resolvedNames.some((person) => !person.known))
+          && unresolvedLineupNameCount(names, resolvedNames) > 0
         ) {
           throw new Error('请先在排名表中补齐所有高亮人物');
         }
@@ -434,15 +441,15 @@
       <div class="preview-panel">
         <div class="result-heading">
           <div><span>02</span><div><h2>名单预览</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
-          <strong class:warning={desktopRuntime && unknownNames.length > 0} class="preview-status">
-            {resolvingNames ? '核对中…' : desktopRuntime && unknownNames.length > 0 ? `${unknownNames.length} 人未录入` : `${names.length} 人`}
+          <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
+            {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 人未识别` : `${names.length} 人`}
           </strong>
         </div>
 
         {#if previewRows.length > 0}
           <div class="preview-list">
             {#each previewRows as row, index}
-              <div class:unknown={desktopRuntime && !resolvingNames && (!row.resolved || !row.resolved.known)} class="preview-row">
+              <div class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)} class="preview-row">
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <div>
                   <input value={row.name} aria-label={`第 ${index + 1} 个人名`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
@@ -454,7 +461,7 @@
                         : '别名表中没有对应人物'}</small>
                   {/if}
                 </div>
-                {#if desktopRuntime && !resolvingNames && (!row.resolved || !row.resolved.known)}
+                {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                   <button type="button" class="add-preview-user" title="添加到排名表" on:click={() => addUnknownPerson(row.name)}>录入</button>
                 {/if}
                 <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>×</button>
@@ -467,10 +474,14 @@
 
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
+        {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
+          <div class="rank-order-lock" role="status">名单中还有红名，数据库排名排阵已锁定；可以先使用输入顺序排阵。</div>
+        {/if}
+
         <div class="lineup-actions">
           {#if desktopRuntime}
-            <button type="button" class="generate-button" disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名排阵</span><i>→</i></button>
-            <button type="button" class="input-order-button" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序排阵</button>
+            <button type="button" class="generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名排阵' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名排阵</span><i>→</i></button>
+            <button type="button" class="input-order-button" title="忽略数据库排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序排阵</button>
           {:else}
             <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始排阵</span><i>→</i></button>
           {/if}
@@ -898,6 +909,17 @@
     color: var(--lineup-dim-on-dark);
     font-size: calc(12px * var(--font-scale, 1));
     place-items: center;
+  }
+
+  .rank-order-lock {
+    margin-top: 12px;
+    padding: 9px 11px;
+    border: 1px solid rgba(255, 117, 87, 0.24);
+    border-radius: 9px;
+    background: rgba(255, 117, 87, 0.08);
+    color: #ffab97;
+    font-size: calc(12px * var(--font-scale, 1));
+    line-height: 1.55;
   }
 
   .lineup-actions {
