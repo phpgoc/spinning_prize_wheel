@@ -52,7 +52,6 @@
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
   const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
-  const ROULETTE_STATE_KEY = 'fortuna-roulette-state-v1';
   const MAX_ROULETTE_ROUNDS = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
@@ -204,7 +203,6 @@
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        prizes,
         mode,
         animationStyle,
         durationSeconds,
@@ -224,7 +222,6 @@
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<{
-          prizes: Prize[];
           mode: DrawMode;
           animationStyle: AnimationStyle;
           durationSeconds: number;
@@ -237,7 +234,6 @@
           fontScale: number;
         }>;
 
-        if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
         if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
         if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
           animationStyle = parsed.animationStyle!;
@@ -290,7 +286,6 @@
         prize
         && typeof prize.id === 'string'
         && typeof prize.name === 'string'
-        && typeof prize.weight === 'number'
         && typeof prize.color === 'string'
         && typeof prize.enabled === 'boolean'
       ));
@@ -349,7 +344,12 @@
       id: createId('selection'),
       name: name.slice(0, 40),
       createdAt: Date.now(),
-      prizes: prizes.map((prize) => ({ ...prize })),
+      prizes: prizes.map(({ id, name: prizeName, color, enabled }) => ({
+        id,
+        name: prizeName,
+        color,
+        enabled,
+      })),
     };
 
     commonSelectionSaving = true;
@@ -377,7 +377,7 @@
   }
 
   function applyCommonSelection(selection: CommonSelection) {
-    if (!updatePrizes(selection.prizes.map((prize) => ({ ...prize })))) return;
+    if (!updatePrizes(selection.prizes.map((prize) => ({ ...prize, weight: 1 })))) return;
     rouletteHits = {};
     rouletteFinished = false;
     singleAttempt = 0;
@@ -492,7 +492,6 @@
     singleAttempt = 0;
     singleCompleted = 0;
     monopolyTargetId = null;
-    localStorage.removeItem(ROULETTE_STATE_KEY);
     drawSidePanel = 'candidates';
     exitCandidateKeyboard();
     exitCommonKeyboard();
@@ -741,7 +740,6 @@
     rouletteRound = 1;
     singleAttempt = 0;
     monopolyTargetId = null;
-    localStorage.removeItem(ROULETTE_STATE_KEY);
     result = next === 'selected'
       ? {
           eyebrow: '选中模式',

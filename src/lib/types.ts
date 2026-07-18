@@ -10,12 +10,14 @@ export interface Prize {
   enabled: boolean;
 }
 
+export type CommonSelectionPrize = Omit<Prize, 'weight'>;
+
 export interface CommonSelection {
   version: 1;
   id: string;
   name: string;
   createdAt: number;
-  prizes: Prize[];
+  prizes: CommonSelectionPrize[];
 }
 
 export interface SavedDraw {
