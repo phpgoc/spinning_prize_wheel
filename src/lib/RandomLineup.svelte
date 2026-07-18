@@ -6,6 +6,7 @@
     createRandomLineup,
     isResolvedLineupName,
     lineupOrderAvailability,
+    lineupPreviewTierStarts,
     orderResolvedLineupNames,
     recentLineupHistories,
     unresolvedLineupNameCount,
@@ -64,6 +65,7 @@
     name,
     resolved: resolvedNames[index]?.inputName === name ? resolvedNames[index] : null,
   }));
+  $: previewTierStarts = new Set(lineupPreviewTierStarts(names.length, Number(groupCount)));
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
   $: orderAvailability = lineupOrderAvailability(
     names.length,
@@ -449,6 +451,11 @@
         {#if previewRows.length > 0}
           <div class="preview-list">
             {#each previewRows as row, index}
+              {#if previewTierStarts.has(index)}
+                <div class:first-tier={index === 0} class="preview-tier-divider" role="separator" aria-label={`第 ${Math.floor(index / Math.max(2, Number(groupCount) || 2)) + 1} 档`}>
+                  <i></i><span>t{Math.floor(index / Math.max(2, Number(groupCount) || 2)) + 1}</span><i></i>
+                </div>
+              {/if}
               <div class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)} class="preview-row">
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <div>
@@ -820,6 +827,31 @@
     margin-top: 18px;
     padding-right: 4px;
     overflow: auto;
+  }
+
+  .preview-tier-divider {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 9px;
+    margin: 9px 0 2px;
+    color: #b8c56f;
+    font-family: var(--font-mono);
+    font-size: calc(11px * var(--font-scale, 1));
+    font-weight: 800;
+    letter-spacing: 0.08em;
+  }
+
+  .preview-tier-divider.first-tier { margin-top: 0; }
+
+  .preview-tier-divider i {
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, transparent, rgba(231, 255, 114, 0.38));
+  }
+
+  .preview-tier-divider i:last-child {
+    background: linear-gradient(90deg, rgba(231, 255, 114, 0.38), transparent);
   }
 
   .preview-row {

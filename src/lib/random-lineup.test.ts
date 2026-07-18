@@ -4,6 +4,7 @@ import {
   groupName,
   isResolvedLineupName,
   lineupOrderAvailability,
+  lineupPreviewTierStarts,
   orderResolvedLineupNames,
   recentLineupHistories,
   unresolvedLineupNameCount,
@@ -96,6 +97,12 @@ describe('随机排阵', () => {
       input: false,
       rank: false,
     });
+  });
+
+  test('预览按组数标出每一档的换行位置', () => {
+    expect(lineupPreviewTierStarts(24, 6)).toEqual([0, 6, 12, 18]);
+    expect(lineupPreviewTierStarts(10, 4)).toEqual([0, 4, 8]);
+    expect(lineupPreviewTierStarts(0, 6)).toEqual([]);
   });
 
   test('排阵历史按日期筛选并只保留最新 5 条', () => {

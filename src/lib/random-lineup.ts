@@ -55,6 +55,13 @@ export function unresolvedLineupNameCount(
   );
 }
 
+/** 返回每一档在预览名单中的起始下标，用于强制换行和绘制分隔线。 */
+export function lineupPreviewTierStarts(peopleCount: number, groupCount: number): number[] {
+  const total = Math.max(0, Math.floor(Number(peopleCount) || 0));
+  const size = Math.max(2, Math.floor(Number(groupCount) || 2));
+  return Array.from({ length: Math.ceil(total / size) }, (_, index) => index * size);
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';
