@@ -242,7 +242,7 @@ function caimiGroupScores(
   return scores;
 }
 
-/** 猜蜜版把含“猜”或“本”的项换进当前总 rank 最高的最弱组，并保留明作弊标记。 */
+/** 猜蜜版把含“猜”或“本”的项换进当前总 rank 最高的最弱组，并保留正义调度标记。 */
 export function applyCaimiLineupSwap(
   lineup: RandomLineup,
   rankScores: readonly number[] = [],

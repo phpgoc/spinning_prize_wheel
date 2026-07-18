@@ -974,7 +974,7 @@
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
         {#if variant === 'caimi' && caimiSwapCount > 0}
-          <div class="caimi-cheat-note"><strong>明牌暗箱</strong><span>已和最弱组同档交换 {caimiSwapCount} 项</span></div>
+          <div class="caimi-cheat-note"><strong>正义调度</strong><span>已为整体平衡协调 {caimiSwapCount} 项</span></div>
         {/if}
         {#if desktopRuntime && historyStatus !== 'idle'}
           <div class:error={historyStatus === 'error'} class="history-status">{historyStatus === 'saving' ? '正在保存排阵记录…' : historyStatus === 'saved' ? '排阵输入与结果已保存' : '排阵记录保存失败'}</div>
@@ -985,7 +985,7 @@
               <thead><tr><th scope="col">档位</th>{#each result.groupNames as group}<th scope="col"><span>{group}</span>组</th>{/each}</tr></thead>
               <tbody>
                 {#each result.tiers as tier, tierIndex}
-                  <tr><th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>{#each tier as entry}<td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'}>{#if entry}{#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '暗箱' : '被换'}</i>{/if}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>{:else}<span>—</span>{/if}</td>{/each}</tr>
+                  <tr><th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>{#each tier as entry}<td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'}>{#if entry}{#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '守护' : '支援'}</i>{/if}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>{:else}<span>—</span>{/if}</td>{/each}</tr>
                 {/each}
               </tbody>
             </table>
