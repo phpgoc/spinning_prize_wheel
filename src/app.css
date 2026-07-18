@@ -518,9 +518,7 @@ p {
 }
 
 .animation-options small {
-  margin-top: 2px;
-  color: var(--text-dim);
-  font-size: calc(11px * var(--font-scale, 1));
+  display: none;
 }
 
 .motion-icon {
@@ -638,16 +636,7 @@ p {
   position: relative;
   z-index: 2;
   align-items: center;
-}
-
-.stage-heading h1 {
-  font-size: clamp(
-    calc(22px * var(--font-scale, 1)),
-    calc(1.65vw * var(--font-scale, 1)),
-    calc(30px * var(--font-scale, 1))
-  );
-  font-weight: 850;
-  letter-spacing: -0.055em;
+  justify-content: flex-end;
 }
 
 .draw-session-actions {
@@ -707,75 +696,6 @@ p {
 
 @keyframes pulse {
   to { opacity: 0.35; }
-}
-
-.roulette-track {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-top: 16px;
-  padding: 8px 11px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  background: rgba(12, 13, 10, 0.19);
-  color: #a4a699;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--font-scale, 1));
-}
-
-.roulette-track > strong {
-  margin-left: auto;
-  color: var(--accent);
-  font-size: calc(11px * var(--font-scale, 1));
-}
-
-.survivor-dots {
-  display: flex;
-  gap: 5px;
-}
-
-.survivor-dots i {
-  width: 8px;
-  height: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 50%;
-  transition: opacity 180ms ease, filter 180ms ease;
-}
-
-.survivor-dots i.out {
-  opacity: 0.16;
-  filter: grayscale(1);
-}
-
-/* 俄罗斯轮盘中显示每个候选项的剩余生命数。 */
-.life-badge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  border-radius: 50%;
-  transition: opacity 200ms ease, filter 200ms ease, transform 200ms ease;
-}
-
-.life-badge small {
-  font-size: 9px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-  line-height: 1;
-  pointer-events: none;
-  text-shadow: 0 0 3px rgba(0,0,0,0.8);
-}
-
-.life-badge.out {
-  opacity: 0.2;
-  filter: grayscale(1);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: scale(0.8);
 }
 
 .wheel-wrap {
@@ -1429,10 +1349,8 @@ kbd {
   .page-switch button,
   .mode-switch button { flex: 1; justify-content: center; padding-inline: 8px; }
   .stage-panel { min-height: 660px; }
-  .stage-heading h1 { max-width: 250px; font-size: calc(23px * var(--font-scale, 1)); }
   .status-pill { display: none; }
   .wheel-wrap { min-height: 370px; }
-  .roulette-track { margin-top: 12px; }
   .panel { padding: 23px 16px; }
 }
 

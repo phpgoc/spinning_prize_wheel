@@ -155,9 +155,6 @@
   $: wheelOptions = enabledPrizes.length === 0
     ? []
     : buildWheelOptions(prizes, retryEnabled, retryWeight);
-  $: rouletteRemaining = enabledPrizes.filter(
-    (p) => (p.weight - (rouletteHits[p.id] ?? 0)) > 0,
-  );
   $: validCompleted = records.filter(
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
@@ -1647,7 +1644,6 @@
           >
             <span class="motion-icon simple-icon"><i></i></span>
             <strong>平凡</strong>
-            <small>清爽直接</small>
           </button>
           <button
             type="button"
@@ -1657,7 +1653,6 @@
           >
             <span class="motion-icon luxury-icon">✦</span>
             <strong>高级</strong>
-            <small>璀璨华丽</small>
           </button>
           <button
             type="button"
@@ -1667,7 +1662,6 @@
           >
             <span class="motion-icon board-icon">⬡</span>
             <strong>大富翁</strong>
-            <small>棋盘走格</small>
           </button>
         </div>
       </section>
@@ -1769,9 +1763,6 @@
 
     <section class="stage-panel">
       <div class="stage-heading">
-        <div>
-          <h1>{mode === 'selected' ? '谁会成为本轮幸运得主？' : '谁能留到最后？'}</h1>
-        </div>
         <div class="draw-session-actions">
           <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新的抽奖</button>
           <button
@@ -1789,27 +1780,6 @@
 
       <div class="draw-workbench">
         <div class="draw-core">
-      {#if mode === 'roulette'}
-        <div class="roulette-track">
-          <span>第 {rouletteRound}/{MAX_ROULETTE_ROUNDS} 局</span>
-          <div class="survivor-dots" aria-label={`剩余 ${rouletteRemaining.length} 项`}>
-            {#each enabledPrizes as prize (prize.id)}
-              {@const livesLeft = Math.max(0, prize.weight - (rouletteHits[prize.id] ?? 0))}
-              {@const alive = livesLeft > 0}
-              <span
-                class="life-badge"
-                class:out={!alive}
-                style:background={alive ? prize.color : 'rgba(80,80,80,0.4)'}
-                title={alive ? `${prize.name}（剩 ${livesLeft} 命）` : `${prize.name}（已出局）`}
-              >
-                {#if prize.weight > 1}<small>{livesLeft}</small>{/if}
-              </span>
-            {/each}
-          </div>
-          <strong>{rouletteRemaining.length} 项存活</strong>
-        </div>
-      {/if}
-
       <div class="wheel-wrap">
         {#if animationStyle === 'threeD' && mode !== 'roulette'}
           <!-- 大富翁棋盘：俄罗斯模式降级到高级转盘 -->

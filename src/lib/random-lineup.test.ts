@@ -7,6 +7,7 @@ import {
   lineupOrderAvailability,
   lineupPreviewTierStarts,
   orderResolvedLineupNames,
+  rankedUserDropTargetForCard,
   recentLineupHistories,
   unresolvedLineupNameCount,
 } from './random-lineup';
@@ -65,13 +66,13 @@ describe('随机排阵', () => {
     expect(orderResolvedLineupNames([...people].reverse())).toEqual(['A', 'B', 'C']);
   });
 
-  test('桌面排名拒绝未识别人物', () => {
+  test('桌面排名拒绝未识别选项', () => {
     expect(() => orderResolvedLineupNames([
       { inputName: '陌生人', known: false, userId: null, canonicalName: null, rank: null },
-    ])).toThrow('排名名单中存在未识别人物');
+    ])).toThrow('排名名单中存在未识别选项');
   });
 
-  test('红名统计同时识别缺失、错位和无排名人物', () => {
+  test('红名统计同时识别缺失、错位和无排名选项', () => {
     const names = ['已知', '陌生', '错位', '缺排名'];
     const people: ResolvedLineupName[] = [
       { inputName: '已知', known: true, userId: 1, canonicalName: '已知', rank: 1 },
@@ -108,6 +109,18 @@ describe('随机排阵', () => {
 
   test('预览名单可在指定位置插入姓名', () => {
     expect(insertLineupPreviewName(['甲', '丙'], 1, ' 乙 ')).toEqual(['甲', '乙', '丙']);
+  });
+
+  test('排名卡片按上中下区域执行前插、替换和后插', () => {
+    expect([
+      rankedUserDropTargetForCard(7, 2, 0.1),
+      rankedUserDropTargetForCard(7, 2, 0.5),
+      rankedUserDropTargetForCard(7, 2, 0.9),
+    ]).toEqual([
+      { kind: 'insert', index: 2 },
+      { kind: 'swap', userId: 7 },
+      { kind: 'insert', index: 3 },
+    ]);
   });
 
   test('排阵历史按日期筛选并只保留最新 5 条', () => {

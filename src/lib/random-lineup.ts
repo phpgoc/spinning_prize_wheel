@@ -24,6 +24,18 @@ export type RankedUserDropTarget =
   | { kind: 'swap'; userId: number }
   | { kind: 'unranked' };
 
+/** 把已排名卡片的上四分之一、中间、下四分之一映射为前插、替换、后插。 */
+export function rankedUserDropTargetForCard(
+  userId: number,
+  rankIndex: number | null,
+  verticalRatio: number,
+): RankedUserDropTarget {
+  if (rankIndex === null) return { kind: 'swap', userId };
+  if (verticalRatio < 0.25) return { kind: 'insert', index: rankIndex };
+  if (verticalRatio > 0.75) return { kind: 'insert', index: rankIndex + 1 };
+  return { kind: 'swap', userId };
+}
+
 /** 红名只锁定数据库排名排阵；输入顺序仍可使用。 */
 export function lineupOrderAvailability(
   nameCount: number,
@@ -101,7 +113,7 @@ export function groupName(index: number): string {
 
 export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]): string[] {
   if (people.some((person) => !person.known || person.canonicalName === null || person.rank === null)) {
-    throw new Error('排名名单中存在未识别人物');
+    throw new Error('排名名单中存在未识别选项');
   }
 
   return [...people]
@@ -156,7 +168,7 @@ function shuffledGroupIndexes(groupCount: number, random: () => number): number[
 }
 
 /**
- * 按输入顺序每 groupCount 人划为一档，再把同档成员随机放入不同组。
+ * 按输入顺序每 groupCount 项划为一档，再把同档成员随机放入不同组。
  */
 export function createRandomLineup(
   names: readonly string[],

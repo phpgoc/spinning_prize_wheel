@@ -9,6 +9,7 @@
     lineupOrderAvailability,
     lineupPreviewTierStarts,
     orderResolvedLineupNames,
+    rankedUserDropTargetForCard,
     recentLineupHistories,
     unresolvedLineupNameCount,
     type RankedUserDropTarget,
@@ -43,8 +44,18 @@
   let userName = '';
   let userAliases = '';
   let userAliasInput: HTMLInputElement | null = null;
+  let pendingDeleteUser: RankedUser | null = null;
+  let deletingUserId: number | null = null;
+  let pendingRankDragUserId: number | null = null;
   let draggingUserId: number | null = null;
   let activeRankDropTarget: RankedUserDropTarget | null = null;
+  let activeRankDropCardId: number | null = null;
+  let activeRankDropPosition: 'before' | 'swap' | 'after' | null = null;
+  let rankDragPointerId: number | null = null;
+  let rankDragStartX = 0;
+  let rankDragStartY = 0;
+  let rankDragX = 0;
+  let rankDragY = 0;
   let rankingReordering = false;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
@@ -134,7 +145,7 @@
     } catch (reason) {
       if (request === resolutionRequest) {
         resolvedNames = [];
-        rankingError = messageFrom(reason, '无法核对人物别名');
+        rankingError = messageFrom(reason, '无法核对名称别名');
         error = rankingError;
       }
     } finally {
@@ -161,7 +172,7 @@
           orderMode === 'rank'
           && unresolvedLineupNameCount(names, resolvedNames) > 0
         ) {
-          throw new Error('请先在排名表中补齐所有高亮人物');
+          throw new Error('请先在排名表中补齐所有高亮选项');
         }
       }
       const orderedNames = orderedNamesForLineup(orderMode);
@@ -304,7 +315,7 @@
     const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number; orderMode: LineupOrderMode }>;
     const peopleCount = Array.isArray(input.sourceNames) ? input.sourceNames.length : 0;
     const mode = input.orderMode === 'input' ? '输入顺序' : '数据库排名';
-    return `${peopleCount} 人 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
+    return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
   function viewHistory(history: SavedLineup) {
@@ -342,31 +353,90 @@
     return aliases.length > 0 ? aliases.join('、') : '暂无其他别名';
   }
 
-  function beginRankDrag(event: DragEvent, userId: number) {
-    if (rankingReordering) {
-      event.preventDefault();
-      return;
-    }
-    draggingUserId = userId;
+  function beginRankPointerDrag(event: PointerEvent, userId: number) {
+    if (rankingReordering || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest('button')) return;
+    pendingRankDragUserId = userId;
+    rankDragPointerId = event.pointerId;
+    rankDragStartX = event.clientX;
+    rankDragStartY = event.clientY;
+    rankDragX = event.clientX;
+    rankDragY = event.clientY;
     activeRankDropTarget = null;
-    event.dataTransfer?.setData('text/plain', String(userId));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
 
-  function markRankDropTarget(target: RankedUserDropTarget) {
-    if (draggingUserId !== null && !rankingReordering) activeRankDropTarget = target;
+  function rankDropTargetAt(x: number, y: number): RankedUserDropTarget | null {
+    activeRankDropCardId = null;
+    activeRankDropPosition = null;
+    const pointed = document.elementFromPoint(x, y) as HTMLElement | null;
+    const card = pointed?.closest<HTMLElement>('[data-rank-user-id]');
+    if (card) {
+      const userId = Number(card.dataset.rankUserId);
+      if (!Number.isInteger(userId)) return null;
+      const rankIndex = Number(card.dataset.rankIndex);
+      activeRankDropCardId = userId;
+      if (Number.isInteger(rankIndex)) {
+        const rect = card.getBoundingClientRect();
+        const verticalRatio = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
+        const target = rankedUserDropTargetForCard(userId, rankIndex, verticalRatio);
+        activeRankDropPosition = target.kind === 'insert'
+          ? target.index === rankIndex ? 'before' : 'after'
+          : 'swap';
+        return target;
+      }
+      activeRankDropPosition = 'swap';
+      return rankedUserDropTargetForCard(userId, null, 0.5);
+    }
+
+    const zone = pointed?.closest<HTMLElement>('[data-rank-zone]')?.dataset.rankZone;
+    if (zone === 'unranked') return { kind: 'unranked' };
+    if (zone === 'ranked') return { kind: 'insert', index: rankedPeople.length };
+    return null;
+  }
+
+  function moveRankPointerDrag(event: PointerEvent) {
+    if (event.pointerId !== rankDragPointerId || pendingRankDragUserId === null) return;
+    rankDragX = event.clientX;
+    rankDragY = event.clientY;
+    if (
+      draggingUserId === null
+      && Math.hypot(event.clientX - rankDragStartX, event.clientY - rankDragStartY) < 6
+    ) return;
+
+    draggingUserId = pendingRankDragUserId;
+    activeRankDropTarget = rankDropTargetAt(event.clientX, event.clientY);
+    event.preventDefault();
+  }
+
+  function finishRankPointerDrag(event: PointerEvent) {
+    if (event.pointerId !== rankDragPointerId) return;
+    const userId = draggingUserId;
+    const target = activeRankDropTarget ?? rankDropTargetAt(event.clientX, event.clientY);
+    const element = event.currentTarget as HTMLElement;
+    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+    clearRankDragState();
+    if (userId !== null && target !== null) void moveRankedUser(userId, target);
+  }
+
+  function cancelRankPointerDrag(event: PointerEvent) {
+    if (event.pointerId !== rankDragPointerId) return;
+    const element = event.currentTarget as HTMLElement;
+    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+    clearRankDragState();
   }
 
   function clearRankDragState() {
+    pendingRankDragUserId = null;
     draggingUserId = null;
     activeRankDropTarget = null;
+    activeRankDropCardId = null;
+    activeRankDropPosition = null;
+    rankDragPointerId = null;
   }
 
-  async function dropRankedUser(event: DragEvent, target: RankedUserDropTarget) {
-    const transferredId = Number.parseInt(event.dataTransfer?.getData('text/plain') ?? '', 10);
-    const userId = Number.isInteger(transferredId) ? transferredId : draggingUserId;
-    if (userId === null || rankingReordering) return;
-
+  async function moveRankedUser(userId: number, target: RankedUserDropTarget) {
+    if (rankingReordering) return;
     if (target.kind === 'swap' && target.userId === userId) {
       clearRankDragState();
       return;
@@ -378,7 +448,7 @@
       rankedUsers = await invoke<RankedUser[]>('move_ranked_user', { draggedId: userId, target });
       await resolveNames();
     } catch (reason) {
-      rankingError = messageFrom(reason, '无法调整人物排名');
+      rankingError = messageFrom(reason, '无法调整选项排名');
       await loadRankedUsers();
     } finally {
       rankingReordering = false;
@@ -406,22 +476,32 @@
       await loadRankedUsers();
       await resolveNames();
     } catch (reason) {
-      rankingError = messageFrom(reason, '无法保存排名人物');
+      rankingError = messageFrom(reason, '无法保存排名选项');
     } finally {
       rankingSaving = false;
     }
   }
 
-  async function deleteRankedUser(user: RankedUser) {
-    if (!window.confirm(`确定从排名表删除“${user.name}”及其全部别名吗？`)) return;
+  function requestDeleteRankedUser(user: RankedUser) {
+    pendingDeleteUser = user;
+    rankingError = '';
+  }
+
+  async function confirmDeleteRankedUser() {
+    const user = pendingDeleteUser;
+    if (!user || deletingUserId !== null) return;
+    deletingUserId = user.id;
     rankingError = '';
     try {
       await invoke('delete_ranked_user', { id: user.id });
       if (editingUserId === user.id) resetUserForm();
+      pendingDeleteUser = null;
       await loadRankedUsers();
       await resolveNames();
     } catch (reason) {
-      rankingError = messageFrom(reason, '无法删除排名人物');
+      rankingError = messageFrom(reason, '无法删除排名选项');
+    } finally {
+      deletingUserId = null;
     }
   }
 
@@ -450,7 +530,7 @@
     <div>
       <span>RANDOM LINEUP</span>
       <h1>随机排阵</h1>
-      <p>{desktopRuntime ? '数据库排名决定档位，输入别名也能识别到同一个人。' : '输入顺序决定档位，同一档的人会被随机分到不同组。'}</p>
+      <p>{desktopRuntime ? '数据库排名决定档位，输入别名也能识别到同一个选项。' : '输入顺序决定档位，同一档的选项会被随机分到不同组。'}</p>
     </div>
     <div class="rule-badge"><i>1</i><span>唯一规则<strong>同档不同组</strong></span></div>
   </header>
@@ -460,118 +540,95 @@
       <aside class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
-            <span>排名与别名</span><strong>{rankedUsers.length} 人</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
+            <span>排名与别名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
             <div class:dragging={draggingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
-              <form on:submit|preventDefault={saveRankedUser}>
-                <div class="rank-form-heading">
-                  <strong>{editingUserId === null ? '添加人物' : '编辑人物'}</strong>
-                  {#if editingUserId !== null}<button type="button" on:click={resetUserForm}>取消编辑</button>{/if}
-                </div>
-                <label><span>本名</span><input maxlength="80" required bind:value={userName} placeholder="人物名称" /></label>
-                <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="本名会自动加入别名表" /></label>
-                {#if editingUserId === null}<p class="rank-form-note">新人物会先进入无排名区，保存后拖动即可设置排名。</p>{/if}
-                <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存人物'}</button>
-              </form>
               {#if rankingError}<div class="ranking-error" role="alert">{rankingError}</div>{/if}
               <div class="ranked-user-list">
                 {#if rankingLoading}
                   <p>正在读取排名表…</p>
-                {:else if rankedUsers.length === 0}
-                  <p>排名表为空，请先录入人物。</p>
                 {:else}
-                  <section class="rank-zone">
-                    <div class="rank-zone-heading"><strong>已排名</strong><span>{rankedPeople.length} 人 · 拖到间隙插入，拖到人物互换</span></div>
+                  <section class="rank-zone" data-rank-zone="ranked">
+                    <div class="rank-zone-heading"><strong>已排名</strong><span>{rankedPeople.length}</span></div>
+                    {#if rankedPeople.length === 0}
+                      <div class:active={activeRankDropTarget?.kind === 'insert'} class="empty-ranked-drop">拖入排名</div>
+                    {/if}
                     {#each rankedPeople as user, index (user.id)}
-                      <button
-                        type="button"
-                        class:active={activeRankDropTarget?.kind === 'insert' && activeRankDropTarget.index === index}
-                        class="rank-insert-zone"
-                        tabindex="-1"
-                        aria-label={`插入到第 ${index + 1} 名`}
-                        on:dragenter={() => markRankDropTarget({ kind: 'insert', index })}
-                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'insert', index })}
-                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'insert', index })}
-                      ><span>插入到这里</span></button>
-                      <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
+                      <!-- 卡片用纵向四分区处理插入与替换，内部按钮保留独立操作。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
-                        class:drop-target={activeRankDropTarget?.kind === 'swap' && activeRankDropTarget.userId === user.id}
+                        class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
+                        class:insert-before={activeRankDropCardId === user.id && activeRankDropPosition === 'before'}
+                        class:insert-after={activeRankDropCardId === user.id && activeRankDropPosition === 'after'}
                         class:drag-source={draggingUserId === user.id}
-                        draggable={!rankingReordering}
-                        on:dragstart={(event) => beginRankDrag(event, user.id)}
-                        on:dragenter={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
-                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
-                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'swap', userId: user.id })}
-                        on:dragend={clearRankDragState}
+                        data-rank-user-id={user.id}
+                        data-rank-index={index}
+                        on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
+                        on:pointermove={moveRankPointerDrag}
+                        on:pointerup={finishRankPointerDrag}
+                        on:pointercancel={cancelRankPointerDrag}
                       >
                         <span class="rank-number">{user.rank}</span>
                         <div class="ranked-user-content">
                           <div class="ranked-user-heading">
                             <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
                             <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
-                            <button type="button" class="delete-user" on:click={() => deleteRankedUser(user)}>删除</button>
+                            <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                           </div>
                           <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
+                        {#if draggingUserId !== null && draggingUserId !== user.id}
+                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i><i></i></div>
+                        {/if}
                       </article>
                     {/each}
-                    <button
-                      type="button"
-                      class:active={activeRankDropTarget?.kind === 'insert' && activeRankDropTarget.index === rankedPeople.length}
-                      class="rank-insert-zone"
-                      tabindex="-1"
-                      aria-label="插入到排名末尾"
-                      on:dragenter={() => markRankDropTarget({ kind: 'insert', index: rankedPeople.length })}
-                      on:dragover|preventDefault={() => markRankDropTarget({ kind: 'insert', index: rankedPeople.length })}
-                      on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'insert', index: rankedPeople.length })}
-                    ><span>{rankedPeople.length === 0 ? '拖到这里设为第 1 名' : '插入到排名末尾'}</span></button>
                   </section>
 
-                  <section class="rank-zone unranked-zone">
-                    <div class="rank-zone-heading"><strong>无排名</strong><span>{unrankedPeople.length} 人 · 新人物默认在这里</span></div>
-                    <button
-                      type="button"
-                      class:active={activeRankDropTarget?.kind === 'unranked'}
-                      class="unranked-drop-zone"
-                      tabindex="-1"
-                      on:dragenter={() => markRankDropTarget({ kind: 'unranked' })}
-                      on:dragover|preventDefault={() => markRankDropTarget({ kind: 'unranked' })}
-                      on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'unranked' })}
-                    >拖到这里设为无排名</button>
+                  <section class="rank-zone unranked-zone" data-rank-zone="unranked">
+                    <div class="rank-zone-heading"><strong>无排名</strong><span>{unrankedPeople.length}</span></div>
+                    <div class:active={activeRankDropTarget?.kind === 'unranked'} class="unranked-drop-zone">拖入无排名</div>
                     {#if unrankedPeople.length === 0}
-                      <p class="empty-rank-zone">暂无无排名人物</p>
+                      <p class="empty-rank-zone">暂无无排名选项</p>
                     {/if}
                     {#each unrankedPeople as user (user.id)}
                       <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
-                        class:drop-target={activeRankDropTarget?.kind === 'swap' && activeRankDropTarget.userId === user.id}
+                        class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:drag-source={draggingUserId === user.id}
-                        draggable={!rankingReordering}
-                        on:dragstart={(event) => beginRankDrag(event, user.id)}
-                        on:dragenter={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
-                        on:dragover|preventDefault={() => markRankDropTarget({ kind: 'swap', userId: user.id })}
-                        on:drop|preventDefault={(event) => dropRankedUser(event, { kind: 'swap', userId: user.id })}
-                        on:dragend={clearRankDragState}
+                        data-rank-user-id={user.id}
+                        on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
+                        on:pointermove={moveRankPointerDrag}
+                        on:pointerup={finishRankPointerDrag}
+                        on:pointercancel={cancelRankPointerDrag}
                       >
                         <span class="rank-number">—</span>
                         <div class="ranked-user-content">
                           <div class="ranked-user-heading">
                             <button type="button" class="user-name" on:click={() => editRankedUser(user)}>{user.name}</button>
                             <button type="button" class="alias-action" on:click={() => editRankedUser(user, true)}>添加别名</button>
-                            <button type="button" class="delete-user" on:click={() => deleteRankedUser(user)}>删除</button>
+                            <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                           </div>
                           <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
+                        {#if draggingUserId !== null && draggingUserId !== user.id}<div class="swap-drop-guide" aria-hidden="true"></div>{/if}
                       </article>
                     {/each}
                   </section>
                 {/if}
               </div>
+              <form class="rank-person-form" on:submit|preventDefault={saveRankedUser}>
+                <div class="rank-form-heading">
+                  <strong>{editingUserId === null ? '添加' : '编辑'}</strong>
+                  {#if editingUserId !== null}<button type="button" on:click={resetUserForm}>取消编辑</button>{/if}
+                </div>
+                <label><span>名称</span><input maxlength="80" required bind:value={userName} placeholder="名称" /></label>
+                <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="当前名称会自动加入别名表" /></label>
+                <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
+              </form>
             </div>
           {/if}
         </section>
@@ -613,7 +670,7 @@
         <div class="result-heading">
           <div><span>02</span><div><h2>名单预览</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
-            {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 人未识别` : `${names.length} 人`}
+            {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
         </div>
 
@@ -640,13 +697,13 @@
                 <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <div>
-                  <input value={row.name} aria-label={`第 ${index + 1} 个人名`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
+                  <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
                   {#if desktopRuntime}
                     <small>{resolvingNames
                       ? '核对中'
                       : row.resolved?.known
                         ? `本名 ${row.resolved.canonicalName} · 排名 ${row.resolved.rank}`
-                        : '别名表中没有对应人物'}</small>
+                        : '别名表中没有对应选项'}</small>
                   {/if}
                 </div>
                 {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
@@ -670,19 +727,19 @@
           </div>
         {:else}
           <div class="preview-empty">
-            <span>请先在右侧粘贴参赛名单</span>
+            <span>请先在右侧粘贴名单</span>
             {#if insertIndex === 0}
               <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
                 <label>
-                  <span>添加第一个人</span>
-                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加第一个人" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                  <span>添加第一项</span>
+                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加第一项" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
                 </label>
                 <button type="submit">添加</button>
                 <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
                 {#if insertError}<small role="alert">{insertError}</small>{/if}
               </form>
             {:else}
-              <button type="button" class="append-preview-user" on:click={() => openPreviewInsertion(0)}>＋ 添加第一个人</button>
+              <button type="button" class="append-preview-user" on:click={() => openPreviewInsertion(0)}>＋ 添加第一项</button>
             {/if}
           </div>
         {/if}
@@ -705,7 +762,7 @@
 
       <div class="lineup-result">
         <div class="result-heading">
-          <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 人 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
+          <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
           {#if result}<button type="button" on:click={() => generate(resultOrderMode)}>重新随机</button>{/if}
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
@@ -724,20 +781,40 @@
             </table>
           </div>
         {:else}
-          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div><strong>排阵表会显示在这里</strong><p>例如 24 人、6 组，将得到 A–F 六组与 t1–t4 四档。</p></div>
+          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div><strong>排阵表会显示在这里</strong><p>例如 24 项、6 组，将得到 A–F 六组与 t1–t4 四档。</p></div>
         {/if}
       </div>
     </section>
 
     <aside class="lineup-config">
-      <div class="config-heading"><div><span>01</span><h2>参赛名单</h2></div><strong>{names.length}<small>人</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴人名…" spellcheck="false"></textarea></label>
-      <div class="sample-actions"><button type="button" on:click={fillSample}>填入 24 人示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
+      <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false"></textarea></label>
+      <div class="sample-actions"><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
-      <div class="rule-note"><span>分档方式</span><p>{desktopRuntime ? `默认按数据库排名每 ${Math.max(2, Number(groupCount) || 2)} 人一档，无排名记为 10000。` : `按输入顺序每 ${Math.max(2, Number(groupCount) || 2)} 人划为一档。`}</p></div>
+      <div class="rule-note"><span>分档方式</span><p>{desktopRuntime ? `默认按数据库排名每 ${Math.max(2, Number(groupCount) || 2)} 项一档，无排名记为 10000。` : `按输入顺序每 ${Math.max(2, Number(groupCount) || 2)} 项划为一档。`}</p></div>
     </aside>
   </div>
 </main>
+
+{#if draggingUserId !== null}
+  <div class="rank-drag-ghost" style={`left: ${rankDragX}px; top: ${rankDragY}px;`} aria-hidden="true">
+    <span>⠿</span>{rankedUsers.find((user) => user.id === draggingUserId)?.name ?? '选项'}
+  </div>
+{/if}
+
+{#if pendingDeleteUser}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-ranked-title" aria-describedby="delete-ranked-detail" tabindex="-1">
+      <span class="delete-confirm-icon">×</span>
+      <h2 id="delete-ranked-title">删除“{pendingDeleteUser.name}”？</h2>
+      <p id="delete-ranked-detail">当前名称、全部别名和排名都会一起删除，此操作无法撤销。</p>
+      <div>
+        <button type="button" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}>取消</button>
+        <button type="button" class="confirm-delete" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}>{deletingUserId === null ? '确认删除' : '删除中…'}</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .lineup-page {
@@ -1335,6 +1412,12 @@
     gap: 8px;
   }
 
+  .rank-person-form {
+    margin-top: 14px;
+    padding-top: 13px;
+    border-top: 1px solid rgba(36, 37, 31, 0.1);
+  }
+
   .rank-form-heading {
     display: flex;
     align-items: center;
@@ -1383,12 +1466,6 @@
     border-color: #8a993e;
   }
 
-  .rank-form-note {
-    color: var(--lineup-dim-on-light);
-    font-size: calc(10px * var(--font-scale, 1));
-    line-height: 1.45;
-  }
-
   .save-user {
     padding: 8px;
     border: 0;
@@ -1411,11 +1488,9 @@
 
   .ranked-user-list {
     display: grid;
-    max-height: 460px;
+    max-height: 540px;
     gap: 13px;
-    margin-top: 10px;
-    padding-top: 9px;
-    border-top: 1px solid rgba(36, 37, 31, 0.08);
+    margin-top: 4px;
     overflow: auto;
   }
 
@@ -1433,7 +1508,7 @@
 
   .rank-zone {
     display: grid;
-    gap: 4px;
+    gap: 8px;
   }
 
   .rank-zone.unranked-zone {
@@ -1460,33 +1535,23 @@
     text-align: right;
   }
 
-  .rank-insert-zone {
-    height: 5px;
-    padding: 0;
-    border: 0;
-    border-radius: 6px;
-    overflow: hidden;
-    background: transparent;
-    color: #727d2f;
-    font-size: calc(9px * var(--font-scale, 1));
-    pointer-events: none;
-    transition: height 120ms ease, background 120ms ease;
+  .empty-ranked-drop {
+    display: grid;
+    min-height: 76px;
+    padding: 10px;
+    border: 1px dashed rgba(122, 132, 47, 0.32);
+    border-radius: 10px;
+    background: rgba(122, 132, 47, 0.04);
+    color: #69722a;
+    font-size: calc(11px * var(--font-scale, 1));
+    line-height: 1.45;
+    text-align: center;
+    place-items: center;
   }
 
-  .rank-insert-zone span { opacity: 0; }
-
-  .rank-manager.dragging .rank-insert-zone {
-    height: 24px;
-    border: 1px dashed rgba(122, 132, 47, 0.34);
-    pointer-events: auto;
-  }
-
-  .rank-manager.dragging .rank-insert-zone span { opacity: 1; }
-
-  .rank-insert-zone.active {
+  .empty-ranked-drop.active {
     border-color: #7a842f;
-    background: rgba(122, 132, 47, 0.12);
-    color: #535b1f;
+    background: rgba(122, 132, 47, 0.13);
   }
 
   .unranked-drop-zone {
@@ -1515,16 +1580,21 @@
   }
 
   .ranked-user-list article {
+    position: relative;
     display: grid;
     min-width: 0;
-    grid-template-columns: 31px minmax(0, 1fr) 17px;
+    min-height: 78px;
+    grid-template-columns: 36px minmax(0, 1fr) 20px;
     align-items: center;
-    gap: 6px;
-    padding: 7px;
+    gap: 8px;
+    padding: 11px 9px;
     border: 1px solid rgba(36, 37, 31, 0.08);
-    border-radius: 8px;
+    border-radius: 10px;
+    overflow: hidden;
     background: #fffdf8;
     cursor: grab;
+    touch-action: none;
+    user-select: none;
     transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   }
 
@@ -1532,7 +1602,17 @@
 
   .ranked-user-list article.drop-target {
     border-color: #7a842f;
-    box-shadow: 0 0 0 2px rgba(122, 132, 47, 0.12);
+    box-shadow: 0 0 0 3px rgba(122, 132, 47, 0.14);
+  }
+
+  .ranked-user-list article.insert-before {
+    border-top-color: #7a842f;
+    box-shadow: inset 0 5px rgba(122, 132, 47, 0.3);
+  }
+
+  .ranked-user-list article.insert-after {
+    border-bottom-color: #7a842f;
+    box-shadow: inset 0 -5px rgba(122, 132, 47, 0.3);
   }
 
   .ranked-user-list article.drag-source { opacity: 0.44; }
@@ -1540,7 +1620,7 @@
   .rank-number {
     color: #7a842f;
     font-family: var(--font-mono);
-    font-size: calc(13px * var(--font-scale, 1));
+    font-size: calc(16px * var(--font-scale, 1));
     font-weight: 800;
     text-align: center;
   }
@@ -1568,7 +1648,7 @@
     display: block;
     overflow: hidden;
     color: #24251f;
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(14px * var(--font-scale, 1));
     font-weight: 800;
     text-align: left;
     text-overflow: ellipsis;
@@ -1577,7 +1657,7 @@
   .alias-action,
   .delete-user {
     color: #72782e;
-    font-size: calc(9px * var(--font-scale, 1));
+    font-size: calc(10px * var(--font-scale, 1));
   }
 
   .delete-user { color: #9b5a4b; }
@@ -1588,18 +1668,153 @@
   .ranked-user-content > small {
     display: block;
     overflow: hidden;
-    margin-top: 3px;
+    margin-top: 7px;
     color: var(--lineup-dim-on-light);
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(12px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .drag-handle {
     color: var(--lineup-dim-on-light);
-    font-size: calc(15px * var(--font-scale, 1));
+    font-size: calc(18px * var(--font-scale, 1));
     line-height: 1;
     text-align: center;
+  }
+
+  .rank-drop-guides {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    grid-template-rows: 1fr 2fr 1fr;
+    background: rgba(255, 253, 248, 0.76);
+    pointer-events: none;
+  }
+
+  .rank-drop-guides i {
+    display: block;
+    border-block: 1px dashed rgba(122, 132, 47, 0.2);
+    background: rgba(67, 128, 193, 0.11);
+    opacity: 0.72;
+  }
+
+  .rank-drop-guides i:nth-child(2) {
+    background: rgba(130, 145, 57, 0.12);
+  }
+
+  .insert-before .rank-drop-guides i:first-child,
+  .insert-after .rank-drop-guides i:last-child {
+    background: rgba(48, 119, 194, 0.42);
+    opacity: 1;
+  }
+
+  .drop-target .rank-drop-guides i:nth-child(2) {
+    background: rgba(123, 145, 42, 0.42);
+    opacity: 1;
+  }
+
+  .swap-drop-guide {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    background: rgba(130, 145, 57, 0.13);
+    pointer-events: none;
+    place-items: center;
+  }
+
+  .drop-target .swap-drop-guide { background: rgba(123, 145, 42, 0.42); }
+
+  .rank-drag-ghost {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    max-width: 240px;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 13px;
+    border: 1px solid rgba(231, 255, 114, 0.58);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(35, 37, 29, 0.94);
+    color: #f6f3e9;
+    font-size: calc(13px * var(--font-scale, 1));
+    font-weight: 800;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+    pointer-events: none;
+    text-overflow: ellipsis;
+    transform: translate(14px, 14px);
+    white-space: nowrap;
+  }
+
+  .rank-drag-ghost span { color: #ddec75; }
+
+  .delete-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: grid;
+    padding: 24px;
+    background: rgba(8, 9, 7, 0.72);
+    backdrop-filter: blur(5px);
+    place-items: center;
+  }
+
+  .delete-confirm-dialog {
+    width: min(100%, 390px);
+    padding: 25px;
+    border: 1px solid rgba(255, 125, 96, 0.24);
+    border-radius: 18px;
+    background: #f4f1e9;
+    color: #282921;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+    text-align: center;
+  }
+
+  .delete-confirm-icon {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    margin: 0 auto 13px;
+    border-radius: 50%;
+    background: rgba(209, 70, 43, 0.1);
+    color: #b63e28;
+    font-size: calc(25px * var(--font-scale, 1));
+    place-items: center;
+  }
+
+  .delete-confirm-dialog h2 { font-size: calc(20px * var(--font-scale, 1)); }
+
+  .delete-confirm-dialog p {
+    margin-top: 9px;
+    color: #62655b;
+    font-size: calc(12px * var(--font-scale, 1));
+    line-height: 1.6;
+  }
+
+  .delete-confirm-dialog > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 20px;
+  }
+
+  .delete-confirm-dialog button {
+    padding: 10px;
+    border: 1px solid rgba(36, 37, 31, 0.12);
+    border-radius: 9px;
+    background: #fffdf8;
+    color: #4f5248;
+    cursor: pointer;
+    font-size: calc(12px * var(--font-scale, 1));
+    font-weight: 750;
+  }
+
+  .delete-confirm-dialog button.confirm-delete {
+    border-color: #b84832;
+    background: #b84832;
+    color: white;
   }
 
   .history-dates {

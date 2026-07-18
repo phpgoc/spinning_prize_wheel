@@ -220,10 +220,10 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
 fn normalize_person_name(value: &str) -> Result<String, String> {
     let name = value.trim();
     if name.is_empty() {
-        return Err("人物名称不能为空".to_string());
+        return Err("名称不能为空".to_string());
     }
     if name.chars().count() > 80 {
-        return Err("人物名称不能超过 80 个字符".to_string());
+        return Err("名称不能超过 80 个字符".to_string());
     }
     Ok(name.to_string())
 }
@@ -243,7 +243,7 @@ fn normalize_aliases(name: &str, aliases: Vec<String>) -> Result<Vec<String>, St
         }
     }
     if normalized.len() > 30 {
-        return Err("每个人最多可以保存 30 个别名".to_string());
+        return Err("每个选项最多可以保存 30 个别名".to_string());
     }
     Ok(normalized)
 }
@@ -255,10 +255,10 @@ fn load_ranked_user(connection: &Connection, id: i64) -> Result<RankedUser, Stri
             params![id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )
-        .map_err(|error| format!("无法读取排名人物：{error}"))?;
+        .map_err(|error| format!("无法读取排名选项：{error}"))?;
     let mut statement = connection
         .prepare("SELECT id, name, user_id FROM alias WHERE user_id = ?1 ORDER BY id")
-        .map_err(|error| format!("无法读取人物别名：{error}"))?;
+        .map_err(|error| format!("无法读取选项别名：{error}"))?;
     let aliases = statement
         .query_map(params![id], |row| {
             Ok(AliasRecord {
@@ -267,9 +267,9 @@ fn load_ranked_user(connection: &Connection, id: i64) -> Result<RankedUser, Stri
                 user_id: row.get(2)?,
             })
         })
-        .map_err(|error| format!("无法查询人物别名：{error}"))?
+        .map_err(|error| format!("无法查询选项别名：{error}"))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("无法解析人物别名：{error}"))?;
+        .map_err(|error| format!("无法解析选项别名：{error}"))?;
 
     Ok(RankedUser {
         id,
@@ -288,7 +288,7 @@ fn save_ranked_user_in(
     let aliases = normalize_aliases(&name, input.aliases)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| format!("无法开始保存排名人物：{error}"))?;
+        .map_err(|error| format!("无法开始保存排名选项：{error}"))?;
 
     let id = if let Some(id) = input.id {
         let changed = transaction
@@ -296,13 +296,13 @@ fn save_ranked_user_in(
                 "UPDATE user SET name = ?1, rank = ?2 WHERE id = ?3",
                 params![name, rank, id],
             )
-            .map_err(|error| format!("无法更新排名人物：{error}"))?;
+            .map_err(|error| format!("无法更新排名选项：{error}"))?;
         if changed == 0 {
-            return Err("找不到要更新的排名人物".to_string());
+            return Err("找不到要更新的排名选项".to_string());
         }
         transaction
             .execute("DELETE FROM alias WHERE user_id = ?1", params![id])
-            .map_err(|error| format!("无法更新人物别名：{error}"))?;
+            .map_err(|error| format!("无法更新选项别名：{error}"))?;
         id
     } else {
         transaction
@@ -310,7 +310,7 @@ fn save_ranked_user_in(
                 "INSERT INTO user (name, rank) VALUES (?1, ?2)",
                 params![name, rank],
             )
-            .map_err(|error| format!("无法添加排名人物：{error}"))?;
+            .map_err(|error| format!("无法添加排名选项：{error}"))?;
         transaction.last_insert_rowid()
     };
 
@@ -320,11 +320,11 @@ fn save_ranked_user_in(
                 "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
                 params![alias, id],
             )
-            .map_err(|error| format!("无法保存人物别名“{alias}”：{error}"))?;
+            .map_err(|error| format!("无法保存选项别名“{alias}”：{error}"))?;
     }
     transaction
         .commit()
-        .map_err(|error| format!("无法提交排名人物：{error}"))?;
+        .map_err(|error| format!("无法提交排名选项：{error}"))?;
     load_ranked_user(connection, id)
 }
 
@@ -487,8 +487,8 @@ fn move_ranked_user_in(
             |row| row.get::<_, i64>(0),
         )
         .optional()
-        .map_err(|error| format!("无法读取拖动人物：{error}"))?
-        .ok_or_else(|| "找不到拖动的人物".to_string())?;
+        .map_err(|error| format!("无法读取拖动选项：{error}"))?
+        .ok_or_else(|| "找不到拖动的选项".to_string())?;
 
     match target {
         RankedUserDropTargetInput::Insert { index } => {
@@ -543,8 +543,8 @@ fn move_ranked_user_in(
                         |row| row.get::<_, i64>(0),
                     )
                     .optional()
-                    .map_err(|error| format!("无法读取互换人物：{error}"))?
-                    .ok_or_else(|| "找不到互换的人物".to_string())?;
+                    .map_err(|error| format!("无法读取互换选项：{error}"))?
+                    .ok_or_else(|| "找不到互换的选项".to_string())?;
                 transaction
                     .execute(
                         "UPDATE user
@@ -552,7 +552,7 @@ fn move_ranked_user_in(
                          WHERE id IN (?1, ?3)",
                         params![dragged_id, target_rank, user_id, source_rank],
                     )
-                    .map_err(|error| format!("无法互换人物排名：{error}"))?;
+                    .map_err(|error| format!("无法互换选项排名：{error}"))?;
             }
         }
         RankedUserDropTargetInput::Unranked => {
@@ -568,13 +568,13 @@ fn move_ranked_user_in(
                         "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
                         params![source_rank, UNRANKED_RANK],
                     )
-                    .map_err(|error| format!("无法收拢人物排名：{error}"))?;
+                    .map_err(|error| format!("无法收拢选项排名：{error}"))?;
             }
         }
     }
     transaction
         .commit()
-        .map_err(|error| format!("无法提交人物排名：{error}"))?;
+        .map_err(|error| format!("无法提交选项排名：{error}"))?;
     list_ranked_users_in(connection)
 }
 
@@ -605,28 +605,28 @@ fn delete_ranked_user(app: AppHandle, id: i64) -> Result<(), String> {
     let mut connection = app_database(&app)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| format!("无法开始删除排名人物：{error}"))?;
+        .map_err(|error| format!("无法开始删除排名选项：{error}"))?;
     let rank = transaction
         .query_row("SELECT rank FROM user WHERE id = ?1", params![id], |row| {
             row.get::<_, i64>(0)
         })
         .optional()
-        .map_err(|error| format!("无法读取排名人物：{error}"))?
-        .ok_or_else(|| "找不到要删除的排名人物".to_string())?;
+        .map_err(|error| format!("无法读取排名选项：{error}"))?
+        .ok_or_else(|| "找不到要删除的排名选项".to_string())?;
     transaction
         .execute("DELETE FROM user WHERE id = ?1", params![id])
-        .map_err(|error| format!("无法删除排名人物：{error}"))?;
+        .map_err(|error| format!("无法删除排名选项：{error}"))?;
     if rank < UNRANKED_RANK {
         transaction
             .execute(
                 "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
                 params![rank, UNRANKED_RANK],
             )
-            .map_err(|error| format!("无法收拢人物排名：{error}"))?;
+            .map_err(|error| format!("无法收拢选项排名：{error}"))?;
     }
     transaction
         .commit()
-        .map_err(|error| format!("无法提交删除人物：{error}"))
+        .map_err(|error| format!("无法提交删除选项：{error}"))
 }
 
 fn resolve_lineup_names_in(
@@ -653,7 +653,7 @@ fn resolve_lineup_names_in(
                     ))
                 })
                 .optional()
-                .map_err(|error| format!("无法解析人物“{input_name}”：{error}"))?;
+                .map_err(|error| format!("无法解析名称“{input_name}”：{error}"))?;
             Ok(match matched {
                 Some((user_id, canonical_name, rank)) => ResolvedLineupName {
                     input_name,
@@ -844,7 +844,7 @@ mod tests {
                 aliases: vec!["小星".to_string()],
             },
         )
-        .expect("保存人物");
+        .expect("保存选项");
 
         assert_eq!(user.rank, UNRANKED_RANK);
         assert_eq!(
@@ -875,7 +875,7 @@ mod tests {
                 aliases: vec!["共享别名".to_string()],
             },
         )
-        .expect("保存第一个人物");
+        .expect("保存第一个选项");
 
         let error = save_ranked_user_in(
             &mut connection,
@@ -908,7 +908,7 @@ mod tests {
                     aliases: vec![],
                 },
             )
-            .expect("保存人物")
+            .expect("保存选项")
         };
         let first = save("甲", Some(1));
         let second = save("乙", Some(2));
