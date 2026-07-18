@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import * as THREE from 'three';
   import type { WheelOption } from './types';
+  import { createWeightedSegments } from './wheel-geometry';
 
   export let options: WheelOption[] = [];
   export let rotation = 0;
@@ -33,7 +34,7 @@
   let animation: { from: number; to: number; startedAt: number; duration: number } | null = null;
 
   $: optionSignature = options
-    .map((option) => `${option.id}:${option.label}:${option.color}:${eliminatedIds.includes(option.id)}`)
+    .map((option) => `${option.id}:${option.label}:${option.color}:${option.weight}:${eliminatedIds.includes(option.id)}`)
     .join('|');
   $: if (ready) {
     optionSignature;
@@ -176,9 +177,10 @@
       spinGroup.add(face);
       addLabel(option, Math.PI / 2, eliminated.has(option.id));
     } else if (options.length > 1) {
-      const slice = (Math.PI * 2) / options.length;
+      const weightedSegments = createWeightedSegments(options);
       options.forEach((option, index) => {
-        const start = Math.PI / 2 - index * slice;
+        const slice = weightedSegments[index].sizeRatio * Math.PI * 2;
+        const start = Math.PI / 2 - weightedSegments[index].startRatio * Math.PI * 2;
         const end = start - slice;
         const shape = new THREE.Shape();
         shape.moveTo(0, 0);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AnimationStyle, WheelOption } from './types';
+  import { createWeightedSegments, type WeightedSegment } from './wheel-geometry';
 
   export let options: WheelOption[] = [];
   export let rotation = 0;
@@ -23,11 +24,24 @@
     };
   }
 
-  function segmentPath(index: number, count: number): string {
-    const slice = 360 / count;
-    const start = -90 + index * slice;
-    const end = start + slice;
+  function segmentAngles(segment: WeightedSegment) {
+    const slice = segment.sizeRatio * 360;
+    const start = -90 + segment.startRatio * 360;
+    return { start, end: start + slice, slice };
+  }
+
+  function segmentPath(segment: WeightedSegment): string {
+    const { start, end, slice } = segmentAngles(segment);
     const startPoint = polar(start);
+    if (slice >= 360) {
+      const middlePoint = polar(start + 180);
+      return [
+        `M ${startPoint.x} ${startPoint.y}`,
+        `A ${radius} ${radius} 0 1 1 ${middlePoint.x} ${middlePoint.y}`,
+        `A ${radius} ${radius} 0 1 1 ${startPoint.x} ${startPoint.y}`,
+        'Z',
+      ].join(' ');
+    }
     const endPoint = polar(end);
     const largeArc = slice > 180 ? 1 : 0;
 
@@ -39,9 +53,10 @@
     ].join(' ');
   }
 
-  function labelPosition(index: number, count: number) {
-    const angle = -90 + (index + 0.5) * (360 / count);
-    const point = polar(angle, count > 9 ? 108 : 112);
+  function labelPosition(segment: WeightedSegment) {
+    const { start, slice } = segmentAngles(segment);
+    const angle = start + slice / 2;
+    const point = polar(angle, options.length > 9 ? 108 : 112);
     return { ...point, angle };
   }
 
@@ -61,6 +76,7 @@
   }
 
   $: eliminated = new Set(eliminatedIds);
+  $: weightedSegments = createWeightedSegments(options);
 </script>
 
 <div
@@ -98,16 +114,17 @@
 
         {#if options.length > 0}
           {#each options as option, index (option.id)}
-            {@const position = labelPosition(index, options.length)}
+            {@const segment = weightedSegments[index]}
+            {@const position = labelPosition(segment)}
             <path
-              d={segmentPath(index, options.length)}
+              d={segmentPath(segment)}
               fill={option.color}
               class:eliminated={eliminated.has(option.id)}
               class:retry-segment={option.isRetry}
               class="segment"
             />
             {#if eliminated.has(option.id)}
-              <path d={segmentPath(index, options.length)} fill="url(#hatch)" class="hatch" />
+              <path d={segmentPath(segment)} fill="url(#hatch)" class="hatch" />
             {/if}
             <text
               x={position.x}

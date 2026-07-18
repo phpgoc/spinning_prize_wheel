@@ -12,6 +12,7 @@
     simulateBatch,
   } from './lib/draw';
   import { parseOptionText } from './lib/parse-options';
+  import { createWeightedSegments } from './lib/wheel-geometry';
   import type {
     AnimationStyle,
     BatchSimulation,
@@ -700,9 +701,10 @@
 
     const picked = pickWeighted(options);
     const index = wheelOptions.findIndex((option) => option.id === picked.id);
-    const slice = 360 / Math.max(1, wheelOptions.length);
+    const weightedSegment = createWeightedSegments(wheelOptions)[index];
     const current = ((rotation % 360) + 360) % 360;
-    const target = ((-(index + 0.5) * slice % 360) + 360) % 360;
+    const targetAngle = (weightedSegment.startRatio + weightedSegment.sizeRatio / 2) * 360;
+    const target = ((-targetAngle % 360) + 360) % 360;
     const extraTurns = animationStyle === 'simple' ? 4 : animationStyle === 'luxury' ? 7 : 6;
     const delta = ((target - current + 360) % 360) + (extraTurns + Math.floor(Math.random() * 2)) * 360;
 
@@ -1544,24 +1546,23 @@
             onSpin={spin}
           />
         {/if}
-      </div>
 
-      <div class:success={result.tone === 'success'} class:retry={result.tone === 'retry'} class:danger={result.tone === 'danger'} class="result-card">
-        <div class="result-symbol">
-          {result.tone === 'success' ? '✦' : result.tone === 'retry' ? '↻' : result.tone === 'danger' ? '×' : '·'}
-        </div>
-        <div>
-          <span>{result.eyebrow}</span>
-          <strong>{result.title}</strong>
-          <p>{result.detail}</p>
-        </div>
-        {#if mode === 'roulette' && rouletteFinished}
-          <button type="button" on:click={startNewRouletteRound}>新一局 →</button>
+        {#if !isSpinning && result.tone !== 'idle'}
+          <div
+            class:success={result.tone === 'success'}
+            class:retry={result.tone === 'retry'}
+            class:danger={result.tone === 'danger'}
+            class="winner-reveal"
+            role="status"
+            aria-live="polite"
+          >
+            <span>{result.eyebrow}</span>
+            <strong>{result.title}</strong>
+            {#if mode === 'roulette' && rouletteFinished}
+              <button type="button" on:click={startNewRouletteRound}>新一局</button>
+            {/if}
+          </div>
         {/if}
-      </div>
-
-      <div class="stage-footer">
-        <span>{records.length} 次尝试 · {validCompleted} 个有效结果 · {retryTotal} 次重来</span>
       </div>
         </div>
 
