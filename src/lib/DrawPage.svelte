@@ -157,9 +157,6 @@
   $: wheelOptions = enabledPrizes.length === 0
     ? []
     : buildWheelOptions(prizes, retryEnabled, retryWeight);
-  $: selectedProbabilityPrizes = variant === 'caimi'
-    ? applyCaimiSelectedWeights(prizes)
-    : prizes;
   $: validCompleted = records.filter(
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
@@ -190,7 +187,7 @@
   $: activeDrawOptions = (() => {
     if (mode !== 'roulette') {
       return variant === 'caimi'
-        ? buildWheelOptions(selectedProbabilityPrizes, retryEnabled, retryWeight)
+        ? buildWheelOptions(applyCaimiSelectedWeights(prizes), retryEnabled, retryWeight)
         : wheelOptions;
     }
     const effective = prizes
@@ -1137,9 +1134,13 @@
     try {
       const safeCount = normalizeBatchCount(batchCount);
       batchCount = safeCount;
+      // 点击运行时从最新候选项计算隐藏权重，避免实验室复用旧的派生数组。
+      const simulationPrizes = variant === 'caimi' && mode === 'selected'
+        ? applyCaimiSelectedWeights(prizes)
+        : prizes;
       const simulation = simulateBatch(
         mode,
-        variant === 'caimi' && mode === 'selected' ? selectedProbabilityPrizes : prizes,
+        simulationPrizes,
         safeCount,
         retryEnabled,
         retryWeight,

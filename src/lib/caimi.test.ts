@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { applyCaimiSelectedWeights, caimiNameWeightMultiplier } from './caimi';
-import { buildWheelOptions, pickWeighted } from './draw';
+import { buildWheelOptions, pickWeighted, simulateBatch } from './draw';
 
 describe('猜蜜版隐藏权重', () => {
   test('每个猜或本都会让概率翻倍', () => {
@@ -25,5 +25,15 @@ describe('猜蜜版隐藏权重', () => {
     expect(hiddenOptions.map((option) => option.weight)).toEqual([5, 80]);
     expect(pickWeighted(visibleOptions, () => 0.4).id).toBe('normal');
     expect(pickWeighted(hiddenOptions, () => 0.4).id).toBe('caimi');
+  });
+
+  test('批量实验室使用猜蜜隐藏权重', () => {
+    const prizes = applyCaimiSelectedWeights([
+      { id: 'normal', name: '普通项', weight: 1, color: '#000', enabled: true },
+      { id: 'caimi', name: '猜猜猜本', weight: 1, color: '#fff', enabled: true },
+    ]);
+    const simulation = simulateBatch('selected', prizes, 3, false, 1, () => 0.5);
+
+    expect(simulation.prizeCounts).toEqual({ normal: 0, caimi: 3 });
   });
 });
