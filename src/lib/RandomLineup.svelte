@@ -1,0 +1,400 @@
+<script lang="ts">
+  import { parseOptionText } from './parse-options';
+  import { createRandomLineup, type RandomLineup } from './random-lineup';
+
+  const sampleNames = Array.from({ length: 24 }, (_, index) => `选手${String(index + 1).padStart(2, '0')}`).join('\n');
+
+  let sourceText = '';
+  let groupCount = 6;
+  let result: RandomLineup | null = null;
+  let resultSignature = '';
+  let error = '';
+
+  $: names = parseOptionText(sourceText);
+  $: inputSignature = `${groupCount}|${names.join('\u0000')}`;
+  $: resultOutdated = result !== null && resultSignature !== inputSignature;
+  $: tierPreview = names.length > 0 ? Math.ceil(names.length / Math.max(2, Number(groupCount) || 2)) : 0;
+
+  function generate() {
+    error = '';
+    try {
+      result = createRandomLineup(names, Number(groupCount));
+      groupCount = result.groupCount;
+      resultSignature = `${groupCount}|${names.join('\u0000')}`;
+    } catch (reason) {
+      result = null;
+      error = reason instanceof Error ? reason.message : '无法生成排阵';
+    }
+  }
+
+  function fillSample() {
+    sourceText = sampleNames;
+    groupCount = 6;
+    error = '';
+    result = null;
+  }
+
+  function clearAll() {
+    sourceText = '';
+    result = null;
+    error = '';
+  }
+</script>
+
+<main class="lineup-page" id="lineup">
+  <header class="lineup-hero">
+    <div>
+      <span>RANDOM LINEUP</span>
+      <h1>随机排阵</h1>
+      <p>输入顺序决定档位，同一档的人会被随机分到不同组。</p>
+    </div>
+    <div class="rule-badge"><i>1</i><span>唯一规则<strong>同档不同组</strong></span></div>
+  </header>
+
+  <div class="lineup-workbench">
+    <aside class="lineup-config">
+      <div class="config-heading">
+        <div><span>01</span><h2>参赛名单</h2></div>
+        <strong>{names.length}<small>人</small></strong>
+      </div>
+
+      <label class="names-field">
+        <span>每行一个，也支持空格、逗号和 Excel 粘贴</span>
+        <textarea bind:value={sourceText} placeholder="粘贴人名…" spellcheck="false"></textarea>
+      </label>
+
+      <div class="sample-actions">
+        <button type="button" on:click={fillSample}>填入 24 人示例</button>
+        <button type="button" disabled={!sourceText} on:click={clearAll}>清空</button>
+      </div>
+
+      <div class="group-setting">
+        <label for="lineup-group-count">
+          <span>组数</span>
+          <input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} />
+        </label>
+        <div>
+          <span>预计档位</span>
+          <strong>{tierPreview || '—'}</strong>
+        </div>
+      </div>
+
+      {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
+
+      <button type="button" class="generate-button" disabled={names.length < 2} on:click={generate}>
+        <span>打乱并排阵</span><i>→</i>
+      </button>
+
+      <div class="rule-note">
+        <span>分档方式</span>
+        <p>按输入顺序每 {Math.max(2, Number(groupCount) || 2)} 人划为一档；调整输入顺序即可改变排名。</p>
+      </div>
+    </aside>
+
+    <section class="lineup-result" aria-live="polite">
+      <div class="result-heading">
+        <div>
+          <span>02</span>
+          <div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 人 · ${result.groupCount} 组 · ${result.tiers.length} 档` : '等待生成'}</p></div>
+        </div>
+        {#if result}
+          <button type="button" on:click={generate}>重新随机</button>
+        {/if}
+      </div>
+
+      {#if resultOutdated}
+        <div class="outdated-notice">名单或组数已变化，请重新生成结果。</div>
+      {/if}
+
+      {#if result}
+        <div class:outdated={resultOutdated} class="lineup-table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="col">档位</th>{#each result.groupNames as group}<th scope="col"><span>{group}</span>组</th>{/each}</tr>
+            </thead>
+            <tbody>
+              {#each result.tiers as tier, tierIndex}
+                <tr>
+                  <th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>
+                  {#each tier as entry}
+                    <td class:empty={!entry}>{#if entry}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}</small>{:else}<span>—</span>{/if}</td>
+                  {/each}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <div class="empty-result">
+          <div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div>
+          <strong>排阵会显示在这里</strong>
+          <p>例如 24 人、6 组，将得到 A–F 六组与 t1–t4 四档。</p>
+        </div>
+      {/if}
+    </section>
+  </div>
+</main>
+
+<style>
+  .lineup-page {
+    min-height: calc(100vh - 130px);
+    padding: clamp(24px, 4vw, 58px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 25px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 82% 8%, rgba(231, 255, 114, 0.09), transparent 28%),
+      #20211b;
+    color: #f6f3ea;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+  }
+
+  .lineup-hero,
+  .lineup-workbench,
+  .config-heading,
+  .group-setting,
+  .result-heading,
+  .result-heading > div,
+  .rule-badge {
+    display: flex;
+  }
+
+  .lineup-hero {
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    max-width: 1420px;
+    margin: 0 auto 30px;
+  }
+
+  .lineup-hero > div:first-child > span,
+  .config-heading span,
+  .result-heading > div > span,
+  .rule-note > span {
+    color: #98a451;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+  }
+
+  .lineup-hero h1 {
+    margin-top: 5px;
+    font-size: clamp(34px, 5vw, 66px);
+    letter-spacing: -0.07em;
+    line-height: 0.95;
+  }
+
+  .lineup-hero p {
+    margin-top: 12px;
+    color: #96998d;
+    font-size: 13px;
+  }
+
+  .rule-badge {
+    align-items: center;
+    gap: 11px;
+    padding: 10px 14px;
+    border: 1px solid rgba(231, 255, 114, 0.16);
+    border-radius: 13px;
+    background: rgba(231, 255, 114, 0.05);
+  }
+
+  .rule-badge i {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #1e2017;
+    font-style: normal;
+    font-weight: 900;
+    place-items: center;
+  }
+
+  .rule-badge span,
+  .rule-badge strong { display: block; }
+  .rule-badge span { color: #7e8175; font-size: 8px; }
+  .rule-badge strong { margin-top: 2px; color: #f6f3ea; font-size: 11px; }
+
+  .lineup-workbench {
+    align-items: stretch;
+    gap: clamp(18px, 2.5vw, 34px);
+    max-width: 1420px;
+    margin: 0 auto;
+  }
+
+  .lineup-config,
+  .lineup-result {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 19px;
+  }
+
+  .lineup-config {
+    width: min(100%, 370px);
+    flex: none;
+    padding: 22px;
+    background: #efede6;
+    color: #24251f;
+  }
+
+  .config-heading,
+  .result-heading {
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .config-heading > div { display: flex; align-items: baseline; gap: 9px; }
+  .config-heading h2,
+  .result-heading h2 { font-size: 20px; letter-spacing: -0.04em; }
+  .config-heading > strong { font-size: 24px; }
+  .config-heading small { margin-left: 2px; color: #8a8c82; font-size: 9px; }
+
+  .names-field { display: block; margin-top: 18px; }
+  .names-field > span { color: #7e8077; font-size: 9px; }
+  textarea {
+    width: 100%;
+    min-height: 270px;
+    margin-top: 8px;
+    padding: 13px;
+    border: 1px solid rgba(36, 37, 31, 0.13);
+    border-radius: 11px;
+    outline: 0;
+    resize: vertical;
+    background: #f8f6f0;
+    color: #24251f;
+    font: 12px/1.7 var(--font-mono);
+  }
+  textarea:focus { border-color: #8a993e; box-shadow: 0 0 0 3px rgba(138, 153, 62, 0.12); }
+
+  .sample-actions { display: flex; justify-content: space-between; margin-top: 7px; }
+  .sample-actions button,
+  .result-heading button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #73766d;
+    cursor: pointer;
+    font-size: 9px;
+  }
+  .sample-actions button:first-child { color: #69772b; }
+
+  .group-setting {
+    align-items: stretch;
+    gap: 9px;
+    margin-top: 18px;
+  }
+  .group-setting > * {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 11px;
+    border: 1px solid rgba(36, 37, 31, 0.1);
+    border-radius: 10px;
+    background: #f8f6f0;
+  }
+  .group-setting span { color: #7e8077; font-size: 9px; }
+  .group-setting input {
+    width: 56px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #24251f;
+    font: 800 17px var(--font-mono);
+    text-align: right;
+  }
+  .group-setting strong { font: 800 17px var(--font-mono); }
+
+  .lineup-error,
+  .outdated-notice {
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    font-size: 9px;
+  }
+  .lineup-error { background: rgba(218, 91, 63, 0.1); color: #ad4b35; }
+  .outdated-notice { background: rgba(231, 255, 114, 0.08); color: #cbd58f; }
+
+  .generate-button {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding: 13px 15px;
+    border: 0;
+    border-radius: 11px;
+    background: #22231d;
+    color: #f8f6ef;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .generate-button i { color: var(--accent); font: normal 18px var(--font-mono); }
+
+  .rule-note {
+    margin-top: 15px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(36, 37, 31, 0.09);
+  }
+  .rule-note p { margin-top: 5px; color: #7d7f76; font-size: 9px; line-height: 1.6; }
+
+  .lineup-result {
+    min-width: 0;
+    flex: 1;
+    padding: clamp(20px, 3vw, 34px);
+    background: rgba(11, 12, 9, 0.27);
+  }
+  .result-heading > div { align-items: center; gap: 11px; }
+  .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid rgba(231, 255, 114, 0.18); border-radius: 50%; place-items: center; }
+  .result-heading p { margin-top: 3px; color: #777a70; font-size: 9px; }
+  .result-heading button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.17); border-radius: 8px; color: var(--accent); }
+
+  .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
+  .lineup-table-wrap.outdated { opacity: 0.45; }
+  table { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 7px; table-layout: fixed; }
+  th, td { padding: 13px 9px; border-radius: 10px; text-align: center; }
+  thead th { color: #777a6e; font-size: 8px; font-weight: 600; }
+  thead th:first-child { width: 68px; }
+  thead th span { margin-right: 4px; color: var(--accent); font: 900 17px var(--font-mono); }
+  tbody th { background: rgba(255, 255, 255, 0.04); color: #8d9084; }
+  tbody th span,
+  tbody th small,
+  td strong,
+  td small { display: block; }
+  tbody th span { color: var(--accent); font: 800 13px var(--font-mono); }
+  tbody th small { margin-top: 3px; font-size: 7px; font-weight: 500; }
+  td { border: 1px solid rgba(255, 255, 255, 0.07); background: rgba(255, 255, 255, 0.045); }
+  td strong { overflow: hidden; color: #f4f1e8; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  td small { margin-top: 4px; color: #66695f; font: 7px var(--font-mono); }
+  td.empty { color: #4f5149; }
+
+  .empty-result {
+    display: grid;
+    min-height: 430px;
+    align-content: center;
+    justify-items: center;
+    color: #777a70;
+    text-align: center;
+  }
+  .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
+  .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.12); border-radius: 9px; background: rgba(231, 255, 114, 0.035); color: #899148; font: normal 11px var(--font-mono); place-items: center; }
+  .empty-result strong { color: #b8baaf; font-size: 13px; }
+  .empty-result p { max-width: 340px; margin-top: 7px; font-size: 9px; line-height: 1.6; }
+
+  @media (max-width: 900px) {
+    .lineup-page { min-height: calc(100vh - 110px); border-radius: 19px 19px 0 0; }
+    .lineup-workbench { flex-direction: column; }
+    .lineup-config { width: 100%; }
+    textarea { min-height: 220px; }
+  }
+
+  @media (max-width: 600px) {
+    .lineup-page { padding: 24px 14px; }
+    .lineup-hero { align-items: flex-start; flex-direction: column; }
+    .rule-badge { align-self: stretch; }
+    .lineup-config, .lineup-result { padding: 17px; }
+  }
+</style>

@@ -3,6 +3,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import LuxuryWheel from './lib/LuxuryWheel.svelte';
   import PrizeEditor from './lib/PrizeEditor.svelte';
+  import RandomLineup from './lib/RandomLineup.svelte';
   import ThreeWheel from './lib/ThreeWheel.svelte';
   import Wheel from './lib/Wheel.svelte';
   import {
@@ -66,7 +67,9 @@
 
   type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
   type DrawSidePanel = 'candidates' | 'statistics';
+  type AppPage = 'draw' | 'lineup';
 
+  let currentPage: AppPage = 'draw';
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
   let animationStyle: AnimationStyle = 'luxury';
@@ -165,6 +168,8 @@
   }
 
   onMount(() => {
+    syncPageFromHash();
+    window.addEventListener('hashchange', syncPageFromHash);
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -209,6 +214,7 @@
     void loadCommonSelections();
     void loadDrawHistories();
     hydrated = true;
+    return () => window.removeEventListener('hashchange', syncPageFromHash);
   });
 
   onDestroy(() => {
@@ -224,6 +230,26 @@
 
   function isTauriRuntime(): boolean {
     return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  }
+
+  function pageFromHash(): AppPage {
+    return window.location.hash === '#/lineup' ? 'lineup' : 'draw';
+  }
+
+  function syncPageFromHash() {
+    currentPage = pageFromHash();
+    if (currentPage !== 'draw') {
+      candidateKeyboardActive = false;
+      commonKeyboardActive = false;
+      selectedPrizeId = null;
+      selectedCommonId = null;
+    }
+  }
+
+  function navigateToPage(page: AppPage) {
+    if (page === currentPage) return;
+    currentPage = page;
+    window.location.hash = page === 'lineup' ? '#/lineup' : '#/draw';
   }
 
   function isCommonSelection(value: unknown): value is CommonSelection {
@@ -1112,6 +1138,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (currentPage !== 'draw') return;
     const target = event.target as HTMLElement | null;
     const key = event.key.toLowerCase();
     const modifier = event.ctrlKey || event.metaKey;
@@ -1222,46 +1249,63 @@
 </script>
 
 <svelte:head>
-  <title>幸运转盘</title>
+  <title>{currentPage === 'draw' ? '幸运转盘' : '随机排阵'} · Fortuna</title>
 </svelte:head>
 
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="app-shell">
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="幸运转盘首页">
+    <a class="brand" href="#/draw" aria-label="幸运转盘首页">
       <span class="brand-mark"><i></i></span>
       <span>
         <strong>幸运转盘</strong>
       </span>
     </a>
 
-    <div class="mode-switch" aria-label="抽奖模式">
-      <button
-        type="button"
-        class:active={mode === 'selected'}
-        disabled={isSpinning}
-        on:click={() => setMode('selected')}
-      >
-        <span class="mode-dot"></span>
-        选中模式
-      </button>
-      <button
-        type="button"
-        class:active={mode === 'roulette'}
-        disabled={isSpinning}
-        on:click={() => setMode('roulette')}
-      >
-        <span class="crosshair">＋</span>
-        俄罗斯轮盘
-      </button>
+    <div class="topbar-controls">
+      <nav class="page-switch" aria-label="工具页面">
+        <button type="button" class:active={currentPage === 'draw'} on:click={() => navigateToPage('draw')}>抽奖</button>
+        <button
+          type="button"
+          class:active={currentPage === 'lineup'}
+          disabled={isSpinning || continuousRunning}
+          on:click={() => navigateToPage('lineup')}
+        >随机排阵</button>
+      </nav>
+
+      {#if currentPage === 'draw'}
+        <div class="mode-switch" aria-label="抽奖模式">
+          <button
+            type="button"
+            class:active={mode === 'selected'}
+            disabled={isSpinning}
+            on:click={() => setMode('selected')}
+          >
+            <span class="mode-dot"></span>
+            选中模式
+          </button>
+          <button
+            type="button"
+            class:active={mode === 'roulette'}
+            disabled={isSpinning}
+            on:click={() => setMode('roulette')}
+          >
+            <span class="crosshair">＋</span>
+            俄罗斯轮盘
+          </button>
+        </div>
+      {/if}
     </div>
 
     <div class="topbar-meta">
-      <button type="button" class="icon-button" title="恢复默认设置" on:click={resetSettings}>↺</button>
+      {#if currentPage === 'draw'}
+        <button type="button" class="icon-button" title="恢复默认设置" on:click={resetSettings}>↺</button>
+      {/if}
     </div>
   </header>
 
+  {#if currentPage === 'draw'}
   <main
     class:settings-open={activePanel === 'settings'}
     class:common-open={activePanel === 'common'}
@@ -1988,5 +2032,8 @@
       {/if}
     </aside>
   </main>
+  {:else}
+    <RandomLineup />
+  {/if}
 
 </div>
