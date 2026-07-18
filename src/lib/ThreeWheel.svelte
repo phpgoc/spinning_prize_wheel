@@ -688,7 +688,11 @@
 
   .spin-button strong {
     margin-top: 0;
-    font-size: clamp(12px, 1.25vw, 17px);
+    font-size: clamp(
+      calc(15px * var(--font-scale, 1)),
+      calc(1.25vw * var(--font-scale, 1)),
+      calc(20px * var(--font-scale, 1))
+    );
   }
 
   .tilt-controls {
@@ -717,7 +721,7 @@
     color: #a8aa9e;
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: calc(12px * var(--font-scale, 1));
     place-items: center;
   }
 
@@ -738,7 +742,7 @@
     background: rgba(11, 12, 9, 0.52);
     color: #85887b;
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: calc(10px * var(--font-scale, 1));
     pointer-events: none;
     transform: translateX(-50%);
     white-space: nowrap;

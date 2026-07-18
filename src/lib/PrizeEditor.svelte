@@ -168,7 +168,7 @@
   .prize-index {
     color: var(--text-dim);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: calc(13px * var(--font-scale, 1));
     letter-spacing: 0.04em;
   }
 
@@ -209,7 +209,7 @@
   }
 
   .name-input {
-    font-size: 13px;
+    font-size: calc(16px * var(--font-scale, 1));
     font-weight: 650;
   }
 
@@ -219,13 +219,13 @@
     gap: 2px;
     color: var(--text-dim);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: calc(13px * var(--font-scale, 1));
   }
 
   .weight-control input {
     appearance: textfield;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: calc(14px * var(--font-scale, 1));
   }
 
   .weight-control input::-webkit-inner-spin-button,
@@ -274,7 +274,7 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    font-size: 17px;
+    font-size: calc(20px * var(--font-scale, 1));
     line-height: 1;
     transition: color 160ms ease, background 160ms ease;
   }
@@ -313,7 +313,7 @@
     color: var(--text-muted);
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: calc(15px * var(--font-scale, 1));
     font-weight: 700;
     transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
   }
@@ -326,7 +326,7 @@
 
   .add-button span {
     color: var(--accent);
-    font-size: 16px;
+    font-size: calc(19px * var(--font-scale, 1));
   }
 
   .clear-button {

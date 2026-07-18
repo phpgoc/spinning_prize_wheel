@@ -264,7 +264,7 @@
 
   .segment-label {
     font-family: Georgia, 'Times New Roman', var(--font-sans);
-    font-size: 12px;
+    font-size: calc(15px * var(--font-scale, 1));
     font-weight: 700;
     letter-spacing: 0.04em;
     paint-order: stroke;
@@ -348,7 +348,7 @@
     position: absolute;
     inset: 0;
     color: #f1cb73;
-    font-size: 10px;
+    font-size: calc(13px * var(--font-scale, 1));
     font-style: normal;
     text-shadow: 0 0 9px rgba(241, 203, 115, 0.9);
     transform: rotate(var(--spark-angle));
@@ -449,13 +449,17 @@
   .luxury-button strong {
     margin-top: 0;
     font-family: Georgia, var(--font-sans);
-    font-size: clamp(13px, 1.35vw, 18px);
+    font-size: clamp(
+      calc(16px * var(--font-scale, 1)),
+      calc(1.35vw * var(--font-scale, 1)),
+      calc(21px * var(--font-scale, 1))
+    );
   }
 
   .luxury-button i {
     margin-top: 1px;
     color: #e9c36c;
-    font-size: 8px;
+    font-size: calc(11px * var(--font-scale, 1));
     font-style: normal;
   }
 

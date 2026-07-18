@@ -22,6 +22,7 @@
     remainingResultSlots,
   } from './lib/draw-limit';
   import { parseOptionText } from './lib/parse-options';
+  import { DEFAULT_FONT_SCALE, normalizeFontScale } from './lib/ui-settings';
   import { createWeightedSegments } from './lib/wheel-geometry';
   import type {
     AnimationStyle,
@@ -114,6 +115,7 @@
   let continuousTarget = 0;
   let continuousIntervalSeconds = 3;
   let continuousRunning = false;
+  let fontScale = DEFAULT_FONT_SCALE;
 
   let rotation = 0;
   let isSpinning = false;
@@ -182,6 +184,7 @@
         autoSaveHistory,
         continuousTarget,
         continuousIntervalSeconds,
+        fontScale,
       }),
     );
   }
@@ -203,6 +206,7 @@
           autoSaveHistory: boolean;
           continuousTarget: number;
           continuousIntervalSeconds: number;
+          fontScale: number;
         }>;
 
         if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
@@ -225,6 +229,7 @@
         if (typeof parsed.continuousIntervalSeconds === 'number') {
           continuousIntervalSeconds = Math.min(30, Math.max(0.5, parsed.continuousIntervalSeconds));
         }
+        fontScale = normalizeFontScale(parsed.fontScale);
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -1217,6 +1222,7 @@
     retryEnabled = true;
     retryWeight = 0.65;
     continuousTarget = 0;
+    fontScale = DEFAULT_FONT_SCALE;
     eliminatedIds = [];
     rouletteFinished = false;
     result = {
@@ -1394,7 +1400,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="app-shell">
+<div class="app-shell" style={`--font-scale: ${fontScale}`}>
   <header class="topbar">
     <a class="brand" href="#/draw" aria-label="幸运转盘首页">
       <span class="brand-mark"><i></i></span>
@@ -1474,6 +1480,26 @@
           <h2>抽奖设置</h2>
         </div>
       </div>
+
+      <section class="setting-block font-scale-setting">
+        <div class="setting-title-row compact">
+          <label for="font-scale">界面字号</label>
+          <output>{Math.round(fontScale * 100)}<small>%</small></output>
+        </div>
+        <input
+          id="font-scale"
+          class="range-input"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          bind:value={fontScale}
+          style={`--range-progress: ${((fontScale - 1) / 2) * 100}%`}
+        />
+        <div class="range-labels"><span>标准</span><span>放大两倍</span><span>放大三倍</span></div>
+      </section>
+
+      <div class="section-divider"></div>
 
       <section class="setting-block">
         <div class="setting-title-row">

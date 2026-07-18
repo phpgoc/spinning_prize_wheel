@@ -261,7 +261,7 @@
 
   .segment-label {
     font-family: var(--font-sans);
-    font-size: 11px;
+    font-size: calc(14px * var(--font-scale, 1));
     font-weight: 850;
     letter-spacing: 0.02em;
     paint-order: stroke;
@@ -272,12 +272,12 @@
 
   .retry-label {
     fill: #171813;
-    font-size: 10px;
+    font-size: calc(13px * var(--font-scale, 1));
   }
 
   .empty-label {
     fill: #aaa99f;
-    font-size: 13px;
+    font-size: calc(16px * var(--font-scale, 1));
     font-weight: 700;
   }
 
@@ -382,7 +382,11 @@
 
   .spin-button strong {
     margin-top: 0;
-    font-size: clamp(12px, 1.25vw, 17px);
+    font-size: clamp(
+      calc(15px * var(--font-scale, 1)),
+      calc(1.25vw * var(--font-scale, 1)),
+      calc(20px * var(--font-scale, 1))
+    );
     letter-spacing: 0.04em;
   }
 
@@ -456,7 +460,7 @@
   }
 
   .simple .segment-label {
-    font-size: 10px;
+    font-size: calc(13px * var(--font-scale, 1));
     font-weight: 750;
     letter-spacing: 0;
   }
