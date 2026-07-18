@@ -53,6 +53,7 @@
   }
 
   interface CurrentStat extends BatchRow {
+    weight: number;
     rewardTotal: number;
   }
 
@@ -63,6 +64,7 @@
   }
 
   type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
+  type DrawSidePanel = 'candidates' | 'statistics';
 
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
@@ -76,6 +78,7 @@
   let importOpen = false;
   let importText = '';
   let activePanel: SidebarPanel | null = 'settings';
+  let drawSidePanel: DrawSidePanel = 'candidates';
   let importTextarea: HTMLTextAreaElement;
   let selectedPrizeId: string | null = null;
   let selectedCommonId: string | null = null;
@@ -95,6 +98,9 @@
   let drawHistorySaving = false;
   let drawHistoryError = '';
   let autoSaveHistory = true;
+  let continuousTarget = 10;
+  let continuousIntervalSeconds = 3;
+  let continuousRunning = false;
 
   let rotation = 0;
   let isSpinning = false;
@@ -109,6 +115,7 @@
   let batchRunAt: number | null = null;
   let hydrated = false;
   let timer: number | undefined;
+  let continuousTimer: number | undefined;
   let result: ResultCard = {
     eyebrow: '准备就绪',
     title: '好运正在路上',
@@ -134,6 +141,10 @@
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
   $: parsedImportOptions = parseOptionText(importText);
+  $: continuousCompleted = records.filter(
+    (record) => record.outcome === 'selected' || record.outcome === 'winner',
+  ).length;
+  $: continuousRemaining = Math.max(0, continuousTarget - continuousCompleted);
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -146,6 +157,8 @@
         retryEnabled,
         retryWeight,
         autoSaveHistory,
+        continuousTarget,
+        continuousIntervalSeconds,
       }),
     );
   }
@@ -163,6 +176,8 @@
           retryEnabled: boolean;
           retryWeight: number;
           autoSaveHistory: boolean;
+          continuousTarget: number;
+          continuousIntervalSeconds: number;
         }>;
 
         if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
@@ -179,6 +194,12 @@
         if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
         if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
         if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
+        if (typeof parsed.continuousTarget === 'number') {
+          continuousTarget = Math.min(1000, Math.max(1, Math.floor(parsed.continuousTarget)));
+        }
+        if (typeof parsed.continuousIntervalSeconds === 'number') {
+          continuousIntervalSeconds = Math.min(30, Math.max(0.5, parsed.continuousIntervalSeconds));
+        }
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -191,6 +212,7 @@
 
   onDestroy(() => {
     if (timer) window.clearTimeout(timer);
+    if (continuousTimer) window.clearTimeout(continuousTimer);
   });
 
   function createId(prefix: string): string {
@@ -397,6 +419,7 @@
 
   async function startNewDraw(clearCandidates = false) {
     if (isSpinning || drawHistorySaving) return;
+    stopContinuousDraw();
     if (desktopRuntime && autoSaveHistory && records.length > 0) {
       const saved = await saveCurrentDrawHistory(false);
       if (!saved) return;
@@ -410,6 +433,7 @@
     rouletteRound = 1;
     singleAttempt = 0;
     singleCompleted = 0;
+    drawSidePanel = 'candidates';
     exitCandidateKeyboard();
     exitCommonKeyboard();
     if (clearCandidates) updatePrizes([]);
@@ -486,6 +510,7 @@
     commonKeyboardActive = false;
     selectedCommonId = null;
     candidateKeyboardActive = true;
+    drawSidePanel = 'candidates';
     if (prizes.length > 0) {
       await selectPrize(selectedPrizeId ?? prizes[0].id);
     }
@@ -500,6 +525,7 @@
   async function selectRewardInput() {
     candidateKeyboardActive = true;
     selectedPrizeId = null;
+    drawSidePanel = 'statistics';
     await tick();
     rewardInput?.focus();
     rewardInput?.select();
@@ -649,7 +675,16 @@
   }
 
   function spin() {
-    if (isSpinning || spinDisabled) return;
+    if (
+      isSpinning ||
+      enabledPrizes.length < 2 ||
+      (mode === 'roulette' && rouletteFinished)
+    ) return;
+    if (continuousTimer) {
+      window.clearTimeout(continuousTimer);
+      continuousTimer = undefined;
+    }
+    drawSidePanel = 'statistics';
 
     const options = currentDrawOptions();
     const realOptions = options.filter((option) => !option.isRetry);
@@ -680,7 +715,68 @@
       tone: 'idle',
     };
 
-    timer = window.setTimeout(() => settleSingleDraw(picked), durationSeconds * 1000);
+    timer = window.setTimeout(() => {
+      settleSingleDraw(picked);
+      continueContinuousDraw();
+    }, durationSeconds * 1000);
+  }
+
+  function startContinuousDraw() {
+    if (isSpinning || continuousRunning || enabledPrizes.length < 2) return;
+    continuousTarget = Math.min(1000, Math.max(1, Math.floor(Number(continuousTarget) || 1)));
+    continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(continuousIntervalSeconds) || 3));
+    drawSidePanel = 'statistics';
+
+    if (continuousCompleted >= continuousTarget) {
+      result = {
+        eyebrow: '连续抽奖',
+        title: '目标已经完成',
+        detail: `当前已有 ${continuousCompleted} 个有效结果。`,
+        tone: 'success',
+      };
+      return;
+    }
+
+    continuousRunning = true;
+    if (mode === 'roulette' && rouletteFinished) startNewRouletteRound();
+    spin();
+  }
+
+  function stopContinuousDraw() {
+    continuousRunning = false;
+    if (continuousTimer) {
+      window.clearTimeout(continuousTimer);
+      continuousTimer = undefined;
+    }
+  }
+
+  function continueContinuousDraw() {
+    if (!continuousRunning) return;
+    const completed = records.filter(
+      (record) => record.outcome === 'selected' || record.outcome === 'winner',
+    ).length;
+    const delay = continuousIntervalSeconds * 1000;
+
+    if (completed >= continuousTarget) {
+      continuousTimer = window.setTimeout(() => {
+        continuousRunning = false;
+        continuousTimer = undefined;
+        result = {
+          eyebrow: '连续抽奖完成',
+          title: `${completed} 个有效结果`,
+          detail: '当前统计已更新。',
+          tone: 'success',
+        };
+      }, delay);
+      return;
+    }
+
+    continuousTimer = window.setTimeout(() => {
+      continuousTimer = undefined;
+      if (!continuousRunning) return;
+      if (mode === 'roulette' && rouletteFinished) startNewRouletteRound();
+      spin();
+    }, delay);
   }
 
   function settleSingleDraw(picked: WheelOption) {
@@ -815,6 +911,8 @@
     }
 
     try {
+      stopContinuousDraw();
+      drawSidePanel = 'statistics';
       const safeCount = Math.min(1000, Math.max(1, Math.floor(Number(batchCount) || 1)));
       batchCount = safeCount;
       const simulation = simulateBatch(
@@ -900,6 +998,7 @@
           id: prize.id,
           name: prize.name,
           color: prize.color,
+          weight: prize.weight,
           count: stat.count,
           rewardTotal: stat.rewardTotal,
           percent: completedCount > 0 ? (stat.count / completedCount) * 100 : 0,
@@ -1467,6 +1566,20 @@
         </div>
 
         <aside class="candidate-board" aria-label="当前候选项">
+          <div class="draw-side-tabs" aria-label="右侧面板">
+            <button
+              type="button"
+              class:active={drawSidePanel === 'candidates'}
+              on:click={() => (drawSidePanel = 'candidates')}
+            >候选项</button>
+            <button
+              type="button"
+              class:active={drawSidePanel === 'statistics'}
+              on:click={() => (drawSidePanel = 'statistics')}
+            >当前统计 <span>{validCompleted}</span></button>
+          </div>
+
+          {#if drawSidePanel === 'candidates'}
           <div class="candidate-board-heading">
             <div>
               <h2>候选项</h2>
@@ -1545,59 +1658,77 @@
               </div>
             </section>
           {/if}
+          {:else}
+            <section class="continuous-control">
+              <div class="continuous-fields">
+                <label>
+                  <span>目标结果</span>
+                  <input type="number" min="1" max="1000" step="1" bind:value={continuousTarget} disabled={continuousRunning} />
+                </label>
+                <label>
+                  <span>结果停留</span>
+                  <span class="seconds-input">
+                    <input type="number" min="0.5" max="30" step="0.5" bind:value={continuousIntervalSeconds} disabled={continuousRunning} />
+                    <small>秒</small>
+                  </span>
+                </label>
+              </div>
+              <div class="continuous-progress">
+                <span>已完成 {continuousCompleted}</span>
+                <strong>还差 {continuousRemaining}</strong>
+              </div>
+              {#if continuousRunning}
+                <button type="button" class="continuous-stop" on:click={stopContinuousDraw}>停止连续抽奖</button>
+              {:else}
+                <button type="button" class="continuous-start" disabled={enabledPrizes.length < 2 || continuousRemaining === 0} on:click={startContinuousDraw}>
+                  开始连续抽奖
+                </button>
+              {/if}
+            </section>
 
-          <label class="reward-setting candidate-reward">
-            <strong>奖励金额</strong>
-            <span class="reward-input">
-              <input
-                bind:this={rewardInput}
-                type="number"
-                min="0"
-                step="0.01"
-                bind:value={rewardAmount}
-                disabled={isSpinning}
-                on:focus={() => {
-                  candidateKeyboardActive = true;
-                  selectedPrizeId = null;
-                }}
-                on:change={() => (rewardAmount = normalizedRewardAmount())}
-              />
-            </span>
-          </label>
+            <label class="reward-setting candidate-reward">
+              <strong>奖励金额</strong>
+              <span class="reward-input">
+                <input
+                  bind:this={rewardInput}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  bind:value={rewardAmount}
+                  disabled={isSpinning}
+                  on:focus={() => {
+                    candidateKeyboardActive = true;
+                    selectedPrizeId = null;
+                  }}
+                  on:change={() => (rewardAmount = normalizedRewardAmount())}
+                />
+              </span>
+            </label>
+
+            <div class="side-stat-summary">
+              <div><span>有效命中</span><strong>{validCompleted}</strong></div>
+              <div><span>重来</span><strong>{retryTotal}</strong></div>
+              <div><span>累计金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
+            </div>
+
+            <div class="current-stats-list side-stats-list">
+              {#each currentStats as stat (stat.id)}
+                <article>
+                  <i style:background={stat.color}></i>
+                  <div class="current-stat-main"><strong>{stat.name}</strong></div>
+                  <div class="side-stat-value"><strong>{formatAmount(stat.weight)}</strong><span>权重</span></div>
+                  <div class="side-stat-value"><strong>{stat.count}</strong><span>中奖</span></div>
+                  <div class="side-stat-value"><strong>{formatAmount(stat.rewardTotal)}</strong><span>金额</span></div>
+                </article>
+              {:else}
+                <div class="current-stats-empty">还没有抽奖结果</div>
+              {/each}
+            </div>
+
+            <button type="button" class="clear-side-stats" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空当前统计</button>
+          {/if}
         </aside>
       </div>
-
-      <section class="current-statistics">
-        <div class="current-stats-heading">
-          <div>
-            <h2>当前抽奖统计</h2>
-          </div>
-          <button type="button" disabled={records.length === 0} on:click={clearCurrentDraw}>清空当前统计</button>
-        </div>
-
-        <div class="current-stats-summary">
-          <div><span>有效命中</span><strong>{validCompleted}</strong></div>
-          <div><span>重来次数</span><strong>{retryTotal}</strong></div>
-          <div><span>累计奖励金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
-        </div>
-
-        <div class="current-stats-list">
-          {#each currentStats as stat, index (stat.id)}
-            <article>
-              <span class="current-rank">{String(index + 1).padStart(2, '0')}</span>
-              <i style:background={stat.color}></i>
-              <div class="current-stat-main">
-                <div><strong>{stat.name}</strong><span>{stat.percent.toFixed(1)}%</span></div>
-                <div class="current-stat-bar"><span style={`width: ${Math.max(stat.count > 0 ? 3 : 0, stat.percent)}%; background: ${stat.color}`}></span></div>
-              </div>
-              <div class="current-stat-count"><strong>{stat.count}</strong><span>次命中</span></div>
-              <div class="current-stat-amount"><strong>{formatAmount(stat.rewardTotal)}</strong><span>累计金额</span></div>
-            </article>
-          {:else}
-            <div class="current-stats-empty">完成一次抽取后，这里会显示每个候选项的命中次数。</div>
-          {/each}
-        </div>
-      </section>
     </section>
 
     <aside class:open={activePanel === 'batch'} class="accordion-item batch-panel">
