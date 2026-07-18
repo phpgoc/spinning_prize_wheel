@@ -1,0 +1,38 @@
+# Rust / Tauri
+/target/
+**/target/
+/src-tauri/gen/schemas/
+*.rs.bk
+
+# Bun / Svelte
+node_modules/
+.svelte-kit/
+build/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+bun.lockb
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs and runtime files
+*.log
+*.pid
+*.pid.lock
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tauri signing material
+*.key
+*.pem
