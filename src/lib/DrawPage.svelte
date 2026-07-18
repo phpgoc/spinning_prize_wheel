@@ -1469,9 +1469,9 @@
       return;
     }
 
-    const webShortcut = !desktopRuntime && !modifier && event.altKey && event.shiftKey;
-    const desktopShortcut = desktopRuntime && !editing && !modifier && !event.altKey && !event.shiftKey;
-    if (!webShortcut && !desktopShortcut) return;
+    // Web 和桌面都只在非编辑状态响应单键，避免输入名称或金额时误触。
+    const globalShortcut = !editing && !modifier && !event.altKey && !event.shiftKey;
+    if (!globalShortcut) return;
 
     if (!['w', 'e', 'r', 'a', 'z', 'x', 's', 'space'].includes(shortcutKey)) return;
     if (!desktopRuntime && shortcutKey === 's') return;
@@ -2204,28 +2204,16 @@
         <section class="shortcut-group">
           <h3>全局生效 · {desktopRuntime ? '桌面端' : '网页版'}</h3>
           <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>打开文本导入</span><kbd>W</kbd></div>
+            <div><span>导出抽奖统计</span><kbd>E</kbd></div>
+            <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
+            <div><span>打开常用选择</span><kbd>A</kbd></div>
+            <div><span>打开快捷键</span><kbd>Z</kbd></div>
+            <div><span>开始抽奖</span><kbd>空格</kbd></div>
             {#if desktopRuntime}
-              <div><span>打开文本导入</span><kbd>W</kbd></div>
-              <div><span>导出抽奖统计</span><kbd>E</kbd></div>
-              <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
-              <div><span>打开常用选择</span><kbd>A</kbd></div>
-              <div><span>打开快捷键</span><kbd>Z</kbd></div>
-              <div><span>开始抽奖</span><kbd>空格</kbd></div>
               <div><span>切换自动保存历史</span><kbd>S</kbd></div>
-              <div><span>进入候选项</span><kbd>X</kbd></div>
-            {:else}
-              {#each [
-                ['打开文本导入', 'W'],
-                ['导出抽奖统计', 'E'],
-                ['新的抽奖并清空候选项', 'R'],
-                ['打开常用选择', 'A'],
-                ['打开快捷键', 'Z'],
-                ['开始抽奖', '空格'],
-                ['进入候选项', 'X'],
-              ] as shortcut}
-                <div><span>{shortcut[0]}</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>{shortcut[1]}</kbd></div>
-              {/each}
             {/if}
+            <div><span>进入候选项</span><kbd>X</kbd></div>
             <div><span>滚屏</span><kbd>↑ / ↓</kbd></div>
           </div>
         </section>
