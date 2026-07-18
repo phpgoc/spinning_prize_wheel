@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  applyCaimiLineupSwap,
   createRandomLineup,
   groupName,
   insertLineupPreviewName,
@@ -40,6 +41,24 @@ describe('随机排阵', () => {
     expect(result.tiers).toHaveLength(3);
     expect(result.tiers[2].filter(Boolean)).toHaveLength(2);
     expect(result.tiers.flat().filter(Boolean)).toHaveLength(10);
+  });
+
+  test('猜蜜版把自己换进最弱组并标记交换双方', () => {
+    const lineup = createRandomLineup(
+      ['猜蜜本人', '同档甲', '同档乙', '第二档甲', '第二档乙', '第二档丙'],
+      3,
+      () => 0,
+    );
+    const favoredBefore = lineup.tiers.flat().find((entry) => entry?.name === '猜蜜本人')!;
+    const scores = [1, 20, 8, 2, 20, 8];
+    const result = applyCaimiLineupSwap(lineup, scores);
+    const favoredAfter = result.tiers.flat().find((entry) => entry?.name === '猜蜜本人')!;
+    const displaced = result.tiers[favoredAfter.tierIndex][favoredBefore.groupIndex]!;
+
+    expect(favoredAfter.groupIndex).not.toBe(favoredBefore.groupIndex);
+    expect(favoredAfter.caimiSwap?.kind).toBe('favored');
+    expect(displaced.caimiSwap?.kind).toBe('displaced');
+    expect(result.tiers.flat().filter(Boolean)).toHaveLength(6);
   });
 
   test('校验组数和人数', () => {

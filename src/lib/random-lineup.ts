@@ -5,6 +5,14 @@ export interface LineupEntry {
   sourceIndex: number;
   tierIndex: number;
   groupIndex: number;
+  caimiSwap?: CaimiSwap;
+}
+
+export interface CaimiSwap {
+  kind: 'favored' | 'displaced';
+  partnerName: string;
+  fromGroupIndex: number;
+  toGroupIndex: number;
 }
 
 export interface RandomLineup {
@@ -213,4 +221,91 @@ export function createRandomLineup(
     peopleCount: normalizedNames.length,
     groupCount: normalizedGroupCount,
   };
+}
+
+function isCaimiFavoredName(name: string): boolean {
+  return name.includes('猜') || name.includes('本');
+}
+
+function caimiGroupScores(
+  lineup: RandomLineup,
+  rankScores: readonly number[],
+): number[] {
+  const scores = Array.from({ length: lineup.groupCount }, () => 0);
+  for (const tier of lineup.tiers) {
+    for (const entry of tier) {
+      if (!entry) continue;
+      const score = Number(rankScores[entry.sourceIndex]);
+      scores[entry.groupIndex] += Number.isFinite(score) ? score : entry.sourceIndex + 1;
+    }
+  }
+  return scores;
+}
+
+/** 猜蜜版把含“猜”或“本”的项换进当前总 rank 最高的最弱组，并保留明作弊标记。 */
+export function applyCaimiLineupSwap(
+  lineup: RandomLineup,
+  rankScores: readonly number[] = [],
+): RandomLineup {
+  const tiers = lineup.tiers.map((tier) => tier.map((entry) => (entry ? { ...entry } : null)));
+  const result: RandomLineup = { ...lineup, tiers };
+  const favoredSourceIndexes = new Set(
+    tiers.flat().flatMap((entry) => (
+      entry && isCaimiFavoredName(entry.name) ? [entry.sourceIndex] : []
+    )),
+  );
+  const usedPartners = new Set<number>();
+
+  for (const sourceIndex of favoredSourceIndexes) {
+    let favored: LineupEntry | null = null;
+    for (const tier of tiers) {
+      favored = tier.find((entry) => entry?.sourceIndex === sourceIndex) ?? null;
+      if (favored) break;
+    }
+    if (!favored || favored.caimiSwap) continue;
+
+    const scores = caimiGroupScores(result, rankScores);
+    const weakestScore = Math.max(...scores);
+    if (scores[favored.groupIndex] >= weakestScore) continue;
+
+    const tier = tiers[favored.tierIndex];
+    const targetGroupIndex = scores
+      .map((score, groupIndex) => ({ score, groupIndex, entry: tier[groupIndex] }))
+      .filter(({ groupIndex, entry }) => (
+        groupIndex !== favored!.groupIndex
+        && entry !== null
+        && !favoredSourceIndexes.has(entry.sourceIndex)
+        && !usedPartners.has(entry.sourceIndex)
+      ))
+      .sort((left, right) => right.score - left.score || left.groupIndex - right.groupIndex)[0]
+      ?.groupIndex;
+    if (targetGroupIndex === undefined) continue;
+
+    const fromGroupIndex = favored.groupIndex;
+    const displaced = tier[targetGroupIndex];
+    if (!displaced) continue;
+    tier[fromGroupIndex] = {
+      ...displaced,
+      groupIndex: fromGroupIndex,
+      caimiSwap: {
+        kind: 'displaced',
+        partnerName: favored.name,
+        fromGroupIndex: targetGroupIndex,
+        toGroupIndex: fromGroupIndex,
+      },
+    };
+    tier[targetGroupIndex] = {
+      ...favored,
+      groupIndex: targetGroupIndex,
+      caimiSwap: {
+        kind: 'favored',
+        partnerName: displaced.name,
+        fromGroupIndex,
+        toGroupIndex: targetGroupIndex,
+      },
+    };
+    usedPartners.add(displaced.sourceIndex);
+  }
+
+  return result;
 }

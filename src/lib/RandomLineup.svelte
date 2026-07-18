@@ -4,6 +4,7 @@
   import type { AppVariant } from './app-variant';
   import { parseOptionText } from './parse-options';
   import {
+    applyCaimiLineupSwap,
     createRandomLineup,
     insertLineupPreviewName,
     isResolvedLineupName,
@@ -95,6 +96,7 @@
   $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
   $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
+  $: caimiSwapCount = result?.tiers.flat().filter((entry) => entry?.caimiSwap?.kind === 'favored').length ?? 0;
   $: orderAvailability = lineupOrderAvailability(
     names.length,
     desktopRuntime,
@@ -173,6 +175,20 @@
     return orderResolvedLineupNames(resolvedNames);
   }
 
+  function rankScoresForLineup(orderedNames: readonly string[]): number[] {
+    if (!desktopRuntime) return orderedNames.map((_, index) => index + 1);
+    const rankByName = new Map(
+      resolvedNames.flatMap((person) => (
+        person.canonicalName === null || person.rank === null
+          ? []
+          : [[person.canonicalName.toLocaleLowerCase('zh-CN'), person.rank] as const]
+      )),
+    );
+    return orderedNames.map((name, index) => (
+      rankByName.get(name.toLocaleLowerCase('zh-CN')) ?? index + 1
+    ));
+  }
+
   async function generate(orderMode: LineupOrderMode = desktopRuntime ? 'rank' : 'input') {
     error = '';
     historyStatus = 'idle';
@@ -188,7 +204,10 @@
         }
       }
       const orderedNames = orderedNamesForLineup(orderMode);
-      result = createRandomLineup(orderedNames, Number(groupCount));
+      const generated = createRandomLineup(orderedNames, Number(groupCount));
+      result = variant === 'caimi'
+        ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
+        : generated;
       resultOrderMode = orderMode;
       groupCount = result.groupCount;
       const resolvedSignature = desktopRuntime
@@ -954,6 +973,9 @@
           {#if result}<button type="button" on:click={() => generate(resultOrderMode)}>重新随机</button>{/if}
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
+        {#if variant === 'caimi' && caimiSwapCount > 0}
+          <div class="caimi-cheat-note"><strong>明牌暗箱</strong><span>已和最弱组同档交换 {caimiSwapCount} 项</span></div>
+        {/if}
         {#if desktopRuntime && historyStatus !== 'idle'}
           <div class:error={historyStatus === 'error'} class="history-status">{historyStatus === 'saving' ? '正在保存排阵记录…' : historyStatus === 'saved' ? '排阵输入与结果已保存' : '排阵记录保存失败'}</div>
         {/if}
@@ -963,7 +985,7 @@
               <thead><tr><th scope="col">档位</th>{#each result.groupNames as group}<th scope="col"><span>{group}</span>组</th>{/each}</tr></thead>
               <tbody>
                 {#each result.tiers as tier, tierIndex}
-                  <tr><th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>{#each tier as entry}<td class:empty={!entry}>{#if entry}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}</small>{:else}<span>—</span>{/if}</td>{/each}</tr>
+                  <tr><th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>{#each tier as entry}<td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'}>{#if entry}{#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '暗箱' : '被换'}</i>{/if}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>{:else}<span>—</span>{/if}</td>{/each}</tr>
                 {/each}
               </tbody>
             </table>
@@ -1267,6 +1289,22 @@
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-heading button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.17); border-radius: 8px; color: var(--accent); }
 
+  .caimi-cheat-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 10px 13px;
+    border: 1px solid rgba(255, 210, 90, 0.48);
+    border-radius: 10px;
+    background: linear-gradient(100deg, rgba(255, 210, 90, 0.17), rgba(255, 115, 155, 0.16));
+    color: #ffd85f;
+    font-size: calc(11px * var(--font-scale, 1));
+  }
+
+  .caimi-cheat-note strong { font-size: calc(13px * var(--font-scale, 1)); letter-spacing: 0.12em; }
+
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
   table { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 7px; table-layout: fixed; }
@@ -1285,6 +1323,31 @@
   td strong { overflow: hidden; color: #f4f1e8; font-size: calc(14px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   td small { margin-top: 4px; color: var(--lineup-dim-on-dark); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
   td.empty { color: var(--lineup-dim-on-dark); }
+  td.caimi-swapped {
+    position: relative;
+    border-color: rgba(255, 151, 174, 0.58);
+    background: rgba(255, 151, 174, 0.13);
+    box-shadow: inset 0 0 0 1px rgba(255, 151, 174, 0.12);
+  }
+  td.caimi-favored {
+    border-color: rgba(255, 218, 96, 0.78);
+    background: linear-gradient(145deg, rgba(255, 218, 96, 0.22), rgba(255, 129, 164, 0.16));
+    box-shadow: 0 0 20px rgba(255, 205, 91, 0.14), inset 0 0 0 1px rgba(255, 218, 96, 0.18);
+  }
+  .caimi-swap-badge {
+    position: absolute;
+    top: -6px;
+    right: -5px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: #ff8aaa;
+    color: #35151e;
+    font-size: calc(8px * var(--font-scale, 1));
+    font-style: normal;
+    font-weight: 950;
+    letter-spacing: 0.06em;
+  }
+  td.caimi-favored .caimi-swap-badge { background: #ffdc65; }
 
   .empty-result {
     display: grid;
