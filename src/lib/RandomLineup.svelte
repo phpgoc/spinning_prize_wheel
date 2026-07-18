@@ -1371,12 +1371,9 @@
 
   .preview-list {
     display: grid;
-    max-height: 310px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
     margin-top: 18px;
-    padding-right: 4px;
-    overflow: auto;
   }
 
   .preview-tier-divider {
