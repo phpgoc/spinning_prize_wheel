@@ -1,9 +1,10 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { parseOptionText } from './parse-options';
   import {
     createRandomLineup,
+    insertLineupPreviewName,
     isResolvedLineupName,
     lineupOrderAvailability,
     lineupPreviewTierStarts,
@@ -49,6 +50,10 @@
   let historyError = '';
   let historyStart = '';
   let historyEnd = '';
+  let insertIndex: number | null = null;
+  let insertName = '';
+  let insertError = '';
+  let insertInput: HTMLInputElement | null = null;
 
   $: names = parseOptionText(sourceText);
   $: namesSignature = names.join('\u0000');
@@ -238,7 +243,35 @@
     userName = name;
   }
 
+  async function openPreviewInsertion(index: number) {
+    insertIndex = Math.min(names.length, Math.max(0, index));
+    insertName = '';
+    insertError = '';
+    await tick();
+    insertInput?.focus();
+  }
+
+  function confirmPreviewInsertion() {
+    if (insertIndex === null) return;
+    try {
+      const updated = insertLineupPreviewName(names, insertIndex, insertName);
+      sourceText = updated.join('\n');
+      historyStatus = 'idle';
+      cancelPreviewInsertion();
+    } catch (reason) {
+      insertError = messageFrom(reason, '无法插入姓名');
+    }
+  }
+
+  function cancelPreviewInsertion() {
+    insertIndex = null;
+    insertName = '';
+    insertError = '';
+    insertInput = null;
+  }
+
   function updatePreviewName(index: number, value: string) {
+    cancelPreviewInsertion();
     const updated = [...names];
     const name = value.trim();
     if (!name) {
@@ -251,6 +284,7 @@
   }
 
   function removePreviewName(index: number) {
+    cancelPreviewInsertion();
     const updated = [...names];
     updated.splice(index, 1);
     sourceText = updated.join('\n');
@@ -456,7 +490,19 @@
                   <i></i><span>t{Math.floor(index / Math.max(2, Number(groupCount) || 2)) + 1}</span><i></i>
                 </div>
               {/if}
+              {#if insertIndex === index}
+                <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
+                  <label>
+                    <span>插入到 {row.name} 前</span>
+                    <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label={`插入到 ${row.name} 前`} on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                  </label>
+                  <button type="submit">插入</button>
+                  <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
+                  {#if insertError}<small role="alert">{insertError}</small>{/if}
+                </form>
+              {/if}
               <div class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)} class="preview-row">
+                <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <div>
                   <input value={row.name} aria-label={`第 ${index + 1} 个人名`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
@@ -474,9 +520,36 @@
                 <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>×</button>
               </div>
             {/each}
+            {#if insertIndex === previewRows.length}
+              <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
+                <label>
+                  <span>添加到名单末尾</span>
+                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加到名单末尾" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                </label>
+                <button type="submit">添加</button>
+                <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
+                {#if insertError}<small role="alert">{insertError}</small>{/if}
+              </form>
+            {/if}
+            <button type="button" class="append-preview-user" on:click={() => openPreviewInsertion(previewRows.length)}>＋ 添加到名单末尾</button>
           </div>
         {:else}
-          <div class="preview-empty">请先在右侧粘贴参赛名单</div>
+          <div class="preview-empty">
+            <span>请先在右侧粘贴参赛名单</span>
+            {#if insertIndex === 0}
+              <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
+                <label>
+                  <span>添加第一个人</span>
+                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加第一个人" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                </label>
+                <button type="submit">添加</button>
+                <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
+                {#if insertError}<small role="alert">{insertError}</small>{/if}
+              </form>
+            {:else}
+              <button type="button" class="append-preview-user" on:click={() => openPreviewInsertion(0)}>＋ 添加第一个人</button>
+            {/if}
+          </div>
         {/if}
 
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
@@ -857,7 +930,7 @@
   .preview-row {
     display: grid;
     min-width: 0;
-    grid-template-columns: 25px minmax(0, 1fr) auto 22px;
+    grid-template-columns: 22px 25px minmax(0, 1fr) auto 22px;
     align-items: center;
     gap: 6px;
     padding: 7px;
@@ -906,6 +979,95 @@
 
   .preview-row.unknown small { color: #ff957d; }
 
+  .insert-before-button,
+  .append-preview-user,
+  .preview-insert-form button {
+    border: 1px solid rgba(231, 255, 114, 0.2);
+    background: rgba(231, 255, 114, 0.05);
+    color: #bdc978;
+    cursor: pointer;
+  }
+
+  .insert-before-button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: calc(14px * var(--font-scale, 1));
+    line-height: 1;
+  }
+
+  .insert-before-button:hover,
+  .insert-before-button.active,
+  .append-preview-user:hover,
+  .preview-insert-form button:hover {
+    border-color: rgba(231, 255, 114, 0.48);
+    background: rgba(231, 255, 114, 0.12);
+    color: #e7ff72;
+  }
+
+  .append-preview-user {
+    grid-column: 1 / -1;
+    justify-self: center;
+    padding: 6px 11px;
+    border-radius: 8px;
+    font-size: calc(11px * var(--font-scale, 1));
+  }
+
+  .preview-insert-form {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 7px;
+    width: 100%;
+    padding: 9px;
+    border: 1px solid rgba(231, 255, 114, 0.34);
+    border-radius: 9px;
+    background: rgba(231, 255, 114, 0.07);
+    box-sizing: border-box;
+  }
+
+  .preview-insert-form label {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(80px, 1fr);
+    align-items: center;
+    gap: 8px;
+    color: #c9cf9c;
+    font-size: calc(11px * var(--font-scale, 1));
+  }
+
+  .preview-insert-form input {
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 6px;
+    outline: none;
+    background: rgba(3, 5, 5, 0.45);
+    color: #f4f1e8;
+    font: inherit;
+  }
+
+  .preview-insert-form input:focus { border-color: rgba(231, 255, 114, 0.55); }
+
+  .preview-insert-form button {
+    padding: 5px 9px;
+    border-radius: 6px;
+    font-size: calc(11px * var(--font-scale, 1));
+  }
+
+  .preview-insert-form button.cancel {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: var(--lineup-dim-on-dark);
+  }
+
+  .preview-insert-form small {
+    grid-column: 1 / -1;
+    color: #ff957d;
+    font-size: calc(10px * var(--font-scale, 1));
+  }
+
   .add-preview-user,
   .remove-preview-user {
     padding: 0;
@@ -940,6 +1102,8 @@
     border-radius: 12px;
     color: var(--lineup-dim-on-dark);
     font-size: calc(12px * var(--font-scale, 1));
+    gap: 12px;
+    padding: 18px;
     place-items: center;
   }
 

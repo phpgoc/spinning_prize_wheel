@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createRandomLineup,
   groupName,
+  insertLineupPreviewName,
   isResolvedLineupName,
   lineupOrderAvailability,
   lineupPreviewTierStarts,
@@ -103,6 +104,10 @@ describe('随机排阵', () => {
     expect(lineupPreviewTierStarts(24, 6)).toEqual([0, 6, 12, 18]);
     expect(lineupPreviewTierStarts(10, 4)).toEqual([0, 4, 8]);
     expect(lineupPreviewTierStarts(0, 6)).toEqual([]);
+  });
+
+  test('预览名单可在指定位置插入姓名', () => {
+    expect(insertLineupPreviewName(['甲', '丙'], 1, ' 乙 ')).toEqual(['甲', '乙', '丙']);
   });
 
   test('排阵历史按日期筛选并只保留最新 5 条', () => {

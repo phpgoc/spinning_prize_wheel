@@ -62,6 +62,26 @@ export function lineupPreviewTierStarts(peopleCount: number, groupCount: number)
   return Array.from({ length: Math.ceil(total / size) }, (_, index) => index * size);
 }
 
+/** 在预览名单的指定位置插入一个姓名。 */
+export function insertLineupPreviewName(
+  names: readonly string[],
+  index: number,
+  value: string,
+): string[] {
+  const name = value.trim();
+  if (!name) throw new Error('请输入要添加的姓名');
+
+  const key = name.toLocaleLowerCase('zh-CN');
+  if (names.some((current) => current.toLocaleLowerCase('zh-CN') === key)) {
+    throw new Error('名单中已经有这个姓名');
+  }
+
+  const insertIndex = Math.min(names.length, Math.max(0, Math.floor(Number(index) || 0)));
+  const updated = [...names];
+  updated.splice(insertIndex, 0, name);
+  return updated;
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';
