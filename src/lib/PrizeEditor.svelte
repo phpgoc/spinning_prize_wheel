@@ -29,8 +29,11 @@
   }
 
   function removePrize(id: string) {
-    if (prizes.length <= 2) return;
     onChange(prizes.filter((prize) => prize.id !== id));
+  }
+
+  function clearPrizes() {
+    onChange([]);
   }
 
   function textValue(event: Event): string {
@@ -99,7 +102,7 @@
         class="remove-button"
         aria-label={`删除${prize.name}`}
         title="删除奖项"
-        disabled={disabled || prizes.length <= 2}
+        {disabled}
         on:click={() => removePrize(prize.id)}
       >
         ×
@@ -108,10 +111,15 @@
   {/each}
 </div>
 
-<button type="button" class="add-button" {disabled} on:click={addPrize}>
-  <span>＋</span>
-  添加选项
-</button>
+<div class="prize-actions">
+  <button type="button" class="add-button" {disabled} on:click={addPrize}>
+    <span>＋</span>
+    添加选项
+  </button>
+  <button type="button" class="clear-button" disabled={disabled || prizes.length === 0} on:click={clearPrizes}>
+    清空
+  </button>
+</div>
 
 <style>
   .prize-list {
@@ -269,13 +277,19 @@
     opacity: 0.25;
   }
 
-  .add-button {
+  .prize-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    margin-top: 9px;
+  }
+
+  .add-button,
+  .clear-button {
     display: flex;
-    width: 100%;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    margin-top: 9px;
     padding: 10px;
     border: 1px dashed var(--line-strong);
     border-radius: 11px;
@@ -297,6 +311,18 @@
   .add-button span {
     color: var(--accent);
     font-size: 16px;
+  }
+
+  .clear-button {
+    padding-inline: 14px;
+    border-style: solid;
+    color: var(--text-dim);
+  }
+
+  .clear-button:hover:not(:disabled) {
+    border-color: rgba(239, 115, 87, 0.35);
+    background: rgba(239, 115, 87, 0.06);
+    color: var(--danger);
   }
 
   @media (max-width: 420px) {

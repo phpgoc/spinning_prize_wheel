@@ -20,12 +20,12 @@
     DrawOutcome,
     DrawRecord,
     Prize,
+    SavedDraw,
     SimulationEvent,
     WheelOption,
   } from './lib/types';
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
-  const HISTORY_STORAGE_KEY = 'fortuna-wheel-history-v1';
   const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
@@ -56,6 +56,12 @@
     rewardTotal: number;
   }
 
+  interface DrawHistorySummary {
+    completed: number;
+    retries: number;
+    rewardTotal: number;
+  }
+
   type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
 
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
@@ -69,7 +75,6 @@
   let batchTab: 'stats' | 'history' = 'stats';
   let importOpen = false;
   let importText = '';
-  let importMode: 'replace' | 'append' = 'replace';
   let activePanel: SidebarPanel | null = 'settings';
   let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
@@ -81,6 +86,10 @@
   let commonSelectionSaving = false;
   let commonSelectionError = '';
   let desktopRuntime = false;
+  let drawHistories: SavedDraw[] = [];
+  let drawHistoryLoading = true;
+  let drawHistorySaving = false;
+  let drawHistoryError = '';
 
   let rotation = 0;
   let isSpinning = false;
@@ -90,6 +99,7 @@
   let singleAttempt = 0;
   let singleCompleted = 0;
   let records: DrawRecord[] = [];
+  let currentDrawId = createId('draw');
   let batchResult: BatchSimulation | null = null;
   let batchRunAt: number | null = null;
   let hydrated = false;
@@ -102,12 +112,14 @@
   };
 
   $: enabledPrizes = prizes.filter((prize) => prize.enabled);
-  $: wheelOptions = buildWheelOptions(prizes, retryEnabled, retryWeight);
+  $: wheelOptions = enabledPrizes.length === 0
+    ? []
+    : buildWheelOptions(prizes, retryEnabled, retryWeight);
   $: eliminatedSet = new Set(eliminatedIds);
   $: rouletteRemaining = enabledPrizes.filter((prize) => !eliminatedSet.has(prize.id));
   $: spinDisabled =
-    enabledPrizes.length === 0 ||
-    (mode === 'roulette' && (enabledPrizes.length < 2 || rouletteFinished));
+    enabledPrizes.length < 2 ||
+    (mode === 'roulette' && rouletteFinished);
   $: validCompleted = records.filter(
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
@@ -130,7 +142,6 @@
         retryWeight,
       }),
     );
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records.slice(0, 5000)));
   }
 
   onMount(() => {
@@ -147,7 +158,7 @@
           retryWeight: number;
         }>;
 
-        if (Array.isArray(parsed.prizes) && parsed.prizes.length >= 2) prizes = parsed.prizes;
+        if (Array.isArray(parsed.prizes)) prizes = parsed.prizes;
         if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
         if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
           animationStyle = parsed.animationStyle!;
@@ -161,23 +172,13 @@
         if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
         if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
       }
-
-      const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (savedHistory) {
-        const parsedHistory = JSON.parse(savedHistory) as DrawRecord[];
-        if (Array.isArray(parsedHistory)) {
-          records = parsedHistory.map((record) => ({
-            ...record,
-            rewardAmount: Math.max(0, Number(record.rewardAmount) || 0),
-          }));
-        }
-      }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
     shortcutMod = /Mac|iPhone|iPad/i.test(navigator.platform) ? '⌘' : 'Ctrl';
     desktopRuntime = isTauriRuntime();
     void loadCommonSelections();
+    void loadDrawHistories();
     hydrated = true;
   });
 
@@ -203,7 +204,6 @@
       && typeof selection.name === 'string'
       && typeof selection.createdAt === 'number'
       && Array.isArray(selection.prizes)
-      && selection.prizes.length >= 2
       && selection.prizes.every((prize) => (
         prize
         && typeof prize.id === 'string'
@@ -212,6 +212,18 @@
         && typeof prize.color === 'string'
         && typeof prize.enabled === 'boolean'
       ));
+  }
+
+  function isSavedDraw(value: unknown): value is SavedDraw {
+    if (!value || typeof value !== 'object') return false;
+    const draw = value as Partial<SavedDraw>;
+    return draw.version === 1
+      && typeof draw.id === 'string'
+      && typeof draw.createdAt === 'number'
+      && (draw.mode === 'selected' || draw.mode === 'roulette')
+      && typeof draw.rewardAmount === 'number'
+      && Array.isArray(draw.prizes)
+      && Array.isArray(draw.records);
   }
 
   async function loadCommonSelections() {
@@ -237,7 +249,9 @@
 
   async function openCommonSelectionSaver() {
     if (isSpinning) return;
-    commonSelectionName = `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
+    commonSelectionName = prizes.length === 0
+      ? '空名单'
+      : `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
     commonSelectionSaveOpen = true;
     commonSelectionError = '';
     await tick();
@@ -308,6 +322,114 @@
     } catch (error) {
       commonSelectionError = error instanceof Error ? error.message : String(error);
     }
+  }
+
+  async function loadDrawHistories() {
+    drawHistoryLoading = true;
+    drawHistoryError = '';
+    if (!desktopRuntime) {
+      drawHistories = [];
+      drawHistoryLoading = false;
+      return;
+    }
+
+    try {
+      const loaded = await invoke<unknown[]>('list_draw_histories');
+      drawHistories = Array.isArray(loaded) ? loaded.filter(isSavedDraw) : [];
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    } finally {
+      drawHistoryLoading = false;
+    }
+  }
+
+  async function saveCurrentDrawHistory() {
+    if (!desktopRuntime || records.length === 0 || drawHistorySaving) return;
+    const draw: SavedDraw = {
+      version: 1,
+      id: currentDrawId,
+      createdAt: Date.now(),
+      mode,
+      rewardAmount: normalizedRewardAmount(),
+      prizes: prizes.map((prize) => ({ ...prize })),
+      records: records.map((record) => ({ ...record })),
+    };
+
+    drawHistorySaving = true;
+    drawHistoryError = '';
+    try {
+      await invoke('save_draw_history', { draw });
+      drawHistories = [draw, ...drawHistories.filter((history) => history.id !== draw.id)];
+      result = {
+        eyebrow: '当前抽奖已保存',
+        title: `${validCompleted} 个有效结果`,
+        detail: '可以在左侧历史中查看。',
+        tone: 'success',
+      };
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+      result = {
+        eyebrow: '保存失败',
+        title: '当前抽奖未保存',
+        detail: drawHistoryError,
+        tone: 'danger',
+      };
+    } finally {
+      drawHistorySaving = false;
+    }
+  }
+
+  function startNewDraw() {
+    if (isSpinning) return;
+    currentDrawId = createId('draw');
+    records = [];
+    batchResult = null;
+    batchRunAt = null;
+    eliminatedIds = [];
+    rouletteFinished = false;
+    rouletteRound = 1;
+    singleAttempt = 0;
+    singleCompleted = 0;
+    result = {
+      eyebrow: '新的抽奖',
+      title: '准备就绪',
+      detail: enabledPrizes.length < 2 ? '至少启用两个候选项后才能开始。' : '点击转盘中央开始。',
+      tone: 'idle',
+    };
+  }
+
+  async function deleteDrawHistory(draw: SavedDraw) {
+    if (!desktopRuntime) return;
+    drawHistoryError = '';
+    try {
+      await invoke('delete_draw_history', { id: draw.id });
+      drawHistories = drawHistories.filter((history) => history.id !== draw.id);
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function clearDrawHistories() {
+    if (!desktopRuntime || drawHistories.length === 0) return;
+    drawHistoryError = '';
+    try {
+      await invoke('clear_draw_histories');
+      drawHistories = [];
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function drawHistorySummary(draw: SavedDraw): DrawHistorySummary {
+    return draw.records.reduce((summary, record) => {
+      if (record.outcome === 'selected' || record.outcome === 'winner') {
+        summary.completed += 1;
+        summary.rewardTotal += Math.max(0, Number(record.rewardAmount) || 0);
+      } else if (record.outcome === 'retry') {
+        summary.retries += 1;
+      }
+      return summary;
+    }, { completed: 0, retries: 0, rewardTotal: 0 });
   }
 
   function togglePanel(panel: SidebarPanel) {
@@ -510,6 +632,15 @@
 
   function runBatch() {
     if (isSpinning) return;
+    if (enabledPrizes.length < 2) {
+      result = {
+        eyebrow: '无法开始',
+        title: '至少需要两个候选项',
+        detail: '添加或启用候选项后再运行批量抽奖。',
+        tone: 'danger',
+      };
+      return;
+    }
 
     try {
       const safeCount = Math.min(1000, Math.max(1, Math.floor(Number(batchCount) || 1)));
@@ -638,10 +769,8 @@
     return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(amount);
   }
 
-  function clearHistory() {
-    records = [];
-    batchResult = null;
-    batchRunAt = null;
+  function clearCurrentDraw() {
+    startNewDraw();
   }
 
   function resetSettings() {
@@ -670,20 +799,10 @@
 
   function applyImportedOptions() {
     if (parsedImportOptions.length === 0) return;
-    if (importMode === 'replace' && parsedImportOptions.length < 2) {
-      result = {
-        eyebrow: '无法替换奖池',
-        title: '至少需要两个选项',
-        detail: '继续粘贴，或切换为“追加到现有奖池”。',
-        tone: 'danger',
-      };
-      return;
-    }
-
     const existingNames = new Set(
-      (importMode === 'append' ? prizes : []).map((prize) => prize.name.toLocaleLowerCase('zh-CN')),
+      prizes.map((prize) => prize.name.toLocaleLowerCase('zh-CN')),
     );
-    const base = importMode === 'append' ? [...prizes] : [];
+    const base = [...prizes];
     const additions = parsedImportOptions
       .filter((name) => !existingNames.has(name.toLocaleLowerCase('zh-CN')))
       .slice(0, Math.max(0, 100 - base.length))
@@ -696,14 +815,13 @@
       }));
 
     const next = [...base, ...additions];
-    if (next.length < 2) return;
     updatePrizes(next);
     importText = '';
     importOpen = false;
     result = {
       eyebrow: '文本解析完成',
-      title: `${additions.length} 个选项已导入`,
-      detail: importMode === 'replace' ? '原奖池已替换，所有新选项默认等权。' : '新选项已追加，重复名称自动跳过。',
+      title: `${additions.length} 个选项已添加`,
+      detail: '重复名称已自动跳过。',
       tone: 'success',
     };
   }
@@ -1002,8 +1120,18 @@
         <div>
           <h1>{mode === 'selected' ? '谁会成为本轮幸运得主？' : '谁能留到最后？'}</h1>
         </div>
-        <div class="status-pill" class:busy={isSpinning}>
-          <i></i>{isSpinning ? '旋转中' : '等待开始'}
+        <div class="draw-session-actions">
+          <button type="button" disabled={isSpinning} on:click={startNewDraw}>新的抽奖</button>
+          <button
+            type="button"
+            class="save-draw-button"
+            title={desktopRuntime ? '保存到本地历史数据库' : '桌面版可保存历史'}
+            disabled={!desktopRuntime || records.length === 0 || drawHistorySaving}
+            on:click={saveCurrentDrawHistory}
+          >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
+          <div class="status-pill" class:busy={isSpinning}>
+            <i></i>{isSpinning ? '旋转中' : '等待开始'}
+          </div>
         </div>
       </div>
 
@@ -1144,17 +1272,13 @@
                 rows="4"
                 placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
               ></textarea>
-              <div class="import-modes">
-                <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换当前选择</button>
-                <button type="button" class:active={importMode === 'append'} on:click={() => (importMode = 'append')}>追加选项</button>
-              </div>
               <div class="import-footer">
                 <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
                 <button
                   type="button"
-                  disabled={parsedImportOptions.length === 0 || (importMode === 'replace' && parsedImportOptions.length < 2)}
+                  disabled={parsedImportOptions.length === 0}
                   on:click={applyImportedOptions}
-                >确认导入</button>
+                >添加</button>
               </div>
             </section>
           {/if}
@@ -1180,7 +1304,7 @@
           <div>
             <h2>当前抽奖统计</h2>
           </div>
-          <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空当前统计</button>
+          <button type="button" disabled={records.length === 0} on:click={clearCurrentDraw}>清空当前统计</button>
         </div>
 
         <div class="current-stats-summary">
@@ -1247,7 +1371,7 @@
             <button type="button" class:active={batchCount === amount} on:click={() => (batchCount = amount)}>{amount}</button>
           {/each}
         </div>
-        <button type="button" class="run-button" disabled={isSpinning} on:click={runBatch}>
+        <button type="button" class="run-button" disabled={isSpinning || enabledPrizes.length < 2} on:click={runBatch}>
           <span>▶</span> 运行批量抽取
         </button>
       </div>
@@ -1309,7 +1433,7 @@
 
         <div class="history-actions">
           <button type="button" on:click={exportRecords}>导出记录</button>
-          <button type="button" on:click={clearHistory}>清空记录</button>
+          <button type="button" on:click={clearCurrentDraw}>清空记录</button>
         </div>
       {:else}
         <div class="batch-empty">
@@ -1339,32 +1463,57 @@
 
       {#if activePanel === 'history'}
       <div class="accordion-content history-content">
-        <div class="history-overview">
-          <div><span>有效命中</span><strong>{validCompleted}</strong></div>
-          <div><span>累计金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
+        <div class="panel-heading">
+          <div><h2>历史</h2></div>
+          {#if desktopRuntime}<span class="count-badge">{drawHistories.length}</span>{/if}
         </div>
 
-        <div class="history-list sidebar-history-list">
-          {#each records as record (record.id)}
-            <article>
-              <div class:retry={record.outcome === 'retry'} class:winner={record.outcome === 'winner'} class:eliminated={record.outcome === 'eliminated'} class="outcome-icon">
-                {record.outcome === 'retry' ? '↻' : record.outcome === 'winner' ? '♛' : record.outcome === 'eliminated' ? '×' : '✓'}
-              </div>
-              <div>
-                <strong>{record.label}</strong>
-                <span>{record.detail}</span>
-              </div>
-              <small>{record.rewardAmount > 0 ? formatAmount(record.rewardAmount) : outcomeLabel(record.outcome)}</small>
-            </article>
+        {#if !desktopRuntime}
+          <div class="sidebar-empty-state web-history-unavailable">
+            <i>◷</i>
+            <strong>网页版无法查看历史</strong>
+          </div>
+        {:else if drawHistoryLoading}
+          <div class="sidebar-empty-state"><i>···</i><strong>正在读取历史</strong></div>
+        {:else}
+          {#if drawHistoryError}
+            <div class="common-error">{drawHistoryError}</div>
+          {/if}
+
+          {#if drawHistories.length === 0}
+            <div class="sidebar-empty-state"><i>◷</i><strong>还没有保存的抽奖</strong></div>
           {:else}
-            <div class="sidebar-empty-state"><i>◷</i><strong>还没有历史记录</strong><span>完成抽取后会自动保存在本机。</span></div>
-          {/each}
-        </div>
+            <div class="draw-history-list">
+              {#each drawHistories as draw (draw.id)}
+                {@const summary = drawHistorySummary(draw)}
+                <article class="draw-history-card">
+                  <div class="draw-history-heading">
+                    <div>
+                      <strong>{formatSelectionDate(draw.createdAt)}</strong>
+                      <span>{draw.mode === 'selected' ? '选中模式' : '俄罗斯轮盘'} · {draw.prizes.length} 个候选项</span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`删除 ${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
+                      title="删除"
+                      on:click={() => deleteDrawHistory(draw)}
+                    >×</button>
+                  </div>
+                  <p>{draw.prizes.slice(0, 4).map((prize) => prize.name).join('、') || '空名单'}{draw.prizes.length > 4 ? '…' : ''}</p>
+                  <div class="draw-history-metrics">
+                    <div><span>有效结果</span><strong>{summary.completed}</strong></div>
+                    <div><span>重来</span><strong>{summary.retries}</strong></div>
+                    <div><span>累计金额</span><strong>{formatAmount(summary.rewardTotal)}</strong></div>
+                  </div>
+                </article>
+              {/each}
+            </div>
 
-        <div class="history-actions sidebar-history-actions">
-          <button type="button" disabled={records.length === 0} on:click={exportRecords}>导出记录</button>
-          <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空记录</button>
-        </div>
+            <div class="history-actions sidebar-history-actions">
+              <button type="button" on:click={clearDrawHistories}>清空历史</button>
+            </div>
+          {/if}
+        {/if}
       </div>
       {/if}
     </aside>

@@ -18,6 +18,16 @@ export interface CommonSelection {
   prizes: Prize[];
 }
 
+export interface SavedDraw {
+  version: 1;
+  id: string;
+  createdAt: number;
+  mode: DrawMode;
+  rewardAmount: number;
+  prizes: Prize[];
+  records: DrawRecord[];
+}
+
 export interface WheelOption {
   id: string;
   label: string;
