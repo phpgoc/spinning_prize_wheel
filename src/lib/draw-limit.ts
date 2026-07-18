@@ -57,19 +57,3 @@ export function isRewardAmountLocked(
     && Math.max(0, Math.floor(Number(recordCount) || 0)) > 0
   );
 }
-
-/**
- * 批量抽奖也不能越过有效结果上限。
- */
-export function clampRequestedResults(
-  requested: number,
-  limit: number,
-  completed: number,
-): number {
-  const safeRequested = Math.min(
-    MAX_RESULT_LIMIT,
-    Math.max(1, Math.floor(Number(requested) || 1)),
-  );
-  const remaining = remainingResultSlots(limit, completed);
-  return remaining === null ? safeRequested : Math.min(safeRequested, remaining);
-}

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildWheelOptions,
+  normalizeBatchCount,
   pickWeighted,
   simulateRouletteBatch,
   simulateSelectedBatch,
@@ -65,5 +66,11 @@ describe('draw engine', () => {
     expect(result.retryCount).toBe(1);
     expect(result.prizeCounts).toEqual({ a: 0, b: 1 });
     expect(result.events.at(-1)?.outcome).toBe('winner');
+  });
+
+  test('实验室次数只按模拟规模归一化', () => {
+    expect(normalizeBatchCount(0)).toBe(1);
+    expect(normalizeBatchCount(100.9)).toBe(100);
+    expect(normalizeBatchCount(5000)).toBe(1000);
   });
 });

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   areCandidateChangesLocked,
-  clampRequestedResults,
   isResultLimitReached,
   isRewardAmountLocked,
   normalizeResultLimit,
@@ -25,12 +24,6 @@ describe('有效结果上限', () => {
     expect(remainingResultSlots(8, 5)).toBe(3);
     expect(remainingResultSlots(5, 5)).toBe(0);
     expect(isResultLimitReached(5, 5)).toBeTrue();
-  });
-
-  test('批量抽奖会被剩余名额截断', () => {
-    expect(clampRequestedResults(100, 8, 5)).toBe(3);
-    expect(clampRequestedResults(100, 5, 5)).toBe(0);
-    expect(clampRequestedResults(100, 0, 5)).toBe(100);
   });
 
   test('有上限且已开始后锁定候选项，零上限仍可修改', () => {

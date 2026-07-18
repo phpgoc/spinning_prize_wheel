@@ -10,12 +10,12 @@
   import {
     RETRY_ID,
     buildWheelOptions,
+    normalizeBatchCount,
     pickWeighted,
     simulateBatch,
   } from './lib/draw';
   import {
     areCandidateChangesLocked,
-    clampRequestedResults,
     isResultLimitReached,
     isRewardAmountLocked,
     normalizeResultLimit,
@@ -166,7 +166,7 @@
   $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
   $: currentStats = createCurrentStats(prizes, records, validCompleted);
   $: batchRows = createBatchRows(batchResult);
-  $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
+  $: batchHistory = batchResult ? [...batchResult.events].reverse().slice(0, 160) : [];
   $: parsedImportOptions = parseOptionText(importText);
   $: continuousCompleted = validCompleted;
   $: continuousRemaining = remainingResultSlots(continuousTarget, continuousCompleted);
@@ -1070,17 +1070,7 @@
     }
 
     try {
-      stopContinuousDraw();
-      drawSidePanel = 'statistics';
-      const safeCount = clampRequestedResults(
-        batchCount,
-        continuousTarget,
-        validCompleted,
-      );
-      if (safeCount === 0) {
-        showResultLimitReached();
-        return;
-      }
+      const safeCount = normalizeBatchCount(batchCount);
       batchCount = safeCount;
       const simulation = simulateBatch(
         mode,
@@ -1092,23 +1082,9 @@
       batchResult = simulation;
       batchRunAt = Date.now();
       batchTab = 'stats';
-
-      const startedAt = Date.now();
-      const imported = [...simulation.events].reverse().map((event, index): DrawRecord => ({
-        id: createId('batch'),
-        sequence: records.length + simulation.events.length - index,
-        ...event,
-        rewardAmount: event.outcome === 'selected' || event.outcome === 'winner'
-          ? normalizedRewardAmount()
-          : 0,
-        mode,
-        createdAt: startedAt - index,
-        source: 'batch',
-      }));
-      records = [...imported, ...records];
     } catch (error) {
       result = {
-        eyebrow: '批量任务未开始',
+        eyebrow: '概率模拟未开始',
         title: '候选名单配置不足',
         detail: error instanceof Error ? error.message : '请检查候选项设置后重试。',
         tone: 'danger',
@@ -1274,11 +1250,33 @@
 
   function exportRecords() {
     if (records.length === 0) return;
-    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), records }, null, 2);
+    downloadJson('fortuna-records', { exportedAt: new Date().toISOString(), records });
+  }
+
+  function exportBatchExperiment() {
+    if (!batchResult) return;
+    downloadJson('fortuna-lab', {
+      exportedAt: new Date().toISOString(),
+      kind: 'batch-simulation',
+      prizes,
+      retryEnabled,
+      retryWeight,
+      simulation: batchResult,
+    });
+  }
+
+  function clearBatchExperiment() {
+    batchResult = null;
+    batchRunAt = null;
+    batchTab = 'stats';
+  }
+
+  function downloadJson(prefix: string, value: unknown) {
+    const payload = JSON.stringify(value, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `fortuna-records-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -1993,13 +1991,14 @@
       </div>
       <p class="section-note">
         {mode === 'selected'
-          ? '批量生成有效结果；重来会自动补抽并单独统计。'
+          ? '批量模拟有效结果；重来会自动补抽并单独统计。'
           : '每次模拟一整局淘汰赛，统计最终赢家。'}
+        仅用于验证概率，不计入当前统计和抽奖历史。
       </p>
 
       <div class="batch-runner">
         <label>
-          <span>{mode === 'selected' ? '有效抽取数' : '模拟局数'}</span>
+          <span>{mode === 'selected' ? '模拟结果数' : '模拟局数'}</span>
           <div class="number-field">
             <input type="number" min="1" max="1000" bind:value={batchCount} disabled={isSpinning} />
             <small>{mode === 'selected' ? '次' : '局'}</small>
@@ -2011,7 +2010,7 @@
           {/each}
         </div>
         <button type="button" class="run-button" disabled={isSpinning || enabledPrizes.length < 2} on:click={runBatch}>
-          <span>▶</span> 运行批量抽取
+          <span>▶</span> 运行概率模拟
         </button>
       </div>
 
@@ -2022,7 +2021,7 @@
             <strong>{batchResult.completed}</strong>
           </div>
           <div>
-            <span>实际转动</span>
+            <span>模拟转动</span>
             <strong>{batchResult.attempts}</strong>
           </div>
           <div class:has-retry={batchResult.retryCount > 0}>
@@ -2053,7 +2052,7 @@
           </div>
         {:else}
           <div class="history-list">
-            {#each batchHistory as record (record.id)}
+            {#each batchHistory as record (record.attempt)}
               <article>
                 <div class:retry={record.outcome === 'retry'} class:winner={record.outcome === 'winner'} class:eliminated={record.outcome === 'eliminated'} class="outcome-icon">
                   {record.outcome === 'retry' ? '↻' : record.outcome === 'winner' ? '♛' : record.outcome === 'eliminated' ? '×' : '✓'}
@@ -2071,8 +2070,8 @@
         {/if}
 
         <div class="history-actions">
-          <button type="button" on:click={exportRecords}>导出记录</button>
-          <button type="button" on:click={clearCurrentDraw}>清空记录</button>
+          <button type="button" on:click={exportBatchExperiment}>导出模拟记录</button>
+          <button type="button" on:click={clearBatchExperiment}>清空实验结果</button>
         </div>
       {:else}
         <div class="batch-empty">

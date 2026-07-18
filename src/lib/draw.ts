@@ -77,6 +77,12 @@ function emptyCounts(prizes: Prize[]): Record<string, number> {
   return Object.fromEntries(prizes.map((prize) => [prize.id, 0]));
 }
 
+/** 实验室次数独立于真实抽奖上限，只受界面允许的模拟规模约束。 */
+export function normalizeBatchCount(value: unknown, maximum = 1000): number {
+  const limit = Math.max(1, Math.floor(Number(maximum) || 1000));
+  return Math.min(limit, Math.max(1, Math.floor(Number(value) || 1)));
+}
+
 export function simulateSelectedBatch(
   prizes: Prize[],
   requested: number,
