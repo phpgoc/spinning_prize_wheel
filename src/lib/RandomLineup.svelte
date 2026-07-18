@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
+  import type { AppVariant } from './app-variant';
   import { parseOptionText } from './parse-options';
   import {
     createRandomLineup,
@@ -18,6 +19,7 @@
   import type { RankedUser, ResolvedLineupName, SavedLineup } from './types';
 
   export let desktopRuntime = false;
+  export let variant: AppVariant = 'standard';
 
   type LineupOrderMode = 'rank' | 'input';
   type DesktopPanel = 'ranking' | 'history';
@@ -216,7 +218,7 @@
       result: lineupResult,
     };
     try {
-      await invoke('save_lineup_history', { lineup });
+      await invoke('save_lineup_history', { lineup, variant });
       historyStatus = 'saved';
       await loadLineupHistories();
     } catch (reason) {
@@ -246,7 +248,7 @@
     historyLoading = true;
     historyError = '';
     try {
-      lineupHistories = await invoke<SavedLineup[]>('list_lineup_histories');
+      lineupHistories = await invoke<SavedLineup[]>('list_lineup_histories', { variant });
     } catch (reason) {
       historyError = messageFrom(reason, '无法读取排阵历史');
     } finally {

@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:caimi": "vite --mode caimi",
     "build": "bun run build:web",
     "build:web": "vite build",
-    "build:windows": "tauri build",
+    "build:web:caimi": "vite build --mode caimi",
+    "build:windows": "bun run tauri:build && bun run tauri:build:caimi",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "bun test",
     "tauri:dev": "tauri dev",
+    "tauri:dev:caimi": "tauri dev --config src-tauri/tauri.caimi.conf.json",
     "tauri:build": "tauri build",
+    "tauri:build:caimi": "tauri build --config src-tauri/tauri.caimi.conf.json",
     "tauri": "tauri"
   },
   "devDependencies": {

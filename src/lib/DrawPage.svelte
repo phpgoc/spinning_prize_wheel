@@ -1,0 +1,2275 @@
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import LuxuryWheel from './LuxuryWheel.svelte';
+  import MonopolyWheel from './MonopolyWheel.svelte';
+  import PrizeEditor from './PrizeEditor.svelte';
+  import Wheel from './Wheel.svelte';
+  import type { AppVariant } from './app-variant';
+  import { changeAutoSaveHistory } from './auto-save';
+  import { applyCaimiSelectedWeights } from './caimi';
+  import {
+    RETRY_ID,
+    buildWheelOptions,
+    normalizeBatchCount,
+    pickWeighted,
+    simulateBatch,
+  } from './draw';
+  import {
+    areCandidateChangesLocked,
+    isResultLimitReached,
+    isRewardAmountLocked,
+    normalizeResultLimit,
+    remainingResultSlots,
+  } from './draw-limit';
+  import { parseOptionText } from './parse-options';
+  import {
+    DEFAULT_FONT_SCALE,
+    normalizeFontScale,
+    positiveNumberOrFallback,
+  } from './ui-settings';
+  import {
+    createRouletteWheelSlots,
+    createWeightedSegments,
+    pickWheelSegmentIndex,
+  } from './wheel-geometry';
+  import type {
+    AnimationStyle,
+    BatchSimulation,
+    CommonSelection,
+    DrawMode,
+    DrawOutcome,
+    DrawRecord,
+    Prize,
+    SavedDraw,
+    SimulationEvent,
+    WheelOption,
+  } from './types';
+
+  export let desktopRuntime = false;
+  export let variant: AppVariant = 'standard';
+  export let active = true;
+
+  const STORAGE_KEY = 'fortuna-wheel-settings-v1';
+  const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
+  const ROULETTE_STATE_KEY = 'fortuna-roulette-state-v1';
+  const MAX_ROULETTE_ROUNDS = 5;
+  const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
+  const defaultPrizes: Prize[] = [
+    { id: 'candidate-a', name: '林小满', weight: 1, color: '#ff7557', enabled: true },
+    { id: 'candidate-b', name: '陈知行', weight: 1, color: '#e9b949', enabled: true },
+    { id: 'candidate-c', name: '周予安', weight: 1, color: '#8ac86d', enabled: true },
+    { id: 'candidate-d', name: '苏念', weight: 1, color: '#4ea59b', enabled: true },
+    { id: 'candidate-e', name: '许星河', weight: 1, color: '#6574c4', enabled: true },
+    { id: 'candidate-f', name: '唐可', weight: 1, color: '#b76a9d', enabled: true },
+  ];
+
+  interface ResultCard {
+    eyebrow: string;
+    title: string;
+    detail: string;
+    tone: 'idle' | 'success' | 'retry' | 'danger';
+  }
+
+  interface BatchRow {
+    id: string;
+    name: string;
+    color: string;
+    count: number;
+    percent: number;
+  }
+
+  interface CurrentStat extends BatchRow {
+    weight: number;
+    rewardTotal: number;
+  }
+
+  interface DrawHistorySummary {
+    completed: number;
+    retries: number;
+    rewardTotal: number;
+  }
+
+  type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
+  type DrawSidePanel = 'candidates' | 'statistics';
+
+  let prizes = defaultPrizes.map((prize) => ({ ...prize }));
+  export let mode: DrawMode = 'selected';
+  let animationStyle: AnimationStyle = 'luxury';
+  let durationSeconds = 4;
+  let rewardAmount = 0;
+  let retryEnabled = true;
+  let retryWeight = 0.65;
+  let retryWeightBeforeEdit = retryWeight;
+  let batchCount = 100;
+  let batchTab: 'stats' | 'history' = 'stats';
+  let importOpen = false;
+  let importText = '';
+  let activePanel: SidebarPanel | null = 'settings';
+  let drawSidePanel: DrawSidePanel = 'candidates';
+  let importTextarea: HTMLTextAreaElement;
+  let selectedPrizeId: string | null = null;
+  let selectedCommonId: string | null = null;
+  let candidateKeyboardActive = false;
+  let commonKeyboardActive = false;
+  let rewardInput: HTMLInputElement;
+  let commonSelectionInput: HTMLInputElement;
+  let commonSelections: CommonSelection[] = [];
+  let commonSelectionName = '';
+  let commonSelectionSaveOpen = false;
+  let commonSelectionLoading = true;
+  let commonSelectionSaving = false;
+  let commonSelectionError = '';
+  let drawHistories: SavedDraw[] = [];
+  let drawHistoryLoading = true;
+  let drawHistorySaving = false;
+  let drawHistoryError = '';
+  let autoSaveHistory = true;
+  let continuousTarget = 0;
+  let continuousIntervalSeconds = 3;
+  export let continuousRunning = false;
+  export let fontScale = DEFAULT_FONT_SCALE;
+
+  let rotation = 0;
+  export let isSpinning = false;
+  // 记录本局每个候选项已经被命中的次数；剩余权重就是剩余生命数。
+  let rouletteHits: Record<string, number> = {};
+  let rouletteFinished = false;
+  let rouletteRound = 1;
+  let singleAttempt = 0;
+  let monopolyTargetId: string | null = null;
+  let singleCompleted = 0;
+  let records: DrawRecord[] = [];
+  let currentDrawId = createId('draw');
+  let batchResult: BatchSimulation | null = null;
+  let batchRunAt: number | null = null;
+  let hydrated = false;
+  let timer: number | undefined;
+  let continuousTimer: number | undefined;
+  let result: ResultCard = {
+    eyebrow: '准备就绪',
+    title: '好运正在路上',
+    detail: '点击转盘中央，开始一次公平的随机抽取。',
+    tone: 'idle',
+  };
+
+  $: enabledPrizes = prizes.filter((prize) => prize.enabled);
+  $: wheelOptions = enabledPrizes.length === 0
+    ? []
+    : buildWheelOptions(prizes, retryEnabled, retryWeight);
+  $: selectedProbabilityPrizes = variant === 'caimi'
+    ? applyCaimiSelectedWeights(prizes)
+    : prizes;
+  $: validCompleted = records.filter(
+    (record) => record.outcome === 'selected' || record.outcome === 'winner',
+  ).length;
+  $: resultLimitReached = isResultLimitReached(continuousTarget, validCompleted);
+  $: candidateChangesLocked = areCandidateChangesLocked(
+    continuousTarget,
+    records.length,
+    isSpinning,
+  );
+  $: rewardAmountLocked = isRewardAmountLocked(
+    desktopRuntime,
+    records.length,
+    isSpinning,
+  );
+  $: spinDisabled =
+    enabledPrizes.length < 2 ||
+    resultLimitReached ||
+    (mode === 'roulette' && rouletteFinished);
+  $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
+  $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
+  $: currentStats = createCurrentStats(prizes, records, validCompleted);
+  $: batchRows = createBatchRows(batchResult);
+  $: batchHistory = batchResult ? [...batchResult.events].reverse().slice(0, 160) : [];
+  $: parsedImportOptions = parseOptionText(importText);
+  $: continuousCompleted = validCompleted;
+  $: continuousRemaining = remainingResultSlots(continuousTarget, continuousCompleted);
+  // 这里直接读取 rouletteHits，确保每次命中后圆盘立即减少一个生命扇区。
+  $: activeDrawOptions = (() => {
+    if (mode !== 'roulette') {
+      return variant === 'caimi'
+        ? buildWheelOptions(selectedProbabilityPrizes, retryEnabled, retryWeight)
+        : wheelOptions;
+    }
+    const effective = prizes
+      .filter((p) => p.enabled)
+      .map((p) => ({ ...p, weight: Math.max(0, p.weight - (rouletteHits[p.id] ?? 0)) }))
+      .filter((p) => p.weight > 0);
+    if (effective.length === 0) return wheelOptions;
+    return buildWheelOptions(effective, retryEnabled, retryWeight);
+  })();
+  $: displayedWheelOptions = mode === 'roulette'
+    ? createRouletteWheelSlots(activeDrawOptions)
+    : wheelOptions;
+  $: if (hydrated) {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        prizes,
+        mode,
+        animationStyle,
+        durationSeconds,
+        rewardAmount,
+        retryEnabled,
+        retryWeight,
+        autoSaveHistory,
+        continuousTarget,
+        continuousIntervalSeconds,
+        fontScale,
+      }),
+    );
+  }
+
+  onMount(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<{
+          prizes: Prize[];
+          mode: DrawMode;
+          animationStyle: AnimationStyle;
+          durationSeconds: number;
+          rewardAmount: number;
+          retryEnabled: boolean;
+          retryWeight: number;
+          autoSaveHistory: boolean;
+          continuousTarget: number;
+          continuousIntervalSeconds: number;
+          fontScale: number;
+        }>;
+
+        if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
+        if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
+        if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
+          animationStyle = parsed.animationStyle!;
+        }
+        if (typeof parsed.durationSeconds === 'number') {
+          durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
+        }
+        if (typeof parsed.rewardAmount === 'number') {
+          rewardAmount = Math.max(0, parsed.rewardAmount);
+        }
+        if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
+        retryWeight = positiveNumberOrFallback(parsed.retryWeight, 0.65);
+        if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
+        if (typeof parsed.continuousTarget === 'number') {
+          continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
+        }
+        if (typeof parsed.continuousIntervalSeconds === 'number') {
+          continuousIntervalSeconds = Math.min(30, Math.max(0.5, parsed.continuousIntervalSeconds));
+        }
+        fontScale = normalizeFontScale(parsed.fontScale);
+      }
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    void loadCommonSelections();
+    void loadDrawHistories();
+    hydrated = true;
+  });
+
+  onDestroy(() => {
+    if (timer) window.clearTimeout(timer);
+    if (continuousTimer) window.clearTimeout(continuousTimer);
+  });
+
+  function createId(prefix: string): string {
+    return typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function isCommonSelection(value: unknown): value is CommonSelection {
+    if (!value || typeof value !== 'object') return false;
+    const selection = value as Partial<CommonSelection>;
+    return selection.version === 1
+      && typeof selection.id === 'string'
+      && typeof selection.name === 'string'
+      && typeof selection.createdAt === 'number'
+      && Array.isArray(selection.prizes)
+      && selection.prizes.every((prize) => (
+        prize
+        && typeof prize.id === 'string'
+        && typeof prize.name === 'string'
+        && typeof prize.weight === 'number'
+        && typeof prize.color === 'string'
+        && typeof prize.enabled === 'boolean'
+      ));
+  }
+
+  function isSavedDraw(value: unknown): value is SavedDraw {
+    if (!value || typeof value !== 'object') return false;
+    const draw = value as Partial<SavedDraw>;
+    return draw.version === 1
+      && typeof draw.id === 'string'
+      && typeof draw.createdAt === 'number'
+      && (draw.mode === 'selected' || draw.mode === 'roulette')
+      && typeof draw.rewardAmount === 'number'
+      && Array.isArray(draw.prizes)
+      && Array.isArray(draw.records);
+  }
+
+  async function loadCommonSelections() {
+    commonSelectionLoading = true;
+    commonSelectionError = '';
+    try {
+      const loaded = desktopRuntime
+        ? await invoke<unknown[]>('list_common_selections')
+        : JSON.parse(localStorage.getItem(COMMON_SELECTION_STORAGE_KEY) ?? '[]') as unknown[];
+      commonSelections = Array.isArray(loaded)
+        ? loaded.filter(isCommonSelection).sort((left, right) => right.createdAt - left.createdAt)
+        : [];
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      commonSelectionLoading = false;
+    }
+  }
+
+  function saveCommonSelectionsToBrowser(next: CommonSelection[]) {
+    localStorage.setItem(COMMON_SELECTION_STORAGE_KEY, JSON.stringify(next));
+  }
+
+  async function openCommonSelectionSaver() {
+    if (isSpinning) return;
+    commonSelectionName = prizes.length === 0
+      ? '空名单'
+      : `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
+    commonSelectionSaveOpen = true;
+    commonSelectionError = '';
+    await tick();
+    commonSelectionInput?.select();
+  }
+
+  async function saveCurrentSelection() {
+    const name = commonSelectionName.trim();
+    if (!name || commonSelectionSaving) return;
+
+    const selection: CommonSelection = {
+      version: 1,
+      id: createId('selection'),
+      name: name.slice(0, 40),
+      createdAt: Date.now(),
+      prizes: prizes.map((prize) => ({ ...prize })),
+    };
+
+    commonSelectionSaving = true;
+    commonSelectionError = '';
+    try {
+      if (desktopRuntime) {
+        await invoke('save_common_selection', { selection });
+      } else {
+        saveCommonSelectionsToBrowser([selection, ...commonSelections]);
+      }
+      commonSelections = [selection, ...commonSelections];
+      commonSelectionSaveOpen = false;
+      commonSelectionName = '';
+      result = {
+        eyebrow: '常用选择已保存',
+        title: selection.name,
+        detail: `${selection.prizes.length} 个候选项已保存到${desktopRuntime ? '本地文件' : '浏览器存储'}。`,
+        tone: 'success',
+      };
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      commonSelectionSaving = false;
+    }
+  }
+
+  function applyCommonSelection(selection: CommonSelection) {
+    if (!updatePrizes(selection.prizes.map((prize) => ({ ...prize })))) return;
+    rouletteHits = {};
+    rouletteFinished = false;
+    singleAttempt = 0;
+    importOpen = false;
+    commonKeyboardActive = false;
+    selectedCommonId = null;
+    result = {
+      eyebrow: '常用选择已导入',
+      title: selection.name,
+      detail: `${selection.prizes.length} 个候选项已放入当前轮盘，其他设置保持不变。`,
+      tone: 'success',
+    };
+  }
+
+  async function deleteCommonSelection(selection: CommonSelection) {
+    if (commonSelectionSaving) return;
+    commonSelectionError = '';
+    try {
+      if (desktopRuntime) {
+        await invoke('delete_common_selection', { id: selection.id });
+      } else {
+        saveCommonSelectionsToBrowser(commonSelections.filter((item) => item.id !== selection.id));
+      }
+      commonSelections = commonSelections.filter((item) => item.id !== selection.id);
+      if (selectedCommonId === selection.id) {
+        selectedCommonId = commonSelections[0]?.id ?? null;
+      }
+    } catch (error) {
+      commonSelectionError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function loadDrawHistories() {
+    drawHistoryLoading = true;
+    drawHistoryError = '';
+    if (!desktopRuntime) {
+      drawHistories = [];
+      drawHistoryLoading = false;
+      return;
+    }
+
+    try {
+      const loaded = await invoke<unknown[]>('list_draw_histories');
+      drawHistories = Array.isArray(loaded) ? loaded.filter(isSavedDraw) : [];
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    } finally {
+      drawHistoryLoading = false;
+    }
+  }
+
+  async function saveCurrentDrawHistory(announce = true): Promise<boolean> {
+    if (!desktopRuntime || records.length === 0 || drawHistorySaving) return false;
+    const draw: SavedDraw = {
+      version: 1,
+      id: currentDrawId,
+      createdAt: Date.now(),
+      mode,
+      rewardAmount: normalizedRewardAmount(),
+      prizes: prizes.map((prize) => ({ ...prize })),
+      records: records.map((record) => ({ ...record })),
+    };
+
+    drawHistorySaving = true;
+    drawHistoryError = '';
+    try {
+      await invoke('save_draw_history', { draw });
+      drawHistories = [draw, ...drawHistories.filter((history) => history.id !== draw.id)];
+      if (announce) {
+        result = {
+          eyebrow: '当前抽奖已保存',
+          title: `${validCompleted} 个有效结果`,
+          detail: '可以在左侧历史中查看。',
+          tone: 'success',
+        };
+      }
+      return true;
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+      result = {
+        eyebrow: '保存失败',
+        title: '当前抽奖未保存',
+        detail: drawHistoryError,
+        tone: 'danger',
+      };
+      return false;
+    } finally {
+      drawHistorySaving = false;
+    }
+  }
+
+  async function startNewDraw(clearCandidates = false) {
+    if (isSpinning || drawHistorySaving) return;
+    stopContinuousDraw();
+    let archived = false;
+    if (desktopRuntime && autoSaveHistory && records.length > 0) {
+      const saved = await saveCurrentDrawHistory(false);
+      if (!saved) return;
+      archived = true;
+    }
+    resetCurrentDraw(clearCandidates, archived);
+  }
+
+  function resetCurrentDraw(clearCandidates = false, archived = false) {
+    currentDrawId = createId('draw');
+    records = [];
+    batchResult = null;
+    batchRunAt = null;
+    rouletteHits = {};
+    rouletteFinished = false;
+    rouletteRound = 1;
+    singleAttempt = 0;
+    singleCompleted = 0;
+    monopolyTargetId = null;
+    localStorage.removeItem(ROULETTE_STATE_KEY);
+    drawSidePanel = 'candidates';
+    exitCandidateKeyboard();
+    exitCommonKeyboard();
+    if (clearCandidates) updatePrizes([]);
+    result = {
+      eyebrow: '新的抽奖',
+      title: '准备就绪',
+      detail: archived
+        ? '上一轮统计已保存到本地历史，可以开始新一轮。'
+        : clearCandidates || enabledPrizes.length < 2
+        ? '添加至少两个候选项后才能开始。'
+        : '点击转盘中央开始。',
+      tone: 'idle',
+    };
+  }
+
+  async function toggleAutoSaveHistory() {
+    if (!desktopRuntime || isSpinning || drawHistorySaving) return;
+    const completedBeforeArchive = validCompleted;
+    const change = await changeAutoSaveHistory(
+      autoSaveHistory,
+      records.length,
+      () => saveCurrentDrawHistory(false),
+      () => resetCurrentDraw(false, true),
+    );
+    if (!change.applied) return;
+
+    autoSaveHistory = change.enabled;
+    if (!change.enabled) {
+      result = {
+        eyebrow: '自动保存已关闭',
+        title: '当前统计不会自动入库',
+        detail: '仍可使用“保存当前抽奖”手动保存。',
+        tone: 'idle',
+      };
+      return;
+    }
+
+    result = {
+      eyebrow: '自动保存已开启',
+      title: change.archived ? '当前统计已入库并清空' : '后续抽奖会自动归档',
+      detail: change.archived
+        ? `已保存 ${completedBeforeArchive} 个有效结果，现在可以开始新一轮。`
+        : '开始新抽奖时，上一轮统计会自动保存到本地历史。',
+      tone: 'success',
+    };
+  }
+
+  async function deleteDrawHistory(draw: SavedDraw) {
+    if (!desktopRuntime) return;
+    drawHistoryError = '';
+    try {
+      await invoke('delete_draw_history', { id: draw.id });
+      drawHistories = drawHistories.filter((history) => history.id !== draw.id);
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function clearDrawHistories() {
+    if (!desktopRuntime || drawHistories.length === 0) return;
+    drawHistoryError = '';
+    try {
+      await invoke('clear_draw_histories');
+      drawHistories = [];
+    } catch (error) {
+      drawHistoryError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function drawHistorySummary(draw: SavedDraw): DrawHistorySummary {
+    return draw.records.reduce((summary, record) => {
+      if (record.outcome === 'selected' || record.outcome === 'winner') {
+        summary.completed += 1;
+        summary.rewardTotal += Math.max(0, Number(record.rewardAmount) || 0);
+      } else if (record.outcome === 'retry') {
+        summary.retries += 1;
+      }
+      return summary;
+    }, { completed: 0, retries: 0, rewardTotal: 0 });
+  }
+
+  function togglePanel(panel: SidebarPanel) {
+    activePanel = activePanel === panel ? null : panel;
+  }
+
+  function normalizedRewardAmount(): number {
+    return Math.max(0, Number(rewardAmount) || 0);
+  }
+
+  function normalizePrizes(candidates: Prize[]): Prize[] {
+    return candidates.map((prize) => ({
+      ...prize,
+      weight: Math.max(1, Number(prize.weight) || 1),
+    }));
+  }
+
+  async function selectPrize(id: string | null) {
+    selectedPrizeId = id && prizes.some((prize) => prize.id === id) ? id : null;
+    if (selectedPrizeId) candidateKeyboardActive = true;
+    if (!selectedPrizeId) return;
+    await tick();
+    const row = Array.from(document.querySelectorAll<HTMLElement>('[data-prize-id]'))
+      .find((element) => element.dataset.prizeId === selectedPrizeId);
+    row?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function enterCandidateKeyboard() {
+    commonKeyboardActive = false;
+    selectedCommonId = null;
+    candidateKeyboardActive = true;
+    drawSidePanel = 'candidates';
+    if (prizes.length > 0) {
+      await selectPrize(selectedPrizeId ?? prizes[0].id);
+    }
+  }
+
+  function exitCandidateKeyboard() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    candidateKeyboardActive = false;
+    selectedPrizeId = null;
+  }
+
+  async function selectRewardInput() {
+    if (rewardAmountIsLocked()) {
+      showRewardAmountLocked();
+      return;
+    }
+    candidateKeyboardActive = true;
+    selectedPrizeId = null;
+    drawSidePanel = 'statistics';
+    await tick();
+    rewardInput?.focus();
+    rewardInput?.select();
+  }
+
+  async function enterCommonKeyboard() {
+    candidateKeyboardActive = false;
+    selectedPrizeId = null;
+    commonKeyboardActive = true;
+    activePanel = 'common';
+    selectedCommonId = commonSelections[0]?.id ?? null;
+    await scrollSelectedCommonIntoView();
+  }
+
+  function exitCommonKeyboard() {
+    commonKeyboardActive = false;
+    selectedCommonId = null;
+  }
+
+  async function moveCommonSelection(direction: -1 | 1) {
+    if (commonSelections.length === 0) return;
+    const currentIndex = selectedCommonId
+      ? commonSelections.findIndex((selection) => selection.id === selectedCommonId)
+      : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : commonSelections.length - 1)
+      : (currentIndex + direction + commonSelections.length) % commonSelections.length;
+    selectedCommonId = commonSelections[nextIndex].id;
+    await scrollSelectedCommonIntoView();
+  }
+
+  async function scrollSelectedCommonIntoView() {
+    if (!selectedCommonId) return;
+    await tick();
+    const card = Array.from(document.querySelectorAll<HTMLElement>('[data-common-id]'))
+      .find((element) => element.dataset.commonId === selectedCommonId);
+    card?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function applySelectedCommon() {
+    if (!selectedCommonId) return;
+    const selection = commonSelections.find((item) => item.id === selectedCommonId);
+    if (selection) applyCommonSelection(selection);
+  }
+
+  async function addPrize() {
+    const id = createId('prize');
+    if (!updatePrizes([
+      ...prizes,
+      {
+        id,
+        name: `新选项 ${prizes.length + 1}`,
+        weight: 1,
+        color: importPalette[prizes.length % importPalette.length],
+        enabled: true,
+      },
+    ])) return;
+    await selectPrize(id);
+    await editSelectedPrizeName();
+  }
+
+  function movePrizeSelection(direction: -1 | 1) {
+    if (prizes.length === 0) return;
+    const currentIndex = selectedPrizeId
+      ? prizes.findIndex((prize) => prize.id === selectedPrizeId)
+      : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : prizes.length - 1)
+      : (currentIndex + direction + prizes.length) % prizes.length;
+    void selectPrize(prizes[nextIndex].id);
+  }
+
+  function toggleSelectedPrize() {
+    if (!selectedPrizeId) return;
+    const selected = prizes.find((prize) => prize.id === selectedPrizeId);
+    if (!selected) return;
+    updatePrizes(prizes.map((prize) => (
+      prize.id === selected.id ? { ...prize, enabled: !prize.enabled } : prize
+    )));
+  }
+
+  function adjustSelectedPrizeWeight(delta: -1 | 1) {
+    if (!selectedPrizeId) return;
+    updatePrizes(prizes.map((prize) => (
+      prize.id === selectedPrizeId
+        ? { ...prize, weight: Math.max(1, prize.weight + delta) }
+        : prize
+    )));
+  }
+
+  async function editSelectedPrizeName() {
+    if (!selectedPrizeId) return;
+    await tick();
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-prize-id] .name-input'))
+      .find((element) => element.closest<HTMLElement>('[data-prize-id]')?.dataset.prizeId === selectedPrizeId);
+    input?.focus();
+    input?.select();
+  }
+
+  function deleteSelectedPrize() {
+    if (!selectedPrizeId) return;
+    const currentIndex = prizes.findIndex((prize) => prize.id === selectedPrizeId);
+    if (currentIndex < 0) return;
+    const next = prizes.filter((prize) => prize.id !== selectedPrizeId);
+    const nextSelected = next[Math.min(currentIndex, next.length - 1)]?.id ?? null;
+    if (!updatePrizes(next)) return;
+    void selectPrize(nextSelected);
+  }
+
+  export function setMode(next: DrawMode) {
+    if (isSpinning || mode === next) return;
+    mode = next;
+    rouletteHits = {};
+    rouletteFinished = false;
+    rouletteRound = 1;
+    singleAttempt = 0;
+    monopolyTargetId = null;
+    localStorage.removeItem(ROULETTE_STATE_KEY);
+    result = next === 'selected'
+      ? {
+          eyebrow: '选中模式',
+          title: '一次旋转，一个答案',
+          detail: '重来结果会计入次数，但不会占用一次有效抽取。',
+          tone: 'idle',
+        }
+      : {
+          eyebrow: '俄罗斯轮盘',
+          title: '留到最后才是赢家',
+          detail: '每次命中的奖项会被淘汰，直到只剩最后一项。',
+          tone: 'idle',
+        };
+  }
+
+  function candidateChangesAreLocked(): boolean {
+    return areCandidateChangesLocked(continuousTarget, records.length, isSpinning);
+  }
+
+  function rewardAmountIsLocked(): boolean {
+    return isRewardAmountLocked(desktopRuntime, records.length, isSpinning);
+  }
+
+  function showRewardAmountLocked() {
+    if (isSpinning) return;
+    result = {
+      eyebrow: '奖励金额已锁定',
+      title: '本轮桌面抽奖已有记录',
+      detail: '开始新的抽奖后才能设置另一笔奖励金额。',
+      tone: 'danger',
+    };
+  }
+
+  function guardCandidateChanges(): boolean {
+    if (!candidateChangesAreLocked()) return false;
+    if (!isSpinning) {
+      result = {
+        eyebrow: '候选项已锁定',
+        title: '当前受限抽奖已经开始',
+        detail: '开始新的抽奖，或把有效结果上限设为 0 后再修改候选项。',
+        tone: 'danger',
+      };
+    }
+    return true;
+  }
+
+  function updatePrizes(next: Prize[]): boolean {
+    if (guardCandidateChanges()) return false;
+    prizes = normalizePrizes(next);
+    if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
+      selectedPrizeId = null;
+    }
+    // 删除已经不存在的候选项对应的命中状态。
+    const validIds = new Set(next.map((p) => p.id));
+    rouletteHits = Object.fromEntries(
+      Object.entries(rouletteHits).filter(([id]) => validIds.has(id)),
+    );
+    if (mode === 'roulette') {
+      rouletteFinished = false;
+    }
+    return true;
+  }
+
+  /** 返回按本局命中次数扣除生命后的候选项。 */
+  function rouletteEffectivePrizes(): Prize[] {
+    return prizes
+      .filter((p) => p.enabled)
+      .map((p) => ({ ...p, weight: Math.max(0, p.weight - (rouletteHits[p.id] ?? 0)) }))
+      .filter((p) => p.weight > 0);
+  }
+
+  function currentDrawOptions(): WheelOption[] {
+    return activeDrawOptions;
+  }
+
+  function normalizeContinuousTarget() {
+    continuousTarget = normalizeResultLimit(continuousTarget, validCompleted);
+  }
+
+  function beginRetryWeightEdit(event: FocusEvent) {
+    retryWeightBeforeEdit = positiveNumberOrFallback(retryWeight, 0.65);
+    (event.currentTarget as HTMLInputElement).select();
+  }
+
+  function finishRetryWeightEdit(event: FocusEvent) {
+    const input = event.currentTarget as HTMLInputElement;
+    retryWeight = positiveNumberOrFallback(input.value, retryWeightBeforeEdit);
+    input.value = String(retryWeight);
+  }
+
+  function showResultLimitReached() {
+    stopContinuousDraw();
+    result = {
+      eyebrow: '有效结果上限',
+      title: `已完成 ${validCompleted} 个结果`,
+      detail: '把上限调高后可以继续；设为 0 则不限制次数。',
+      tone: 'success',
+    };
+  }
+
+  function spin() {
+    if (
+      isSpinning ||
+      enabledPrizes.length < 2 ||
+      (mode === 'roulette' && rouletteFinished)
+    ) return;
+    if (resultLimitReached) {
+      showResultLimitReached();
+      return;
+    }
+    if (continuousTimer) {
+      window.clearTimeout(continuousTimer);
+      continuousTimer = undefined;
+    }
+    drawSidePanel = 'statistics';
+
+    const options = currentDrawOptions();
+    const realOptions = options.filter((option) => !option.isRetry);
+    if (realOptions.length === 0) {
+      result = {
+        eyebrow: '无法开始',
+        title: '请至少启用一个候选项',
+        detail: mode === 'roulette' ? '俄罗斯轮盘需要至少两个启用的候选项。' : '重来不能是唯一选项。',
+        tone: 'danger',
+      };
+      return;
+    }
+
+    const picked = pickWeighted(options);
+    const usesMonopoly = animationStyle === 'threeD' && mode !== 'roulette';
+
+    if (usesMonopoly) {
+      // 大富翁棋盘由组件根据候选项编号计算走格终点。
+      monopolyTargetId = picked.id;
+    } else {
+      // 俄罗斯模式从多个同名生命扇区中选择一个真实落点。
+      const rotationOptions = mode === 'roulette' ? displayedWheelOptions : wheelOptions;
+      const index = pickWheelSegmentIndex(rotationOptions, picked.id);
+      if (index < 0) return;
+      const weightedSegment = createWeightedSegments(rotationOptions)[index];
+      const current = ((rotation % 360) + 360) % 360;
+      const targetAngle = (weightedSegment.startRatio + weightedSegment.sizeRatio / 2) * 360;
+      const target = ((-targetAngle % 360) + 360) % 360;
+      const extraTurns = animationStyle === 'simple' ? 4 : 7;
+      const delta = ((target - current + 360) % 360) + (extraTurns + Math.floor(Math.random() * 2)) * 360;
+      rotation += delta;
+    }
+
+    isSpinning = true;
+    result = {
+      eyebrow: usesMonopoly ? '棋盘走格中' : '命运正在选择',
+      title: '别眨眼…',
+      detail: `全程 ${durationSeconds.toFixed(1)} 秒，末段会平滑减速后揭晓`,
+      tone: 'idle',
+    };
+
+    timer = window.setTimeout(() => {
+      settleSingleDraw(picked);
+      continueContinuousDraw();
+    }, durationSeconds * 1000);
+  }
+
+  function startContinuousDraw() {
+    if (isSpinning || continuousRunning || enabledPrizes.length < 2) return;
+    normalizeContinuousTarget();
+    continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(continuousIntervalSeconds) || 3));
+    drawSidePanel = 'statistics';
+
+    if (continuousTarget === 0) {
+      result = {
+        eyebrow: '连续抽奖',
+        title: '请先设置有效结果上限',
+        detail: '0 表示手动抽奖不限次数；连续抽奖需要一个明确的结束数量。',
+        tone: 'idle',
+      };
+      return;
+    }
+
+    if (isResultLimitReached(continuousTarget, continuousCompleted)) {
+      result = {
+        eyebrow: '连续抽奖',
+        title: '已达到有效结果上限',
+        detail: `当前已有 ${continuousCompleted} 个有效结果。`,
+        tone: 'success',
+      };
+      return;
+    }
+
+    continuousRunning = true;
+    if (mode === 'roulette' && rouletteFinished) startNewRouletteRound();
+    spin();
+  }
+
+  function stopContinuousDraw() {
+    continuousRunning = false;
+    if (continuousTimer) {
+      window.clearTimeout(continuousTimer);
+      continuousTimer = undefined;
+    }
+  }
+
+  function continueContinuousDraw() {
+    if (!continuousRunning) return;
+    const completed = records.filter(
+      (record) => record.outcome === 'selected' || record.outcome === 'winner',
+    ).length;
+    const delay = continuousIntervalSeconds * 1000;
+
+    if (isResultLimitReached(continuousTarget, completed)) {
+      continuousTimer = window.setTimeout(() => {
+        continuousRunning = false;
+        continuousTimer = undefined;
+        result = {
+          eyebrow: '连续抽奖完成',
+          title: `${completed} 个有效结果`,
+          detail: '当前统计已更新。',
+          tone: 'success',
+        };
+      }, delay);
+      return;
+    }
+
+    continuousTimer = window.setTimeout(() => {
+      continuousTimer = undefined;
+      if (!continuousRunning) return;
+      if (mode === 'roulette' && rouletteFinished) startNewRouletteRound();
+      spin();
+    }, delay);
+  }
+
+  function settleSingleDraw(picked: WheelOption) {
+    isSpinning = false;
+    singleAttempt += 1;
+
+    if (picked.isRetry) {
+      const round = mode === 'selected' ? singleCompleted + 1 : rouletteRound;
+      addRecord({
+        round,
+        attempt: singleAttempt,
+        optionId: RETRY_ID,
+        label: picked.label,
+        outcome: 'retry',
+        detail: mode === 'selected'
+          ? `第 ${round} 次有效抽取触发重来，请再次旋转`
+          : `第 ${rouletteRound} 局触发重来，没有奖项被淘汰`,
+      });
+      result = {
+        eyebrow: '特殊结果 · 已计数',
+        title: '再来一次',
+        detail: '这次已记入重来统计，但不占用有效结果。',
+        tone: 'retry',
+      };
+      return;
+    }
+
+    if (mode === 'selected') {
+      singleCompleted += 1;
+      addRecord({
+        round: singleCompleted,
+        attempt: singleAttempt,
+        optionId: picked.id,
+        label: picked.label,
+        outcome: 'selected',
+        detail: `第 ${singleCompleted} 次有效抽取命中 ${picked.label}`,
+      });
+      result = {
+        eyebrow: `第 ${singleCompleted} 次有效结果`,
+        title: picked.label,
+        detail: normalizedRewardAmount() > 0
+          ? `本次奖励金额 ${formatAmount(normalizedRewardAmount())}`
+          : retryTotal > 0 ? `好运落定 · 当前累计重来 ${retryTotal} 次` : '好运落定，恭喜获得本次结果。',
+        tone: 'success',
+      };
+      return;
+    }
+
+    const activeBefore = rouletteEffectivePrizes();
+    const hit = activeBefore.find((p) => p.id === picked.id);
+    if (!hit) return;
+
+    // 每次命中只扣除一条命。
+    const hitsBefore = rouletteHits[picked.id] ?? 0;
+    rouletteHits = { ...rouletteHits, [picked.id]: hitsBefore + 1 };
+
+    const originalWeight = prizes.find((p) => p.id === picked.id)?.weight ?? 1;
+    const hitsNow = hitsBefore + 1;
+    const fullyEliminated = hitsNow >= originalWeight;
+    const livesLeft = originalWeight - hitsNow;
+
+    // 命中后重新计算存活候选项。
+    const activeAfter = rouletteEffectivePrizes();
+
+    if (activeAfter.length <= 1) {
+      const winner = activeAfter[0] ?? enabledPrizes.find((p) => p.id !== picked.id);
+      if (!winner) return;
+      rouletteFinished = true;
+      addRecord({
+        round: rouletteRound,
+        attempt: singleAttempt,
+        optionId: winner.id,
+        label: winner.name,
+        outcome: 'winner',
+        detail: `${hit.name} 最后出局，${winner.name} 成为第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局赢家`,
+      });
+      result = {
+        eyebrow: `第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局 · 最终赢家`,
+        title: winner.name,
+        detail: normalizedRewardAmount() > 0
+          ? `${hit.name} 最后出局 · 奖励金额 ${formatAmount(normalizedRewardAmount())}`
+          : `${hit.name} 最后出局，轮盘上只剩下赢家。`,
+        tone: 'success',
+      };
+    } else {
+      addRecord({
+        round: rouletteRound,
+        attempt: singleAttempt,
+        optionId: hit.id,
+        label: hit.name,
+        outcome: 'eliminated',
+        detail: fullyEliminated
+          ? `${hit.name} 全部命中 · 彻底出局，剩余 ${activeAfter.length} 项`
+          : `${hit.name} 命中 · 还剩 ${livesLeft} 命，比例缩小，剩余 ${activeAfter.length} 项`,
+      });
+      result = {
+        eyebrow: `第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局 · ${fullyEliminated ? '淘汰' : '命中'}`,
+        title: hit.name,
+        detail: fullyEliminated
+          ? `${hit.name} 彻底出局，场上还剩 ${activeAfter.length} 个候选项。`
+          : `${hit.name} 损失1命，还剩 ${livesLeft} 命，转盘比例已缩小。`,
+        tone: 'danger',
+      };
+    }
+  }
+
+  function addRecord(event: Omit<SimulationEvent, 'attempt'> & { attempt: number }) {
+    const record: DrawRecord = {
+      id: createId('record'),
+      sequence: records.length + 1,
+      ...event,
+      rewardAmount: event.outcome === 'selected' || event.outcome === 'winner'
+        ? normalizedRewardAmount()
+        : 0,
+      mode,
+      createdAt: Date.now(),
+      source: 'single',
+    };
+    records = [record, ...records];
+  }
+
+  function startNewRouletteRound() {
+    if (isSpinning) return;
+    if (rouletteRound >= MAX_ROULETTE_ROUNDS) {
+      result = {
+        eyebrow: `俄罗斯轮盘 · 已达 ${MAX_ROULETTE_ROUNDS} 局上限`,
+        title: '本次轮盘已结束',
+        detail: '点击"新的抽奖"开始新一轮。',
+        tone: 'idle',
+      };
+      return;
+    }
+    if (resultLimitReached) {
+      showResultLimitReached();
+      return;
+    }
+    rouletteRound += 1;
+    singleAttempt = 0;
+    rouletteHits = {};
+    rouletteFinished = false;
+    monopolyTargetId = null;
+    result = {
+      eyebrow: `俄罗斯轮盘 · 第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局`,
+      title: '所有选项重新入场',
+      detail: '继续旋转，逐一淘汰，直到最后的赢家出现。',
+      tone: 'idle',
+    };
+  }
+
+  function runBatch() {
+    if (isSpinning) return;
+    if (enabledPrizes.length < 2) {
+      result = {
+        eyebrow: '无法开始',
+        title: '至少需要两个候选项',
+        detail: '添加或启用候选项后再运行批量抽奖。',
+        tone: 'danger',
+      };
+      return;
+    }
+
+    try {
+      const safeCount = normalizeBatchCount(batchCount);
+      batchCount = safeCount;
+      const simulation = simulateBatch(
+        mode,
+        variant === 'caimi' && mode === 'selected' ? selectedProbabilityPrizes : prizes,
+        safeCount,
+        retryEnabled,
+        retryWeight,
+      );
+      batchResult = simulation;
+      batchRunAt = Date.now();
+      batchTab = 'stats';
+    } catch (error) {
+      result = {
+        eyebrow: '概率模拟未开始',
+        title: '候选名单配置不足',
+        detail: error instanceof Error ? error.message : '请检查候选项设置后重试。',
+        tone: 'danger',
+      };
+    }
+  }
+
+  function createBatchRows(simulation: BatchSimulation | null): BatchRow[] {
+    if (!simulation) return [];
+    const rows = prizes
+      .map((prize) => ({
+        id: prize.id,
+        name: prize.name,
+        color: prize.color,
+        count: simulation.prizeCounts[prize.id] ?? 0,
+        percent: simulation.completed > 0
+          ? ((simulation.prizeCounts[prize.id] ?? 0) / simulation.completed) * 100
+          : 0,
+      }))
+      .filter((row) => row.count > 0 || prizes.find((prize) => prize.id === row.id)?.enabled)
+      .sort((left, right) => right.count - left.count);
+
+    if (simulation.retryCount > 0) {
+      rows.push({
+        id: RETRY_ID,
+        name: '重来一次',
+        color: '#f2eee5',
+        count: simulation.retryCount,
+        percent: simulation.attempts > 0 ? (simulation.retryCount / simulation.attempts) * 100 : 0,
+      });
+    }
+
+    return rows;
+  }
+
+  function createCurrentStats(
+    candidates: Prize[],
+    drawRecords: DrawRecord[],
+    completedCount: number,
+  ): CurrentStat[] {
+    const counts = new Map<string, { count: number; rewardTotal: number }>();
+    for (const record of drawRecords) {
+      if (record.outcome !== 'selected' && record.outcome !== 'winner') continue;
+      const current = counts.get(record.optionId) ?? { count: 0, rewardTotal: 0 };
+      current.count += 1;
+      current.rewardTotal += Math.max(0, Number(record.rewardAmount) || 0);
+      counts.set(record.optionId, current);
+    }
+
+    return candidates
+      .map((prize): CurrentStat => {
+        const stat = counts.get(prize.id) ?? { count: 0, rewardTotal: 0 };
+        return {
+          id: prize.id,
+          name: prize.name,
+          color: prize.color,
+          weight: prize.weight,
+          count: stat.count,
+          rewardTotal: stat.rewardTotal,
+          percent: completedCount > 0 ? (stat.count / completedCount) * 100 : 0,
+        };
+      })
+      .filter((stat) => stat.count > 0 || candidates.find((prize) => prize.id === stat.id)?.enabled)
+      .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-CN'));
+  }
+
+  function outcomeLabel(outcome: DrawOutcome): string {
+    return {
+      selected: '命中',
+      retry: '重来',
+      eliminated: '淘汰',
+      winner: '胜出',
+    }[outcome];
+  }
+
+  function formatTime(timestamp: number): string {
+    return new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(timestamp);
+  }
+
+  function formatSelectionDate(timestamp: number): string {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(timestamp);
+  }
+
+  function formatAmount(amount: number): string {
+    return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(amount);
+  }
+
+  function clearCurrentDraw() {
+    void startNewDraw();
+  }
+
+  export function resetSettings() {
+    if (guardCandidateChanges()) return;
+    const preserveRewardAmount = rewardAmountIsLocked();
+    prizes = defaultPrizes.map((prize) => ({ ...prize }));
+    selectedPrizeId = null;
+    animationStyle = 'luxury';
+    durationSeconds = 4;
+    if (!preserveRewardAmount) rewardAmount = 0;
+    retryEnabled = true;
+    retryWeight = 0.65;
+    continuousTarget = 0;
+    fontScale = DEFAULT_FONT_SCALE;
+    rouletteHits = {};
+    rouletteFinished = false;
+    result = {
+      eyebrow: '设置已还原',
+      title: '回到默认幸运池',
+      detail: preserveRewardAmount
+        ? '候选项、动画和重来权重已经恢复；当前奖励金额保持不变。'
+        : '候选项、奖励金额、动画和重来权重已经恢复。',
+      tone: 'idle',
+    };
+  }
+
+  async function openImporter() {
+    if (guardCandidateChanges()) return;
+    drawSidePanel = 'candidates';
+    importOpen = true;
+    await tick();
+    importTextarea?.focus();
+  }
+
+  function applyImportedOptions() {
+    if (parsedImportOptions.length === 0 || guardCandidateChanges()) return;
+    const existingNames = new Set(
+      prizes.map((prize) => prize.name.toLocaleLowerCase('zh-CN')),
+    );
+    const base = [...prizes];
+    const additions = parsedImportOptions
+      .filter((name) => !existingNames.has(name.toLocaleLowerCase('zh-CN')))
+      .slice(0, Math.max(0, 100 - base.length))
+      .map((name, index): Prize => ({
+        id: createId('import'),
+        name,
+        weight: 1,
+        color: importPalette[(base.length + index) % importPalette.length],
+        enabled: true,
+      }));
+
+    const next = [...base, ...additions];
+    if (!updatePrizes(next)) return;
+    importText = '';
+    importOpen = false;
+    result = {
+      eyebrow: '文本解析完成',
+      title: `${additions.length} 个选项已添加`,
+      detail: '重复名称已自动跳过。',
+      tone: 'success',
+    };
+  }
+
+  function exportRecords() {
+    if (records.length === 0) return;
+    downloadJson('fortuna-records', { exportedAt: new Date().toISOString(), records });
+  }
+
+  function exportBatchExperiment() {
+    if (!batchResult) return;
+    downloadJson('fortuna-lab', {
+      exportedAt: new Date().toISOString(),
+      kind: 'batch-simulation',
+      prizes,
+      retryEnabled,
+      retryWeight,
+      simulation: batchResult,
+    });
+  }
+
+  function clearBatchExperiment() {
+    batchResult = null;
+    batchRunAt = null;
+    batchTab = 'stats';
+  }
+
+  function downloadJson(prefix: string, value: unknown) {
+    const payload = JSON.stringify(value, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function scrollOpenPanel(direction: -1 | 1) {
+    const candidates = [
+      document.querySelector<HTMLElement>('.accordion-item.open .accordion-content'),
+      document.querySelector<HTMLElement>('.candidate-board'),
+    ];
+    const scroller = candidates.find((element) => element && element.scrollHeight > element.clientHeight);
+    if (scroller) {
+      scroller.scrollBy({ top: direction * Math.max(180, scroller.clientHeight * 0.72), behavior: 'smooth' });
+    } else {
+      window.scrollBy({ top: direction * Math.max(240, window.innerHeight * 0.72), behavior: 'smooth' });
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!active) return;
+    const target = event.target as HTMLElement | null;
+    const key = event.key.toLowerCase();
+    const modifier = event.ctrlKey || event.metaKey;
+    const editing = target?.matches('input, textarea, select, button, [contenteditable="true"]') ?? false;
+    const shortcutKey = event.code === 'Space' ? 'space' : key;
+
+    if (event.key === 'Enter' && event.altKey && target === importTextarea) {
+      event.preventDefault();
+      applyImportedOptions();
+      return;
+    }
+
+    if (event.key === 'Enter' && !modifier && !event.altKey && !event.shiftKey && target?.classList.contains('name-input')) {
+      event.preventDefault();
+      (target as HTMLInputElement).blur();
+      candidateKeyboardActive = true;
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (candidateKeyboardActive) {
+        event.preventDefault();
+        exitCandidateKeyboard();
+        return;
+      }
+      if (commonKeyboardActive) {
+        event.preventDefault();
+        exitCommonKeyboard();
+        return;
+      }
+      activePanel = null;
+      if (importOpen && !importText) importOpen = false;
+      commonSelectionSaveOpen = false;
+      return;
+    }
+
+    if (candidateKeyboardActive) {
+      if (!editing && !modifier && !event.shiftKey && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (!modifier && event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey) {
+        if (key === 'd') {
+          event.preventDefault();
+          deleteSelectedPrize();
+          return;
+        }
+        if (key === 'a') {
+          event.preventDefault();
+          void addPrize();
+          return;
+        }
+        if (shortcutKey === 'space') {
+          event.preventDefault();
+          toggleSelectedPrize();
+          return;
+        }
+        if (key === 'm') {
+          event.preventDefault();
+          void selectRewardInput();
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void editSelectedPrizeName();
+          return;
+        }
+      }
+    }
+
+    if (commonKeyboardActive) {
+      if (key === 'q' && !editing) {
+        event.preventDefault();
+        exitCommonKeyboard();
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        void moveCommonSelection(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (!editing && !modifier && !event.altKey && !event.shiftKey && key === 'f') {
+        event.preventDefault();
+        applySelectedCommon();
+        return;
+      }
+    }
+
+    if (
+      !editing
+      && !candidateKeyboardActive
+      && !commonKeyboardActive
+      && !modifier
+      && !event.altKey
+      && !event.shiftKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.preventDefault();
+      scrollOpenPanel(event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+
+    const webShortcut = !desktopRuntime && !modifier && event.altKey && event.shiftKey;
+    const desktopShortcut = desktopRuntime && !editing && !modifier && !event.altKey && !event.shiftKey;
+    if (!webShortcut && !desktopShortcut) return;
+
+    if (!['w', 'e', 'r', 'a', 'z', 'x', 's', 'space'].includes(shortcutKey)) return;
+    if (!desktopRuntime && shortcutKey === 's') return;
+    event.preventDefault();
+
+    if (shortcutKey === 'w') {
+      void openImporter();
+    } else if (shortcutKey === 'e') {
+      exportRecords();
+    } else if (shortcutKey === 'r') {
+      void startNewDraw(true);
+    } else if (shortcutKey === 'a') {
+      void enterCommonKeyboard();
+    } else if (shortcutKey === 'z') {
+      togglePanel('shortcuts');
+    } else if (shortcutKey === 'space') {
+      spin();
+    } else if (shortcutKey === 's' && desktopRuntime) {
+      void toggleAutoSaveHistory();
+    } else if (shortcutKey === 'x') {
+      void enterCandidateKeyboard();
+    }
+  }
+</script>
+
+<svelte:window on:keydown={handleKeydown} />
+
+<main
+    class:settings-open={activePanel === 'settings'}
+    class:common-open={activePanel === 'common'}
+    class:batch-open={activePanel === 'batch'}
+    class:history-open={activePanel === 'history'}
+    class:shortcuts-open={activePanel === 'shortcuts'}
+    class="workspace"
+    id="top"
+  >
+    <aside class:open={activePanel === 'settings'} class="accordion-item config-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'settings'}
+        on:click={() => togglePanel('settings')}
+      >
+        <span class="accordion-icon">◎</span>
+        <span><strong>设置</strong></span>
+        <i>{activePanel === 'settings' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'settings'}
+      <div class="accordion-content settings-content">
+      <div class="panel-heading">
+        <div>
+          <h2>抽奖设置</h2>
+        </div>
+      </div>
+
+      <section class="setting-block font-scale-setting">
+        <div class="setting-title-row compact">
+          <label for="font-scale">界面字号</label>
+          <output>{Math.round(fontScale * 100)}<small>%</small></output>
+        </div>
+        <input
+          id="font-scale"
+          class="range-input"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          bind:value={fontScale}
+          style={`--range-progress: ${((fontScale - 1) / 2) * 100}%`}
+        />
+        <div class="range-labels"><span>标准</span><span>放大两倍</span><span>放大三倍</span></div>
+      </section>
+
+      <div class="section-divider"></div>
+
+      <section class="setting-block">
+        <div class="setting-title-row">
+          <div>
+            <h3>重来机制</h3>
+          </div>
+          <button
+            type="button"
+            class:active={retryEnabled}
+            class="switch"
+            aria-label={retryEnabled ? '关闭重来机制' : '开启重来机制'}
+            aria-pressed={retryEnabled}
+            disabled={isSpinning}
+            on:click={() => (retryEnabled = !retryEnabled)}
+          ><span></span></button>
+        </div>
+        <p>抽到“重来”会增加尝试次数，批量任务会自动补抽到有效数量。</p>
+        {#if retryEnabled}
+          <label class="inline-number">
+            <span>重来权重</span>
+            <input
+              type="text"
+              inputmode="decimal"
+              value={retryWeight}
+              disabled={isSpinning}
+              on:focus={beginRetryWeightEdit}
+              on:blur={finishRetryWeightEdit}
+            />
+          </label>
+        {/if}
+      </section>
+
+      {#if desktopRuntime}
+        <div class="section-divider"></div>
+        <section class="setting-block auto-save-setting">
+          <div class="setting-title-row">
+            <div><h3>自动保存历史</h3></div>
+            <button
+              type="button"
+              class:active={autoSaveHistory}
+              class="switch"
+              aria-label={autoSaveHistory ? '关闭自动保存历史' : '开启自动保存历史'}
+              aria-pressed={autoSaveHistory}
+              disabled={isSpinning || drawHistorySaving}
+              on:click={() => void toggleAutoSaveHistory()}
+            ><span></span></button>
+          </div>
+        </section>
+      {/if}
+
+      <div class="section-divider"></div>
+
+      <section class="setting-block">
+        <h3>动画质感</h3>
+        <div class="animation-options">
+          <button
+            type="button"
+            class:active={animationStyle === 'simple'}
+            disabled={isSpinning}
+            on:click={() => (animationStyle = 'simple')}
+          >
+            <span class="motion-icon simple-icon"><i></i></span>
+            <strong>平凡</strong>
+          </button>
+          <button
+            type="button"
+            class:active={animationStyle === 'luxury'}
+            disabled={isSpinning}
+            on:click={() => (animationStyle = 'luxury')}
+          >
+            <span class="motion-icon luxury-icon">✦</span>
+            <strong>高级</strong>
+          </button>
+          <button
+            type="button"
+            class:active={animationStyle === 'threeD'}
+            disabled={isSpinning}
+            on:click={() => (animationStyle = 'threeD')}
+          >
+            <span class="motion-icon board-icon">⬡</span>
+            <strong>大富翁</strong>
+          </button>
+        </div>
+      </section>
+
+      <section class="setting-block duration-block">
+        <div class="setting-title-row compact">
+          <label for="duration">动画时长</label>
+          <output>{durationSeconds.toFixed(1)}<small>秒</small></output>
+        </div>
+        <input
+          id="duration"
+          class="range-input"
+          type="range"
+          min="1"
+          max="10"
+          step="0.5"
+          bind:value={durationSeconds}
+          disabled={isSpinning}
+          style={`--range-progress: ${((durationSeconds - 1) / 9) * 100}%`}
+        />
+        <div class="range-labels"><span>迅速</span><span>仪式感</span><span>史诗</span></div>
+      </section>
+      </div>
+      {/if}
+    </aside>
+
+    <aside class:open={activePanel === 'common'} class="accordion-item common-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'common'}
+        on:click={() => togglePanel('common')}
+      >
+        <span class="accordion-icon">▤</span>
+        <span><strong>常用选择</strong></span>
+        <i>{activePanel === 'common' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'common'}
+        <div class="accordion-content common-content">
+          <div class="panel-heading">
+            <div>
+              <h2>常用选择</h2>
+            </div>
+            <span class="count-badge">{commonSelections.length}</span>
+          </div>
+
+          {#if commonSelectionError}
+            <div class="common-error">{commonSelectionError}</div>
+          {/if}
+
+          {#if commonSelectionLoading}
+            <div class="sidebar-empty-state"><i>···</i><strong>正在读取常用选择</strong></div>
+          {:else if commonSelections.length === 0}
+            <div class="sidebar-empty-state">
+              <i>▤</i>
+              <strong>还没有常用选择</strong>
+              <span>在右侧候选项面板中保存当前名单。</span>
+            </div>
+          {:else}
+            <div class="common-list">
+              {#each commonSelections as selection (selection.id)}
+                <article
+                  class:selected={selectedCommonId === selection.id}
+                  class="common-card"
+                  data-common-id={selection.id}
+                  role="group"
+                  aria-label={`常用选择：${selection.name}`}
+                  on:pointerdown={() => {
+                    commonKeyboardActive = true;
+                    selectedCommonId = selection.id;
+                  }}
+                >
+                  <div class="common-card-heading">
+                    <div>
+                      <strong>{selection.name}</strong>
+                      <span>{selection.prizes.length} 项 · {formatSelectionDate(selection.createdAt)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="common-delete"
+                      aria-label={`删除常用选择 ${selection.name}`}
+                      title="删除"
+                      on:click={() => deleteCommonSelection(selection)}
+                    >×</button>
+                  </div>
+                  <p>{selection.prizes.slice(0, 4).map((prize) => prize.name).join('、')}{selection.prizes.length > 4 ? '…' : ''}</p>
+                  <button type="button" disabled={candidateChangesLocked} on:click={() => applyCommonSelection(selection)}>
+                    导入到当前轮盘
+                  </button>
+                </article>
+              {/each}
+            </div>
+          {/if}
+
+        </div>
+      {/if}
+    </aside>
+
+    <section class="stage-panel">
+      <div class="stage-heading">
+        <div class="draw-session-actions">
+          <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新的抽奖</button>
+          <button
+            type="button"
+            class="save-draw-button"
+            title={desktopRuntime ? '保存到本地历史数据库' : '桌面版可保存历史'}
+            disabled={!desktopRuntime || records.length === 0 || drawHistorySaving}
+            on:click={() => void saveCurrentDrawHistory()}
+          >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
+          <div class="status-pill" class:busy={isSpinning}>
+            <i></i>{isSpinning ? '旋转中' : '等待开始'}
+          </div>
+        </div>
+      </div>
+
+      <div class="draw-workbench">
+        <div class="draw-core">
+      <div class="wheel-wrap">
+        {#if animationStyle === 'threeD' && mode !== 'roulette'}
+          <!-- 大富翁棋盘：俄罗斯模式降级到高级转盘 -->
+          <MonopolyWheel
+            options={wheelOptions}
+            targetOptionId={monopolyTargetId}
+            duration={durationSeconds * 1000}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开始'}
+            onSpin={spin}
+          />
+        {:else if animationStyle === 'luxury' || (animationStyle === 'threeD' && mode === 'roulette')}
+          <LuxuryWheel
+            options={displayedWheelOptions}
+            {rotation}
+            duration={durationSeconds * 1000}
+            eliminatedIds={[]}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开启'}
+            onSpin={spin}
+          />
+        {:else}
+          <Wheel
+            options={displayedWheelOptions}
+            {rotation}
+            duration={durationSeconds * 1000}
+            {animationStyle}
+            eliminatedIds={[]}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开始'}
+            onSpin={spin}
+          />
+        {/if}
+
+        {#if !isSpinning && result.tone !== 'idle'}
+          <div
+            class:success={result.tone === 'success'}
+            class:retry={result.tone === 'retry'}
+            class:danger={result.tone === 'danger'}
+            class="winner-reveal"
+            role="status"
+            aria-live="polite"
+          >
+            <span>{result.eyebrow}</span>
+            <strong>{result.title}</strong>
+            {#if mode === 'roulette' && rouletteFinished}
+              <button
+                type="button"
+                disabled={resultLimitReached || rouletteRound >= MAX_ROULETTE_ROUNDS}
+                on:click={startNewRouletteRound}
+              >
+                {resultLimitReached ? '已达上限' : rouletteRound >= MAX_ROULETTE_ROUNDS ? `满 ${MAX_ROULETTE_ROUNDS} 局` : '新一局'}
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+        </div>
+
+        <aside class="candidate-board" aria-label="当前候选项">
+          <div class="draw-side-tabs" aria-label="右侧面板">
+            <button
+              type="button"
+              class:active={drawSidePanel === 'candidates'}
+              on:click={() => (drawSidePanel = 'candidates')}
+            >候选项</button>
+            <button
+              type="button"
+              class:active={drawSidePanel === 'statistics'}
+              on:click={() => (drawSidePanel = 'statistics')}
+            >当前统计 <span>{validCompleted}</span></button>
+          </div>
+
+          {#if drawSidePanel === 'candidates'}
+          <div class="candidate-board-heading">
+            <div>
+              <h2>候选项</h2>
+            </div>
+            <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
+          </div>
+
+          {#if candidateChangesLocked && !isSpinning}
+            <div class="candidate-lock-note">当前受限抽奖已经开始；新建抽奖或把有效结果上限设为 0 后可修改名单。</div>
+          {/if}
+
+          <button
+            type="button"
+            class="save-selection-trigger"
+            disabled={isSpinning}
+            on:click={openCommonSelectionSaver}
+          >
+            <span>＋</span>
+            <strong>保存当前选择</strong>
+          </button>
+
+          {#if commonSelectionSaveOpen}
+            <form class="save-selection-form" on:submit|preventDefault={saveCurrentSelection}>
+              <label for="common-selection-name">给这组候选项起个名字</label>
+              <div>
+                <input
+                  id="common-selection-name"
+                  bind:this={commonSelectionInput}
+                  bind:value={commonSelectionName}
+                  maxlength="40"
+                  placeholder="例如：周五例会名单"
+                  disabled={commonSelectionSaving}
+                />
+                <button type="submit" disabled={!commonSelectionName.trim() || commonSelectionSaving}>
+                  {commonSelectionSaving ? '保存中' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  aria-label="取消保存"
+                  disabled={commonSelectionSaving}
+                  on:click={() => (commonSelectionSaveOpen = false)}
+                >×</button>
+              </div>
+            </form>
+          {/if}
+
+          <PrizeEditor
+            {prizes}
+            selectedId={selectedPrizeId}
+            disabled={candidateChangesLocked}
+            onChange={updatePrizes}
+            onSelect={(id) => void selectPrize(id)}
+            onAdd={addPrize}
+          />
+
+          <button type="button" class="import-trigger" disabled={candidateChangesLocked} on:click={openImporter}>
+            <span>⌘</span> 从文本批量导入
+            <small>空格 / 逗号 / 表格</small>
+          </button>
+
+          {#if importOpen}
+            <section class="import-box" aria-label="文本批量导入">
+              <div class="import-heading">
+                <strong>粘贴选项文本</strong>
+                <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
+              </div>
+              <textarea
+                bind:this={importTextarea}
+                bind:value={importText}
+                rows="4"
+                placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
+              ></textarea>
+              <div class="import-footer">
+                <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
+                <button
+                  type="button"
+                  disabled={parsedImportOptions.length === 0 || candidateChangesLocked}
+                  on:click={applyImportedOptions}
+                >添加</button>
+              </div>
+            </section>
+          {/if}
+          {:else}
+            <section class="continuous-control">
+              <div class="continuous-fields">
+                <label>
+                  <span>有效结果上限</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={Math.max(1000, continuousCompleted)}
+                    step="1"
+                    title="0 表示不限次数"
+                    bind:value={continuousTarget}
+                    disabled={continuousRunning}
+                    on:change={normalizeContinuousTarget}
+                    on:blur={normalizeContinuousTarget}
+                  />
+                </label>
+                <label>
+                  <span>结果停留</span>
+                  <span class="seconds-input">
+                    <input type="number" min="0.5" max="30" step="0.5" bind:value={continuousIntervalSeconds} disabled={continuousRunning} />
+                    <small>秒</small>
+                  </span>
+                </label>
+              </div>
+              <div class="continuous-progress">
+                <span>已完成 {continuousCompleted}</span>
+                <strong>{continuousRemaining === null ? '不限次数' : `还差 ${continuousRemaining}`}</strong>
+              </div>
+              {#if continuousRunning}
+                <button type="button" class="continuous-stop" on:click={stopContinuousDraw}>停止连续抽奖</button>
+              {:else}
+                <button
+                  type="button"
+                  class="continuous-start"
+                  disabled={enabledPrizes.length < 2 || continuousTarget === 0 || continuousRemaining === 0}
+                  on:click={startContinuousDraw}
+                >
+                  {continuousTarget === 0 ? '设置上限后连续抽奖' : continuousRemaining === 0 ? '已达到上限' : '开始连续抽奖'}
+                </button>
+              {/if}
+            </section>
+
+            <label class="reward-setting candidate-reward">
+              <strong>奖励金额</strong>
+              <span class="reward-input">
+                <input
+                  bind:this={rewardInput}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  bind:value={rewardAmount}
+                  disabled={rewardAmountLocked}
+                  title={rewardAmountLocked ? '桌面端产生抽奖记录后，奖励金额会锁定到下一轮' : '设置每个有效结果的奖励金额'}
+                  on:focus={() => {
+                    candidateKeyboardActive = true;
+                    selectedPrizeId = null;
+                  }}
+                  on:change={() => {
+                    if (rewardAmountIsLocked()) {
+                      showRewardAmountLocked();
+                    } else {
+                      rewardAmount = normalizedRewardAmount();
+                    }
+                  }}
+                />
+              </span>
+            </label>
+
+            <div class="side-stat-summary">
+              <div><span>有效命中</span><strong>{validCompleted}</strong></div>
+              <div><span>重来</span><strong>{retryTotal}</strong></div>
+              <div><span>累计金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
+            </div>
+
+            <div class="current-stats-list side-stats-list">
+              {#each currentStats as stat (stat.id)}
+                <article>
+                  <i style:background={stat.color}></i>
+                  <div class="current-stat-main"><strong>{stat.name}</strong></div>
+                  <div class="side-stat-value"><strong>{formatAmount(stat.weight)}</strong><span>权重</span></div>
+                  <div class="side-stat-value"><strong>{stat.count}</strong><span>中奖</span></div>
+                  <div class="side-stat-value"><strong>{formatAmount(stat.rewardTotal)}</strong><span>金额</span></div>
+                </article>
+              {:else}
+                <div class="current-stats-empty">还没有抽奖结果</div>
+              {/each}
+            </div>
+
+            <button type="button" class="clear-side-stats" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空当前统计</button>
+          {/if}
+        </aside>
+      </div>
+    </section>
+
+    <aside class:open={activePanel === 'batch'} class="accordion-item batch-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'batch'}
+        on:click={() => togglePanel('batch')}
+      >
+        <span class="accordion-icon">⌁</span>
+        <span><strong>批量实验室</strong></span>
+        <i>{activePanel === 'batch' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'batch'}
+      <div class="accordion-content batch-content">
+      <div class="panel-heading">
+        <div>
+          <h2>批量实验室</h2>
+        </div>
+        <span class="flask">⌁</span>
+      </div>
+      <p class="section-note">
+        {mode === 'selected'
+          ? '批量模拟有效结果；重来会自动补抽并单独统计。'
+          : '每次模拟一整局淘汰赛，统计最终赢家。'}
+        仅用于验证概率，不计入当前统计和抽奖历史。
+      </p>
+
+      <div class="batch-runner">
+        <label>
+          <span>{mode === 'selected' ? '模拟结果数' : '模拟局数'}</span>
+          <div class="number-field">
+            <input type="number" min="1" max="1000" bind:value={batchCount} disabled={isSpinning} />
+            <small>{mode === 'selected' ? '次' : '局'}</small>
+          </div>
+        </label>
+        <div class="quick-counts">
+          {#each [10, 100, 500] as amount}
+            <button type="button" class:active={batchCount === amount} on:click={() => (batchCount = amount)}>{amount}</button>
+          {/each}
+        </div>
+        <button type="button" class="run-button" disabled={isSpinning || enabledPrizes.length < 2} on:click={runBatch}>
+          <span>▶</span> 运行概率模拟
+        </button>
+      </div>
+
+      {#if batchResult}
+        <div class="batch-metrics">
+          <div>
+            <span>有效结果</span>
+            <strong>{batchResult.completed}</strong>
+          </div>
+          <div>
+            <span>模拟转动</span>
+            <strong>{batchResult.attempts}</strong>
+          </div>
+          <div class:has-retry={batchResult.retryCount > 0}>
+            <span>重来</span>
+            <strong>{batchResult.retryCount}</strong>
+          </div>
+        </div>
+
+        <div class="result-tabs">
+          <button type="button" class:active={batchTab === 'stats'} on:click={() => (batchTab = 'stats')}>统计分布</button>
+          <button type="button" class:active={batchTab === 'history'} on:click={() => (batchTab = 'history')}>逐次记录</button>
+          <span>{batchRunAt ? formatTime(batchRunAt) : ''}</span>
+        </div>
+
+        {#if batchTab === 'stats'}
+          <div class="stats-list">
+            {#each batchRows as row, index (row.id)}
+              <div class:retry-row={row.id === RETRY_ID} class="stat-row">
+                <span class="rank">{String(index + 1).padStart(2, '0')}</span>
+                <i style:background={row.color}></i>
+                <div>
+                  <div class="stat-label"><strong>{row.name}</strong><span>{row.count} 次</span></div>
+                  <div class="stat-bar"><span style={`width: ${Math.max(2, row.percent)}%; background: ${row.color}`}></span></div>
+                </div>
+                <b>{row.percent.toFixed(1)}%</b>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="history-list">
+            {#each batchHistory as record (record.attempt)}
+              <article>
+                <div class:retry={record.outcome === 'retry'} class:winner={record.outcome === 'winner'} class:eliminated={record.outcome === 'eliminated'} class="outcome-icon">
+                  {record.outcome === 'retry' ? '↻' : record.outcome === 'winner' ? '♛' : record.outcome === 'eliminated' ? '×' : '✓'}
+                </div>
+                <div>
+                  <strong>{record.label}</strong>
+                  <span>{record.detail}</span>
+                </div>
+                <small>{outcomeLabel(record.outcome)}</small>
+              </article>
+            {:else}
+              <p class="empty-copy">运行一次批量抽取后，这里会保留每次结果。</p>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="history-actions">
+          <button type="button" on:click={exportBatchExperiment}>导出模拟记录</button>
+          <button type="button" on:click={clearBatchExperiment}>清空实验结果</button>
+        </div>
+      {:else}
+        <div class="batch-empty">
+          <div class="empty-visual">
+            <span>10</span><span>100</span><span>500</span>
+            <i>↗</i>
+          </div>
+          <strong>让概率说话</strong>
+          <p>选择次数并运行，统计分布和每一次结果会同时保留。</p>
+        </div>
+      {/if}
+      </div>
+      {/if}
+    </aside>
+
+    <aside class:open={activePanel === 'history'} class="accordion-item history-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'history'}
+        on:click={() => togglePanel('history')}
+      >
+        <span class="accordion-icon">◷</span>
+        <span><strong>历史</strong></span>
+        <i>{activePanel === 'history' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'history'}
+      <div class="accordion-content history-content">
+        <div class="panel-heading">
+          <div><h2>历史</h2></div>
+          {#if desktopRuntime}<span class="count-badge">{drawHistories.length}</span>{/if}
+        </div>
+
+        {#if !desktopRuntime}
+          <div class="sidebar-empty-state web-history-unavailable">
+            <i>◷</i>
+            <strong>网页版无法查看历史</strong>
+          </div>
+        {:else if drawHistoryLoading}
+          <div class="sidebar-empty-state"><i>···</i><strong>正在读取历史</strong></div>
+        {:else}
+          {#if drawHistoryError}
+            <div class="common-error">{drawHistoryError}</div>
+          {/if}
+
+          {#if drawHistories.length === 0}
+            <div class="sidebar-empty-state"><i>◷</i><strong>还没有保存的抽奖</strong></div>
+          {:else}
+            <div class="draw-history-list">
+              {#each drawHistories as draw (draw.id)}
+                {@const summary = drawHistorySummary(draw)}
+                <article class="draw-history-card">
+                  <div class="draw-history-heading">
+                    <div>
+                      <strong>{formatSelectionDate(draw.createdAt)}</strong>
+                      <span>{draw.mode === 'selected' ? '选中模式' : '俄罗斯轮盘'} · {draw.prizes.length} 个候选项</span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`删除 ${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
+                      title="删除"
+                      on:click={() => deleteDrawHistory(draw)}
+                    >×</button>
+                  </div>
+                  <p>{draw.prizes.slice(0, 4).map((prize) => prize.name).join('、') || '空名单'}{draw.prizes.length > 4 ? '…' : ''}</p>
+                  <div class="draw-history-metrics">
+                    <div><span>有效结果</span><strong>{summary.completed}</strong></div>
+                    <div><span>重来</span><strong>{summary.retries}</strong></div>
+                    <div><span>累计金额</span><strong>{formatAmount(summary.rewardTotal)}</strong></div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+
+            <div class="history-actions sidebar-history-actions">
+              <button type="button" on:click={clearDrawHistories}>清空历史</button>
+            </div>
+          {/if}
+        {/if}
+      </div>
+      {/if}
+    </aside>
+
+    <aside class:open={activePanel === 'shortcuts'} class="accordion-item shortcuts-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'shortcuts'}
+        on:click={() => togglePanel('shortcuts')}
+      >
+        <span class="accordion-icon">⌘</span>
+        <span><strong>快捷键</strong></span>
+        <i>{activePanel === 'shortcuts' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'shortcuts'}
+      <div class="accordion-content shortcuts-content">
+        <section class="shortcut-group">
+          <h3>全局生效 · {desktopRuntime ? '桌面端' : '网页版'}</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            {#if desktopRuntime}
+              <div><span>打开文本导入</span><kbd>W</kbd></div>
+              <div><span>导出抽奖统计</span><kbd>E</kbd></div>
+              <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
+              <div><span>打开常用选择</span><kbd>A</kbd></div>
+              <div><span>打开快捷键</span><kbd>Z</kbd></div>
+              <div><span>开始抽奖</span><kbd>空格</kbd></div>
+              <div><span>切换自动保存历史</span><kbd>S</kbd></div>
+              <div><span>进入候选项</span><kbd>X</kbd></div>
+            {:else}
+              {#each [
+                ['打开文本导入', 'W'],
+                ['导出抽奖统计', 'E'],
+                ['新的抽奖并清空候选项', 'R'],
+                ['打开常用选择', 'A'],
+                ['打开快捷键', 'Z'],
+                ['开始抽奖', '空格'],
+                ['进入候选项', 'X'],
+              ] as shortcut}
+                <div><span>{shortcut[0]}</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>{shortcut[1]}</kbd></div>
+              {/each}
+            {/if}
+            <div><span>滚屏</span><kbd>↑ / ↓</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group selected-shortcuts">
+          <h3>候选项内</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>上一候选项</span><kbd>↑</kbd></div>
+            <div><span>下一候选项</span><kbd>↓</kbd></div>
+            <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
+            <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
+            <div><span>退出候选项</span><kbd>Esc</kbd></div>
+            <div><span>删除当前项</span><kbd>D</kbd></div>
+            <div><span>添加选项</span><kbd>A</kbd></div>
+            <div><span>启用 / 停用</span><kbd>空格</kbd></div>
+            <div><span>选择奖励金额</span><kbd>M</kbd></div>
+            <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
+            <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group">
+          <h3>常用选择内</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>上一条</span><kbd>↑</kbd></div>
+            <div><span>下一条</span><kbd>↓</kbd></div>
+            <div><span>引入候选项</span><kbd>F</kbd></div>
+            <div><span>退出常用选择</span><kbd>Q</kbd></div>
+          </div>
+        </section>
+
+        {#if desktopRuntime}
+          <section class="shortcut-group">
+            <h3>随机排阵</h3>
+            <div class="shortcut-list sidebar-shortcut-list">
+              <div><span>排名 / 历史</span><kbd>A / Z</kbd></div>
+              <div><span>选择</span><kbd>↑ / ↓</kbd></div>
+              <div><span>名称 / 别名</span><kbd>Enter / E</kbd></div>
+              <div><span>删除 / 清空别名</span><kbd>D / F</kbd></div>
+              <div><span>确认 / 取消</span><kbd>Enter/Y · Esc/N</kbd></div>
+            </div>
+          </section>
+        {/if}
+      </div>
+      {/if}
+    </aside>
+  </main>

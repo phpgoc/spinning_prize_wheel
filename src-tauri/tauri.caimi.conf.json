@@ -1,0 +1,24 @@
+{
+  "productName": "Fortuna 猜蜜版",
+  "mainBinaryName": "fortuna-caimi",
+  "identifier": "com.phpgoc.fortuna.caimi",
+  "build": {
+    "beforeDevCommand": "bun run dev:caimi",
+    "beforeBuildCommand": "bun run build:web:caimi"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Fortuna · 猜蜜版",
+        "width": 1500,
+        "height": 920,
+        "minWidth": 960,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}
