@@ -22,6 +22,7 @@
     normalizeResultLimit,
     remainingResultSlots,
   } from './draw-limit';
+  import { downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import {
     DEFAULT_FONT_SCALE,
@@ -1314,12 +1315,12 @@
 
   function exportRecords() {
     if (records.length === 0) return;
-    downloadJson('转盘抽奖记录', { exportedAt: new Date().toISOString(), records });
+    downloadFormattedJson('转盘抽奖记录', { exportedAt: new Date().toISOString(), records });
   }
 
   function exportBatchExperiment() {
     if (!batchResult) return;
-    downloadJson('转盘概率模拟', {
+    downloadFormattedJson('转盘概率模拟', {
       exportedAt: new Date().toISOString(),
       kind: 'batch-simulation',
       prizes,
@@ -1333,16 +1334,6 @@
     batchResult = null;
     batchRunAt = null;
     batchTab = 'stats';
-  }
-
-  function downloadJson(prefix: string, value: unknown) {
-    const payload = JSON.stringify(value, null, 2);
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
   }
 
   function scrollOpenPanel(direction: -1 | 1) {

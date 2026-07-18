@@ -2,6 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
+  import { downloadExcelCsv, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import {
     applyCaimiLineupSwap,
@@ -67,6 +68,7 @@
   let rankingReordering = false;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
+  let resultSourceNames: string[] = [];
   let resultOrderedNames: string[] = [];
   let lineupHistories: SavedLineup[] = [];
   let historyLoading = false;
@@ -209,6 +211,7 @@
         ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
         : generated;
       resultOrderMode = orderMode;
+      resultSourceNames = [...names];
       resultOrderedNames = orderedNames;
       groupCount = result.groupCount;
       const resolvedSignature = desktopRuntime
@@ -233,7 +236,13 @@
         ? crypto.randomUUID()
         : `lineup-${createdAt}-${Math.random().toString(16).slice(2)}`,
       createdAt,
-      input: { sourceNames: names, resolvedNames, orderedNames, groupCount, orderMode },
+      input: {
+        sourceNames: resultSourceNames,
+        resolvedNames,
+        orderedNames,
+        groupCount,
+        orderMode,
+      },
       result: lineupResult,
     };
     try {
@@ -255,6 +264,32 @@
       || historyStatus === 'saved'
     ) return;
     await saveHistory(resultOrderedNames, result, resultOrderMode);
+  }
+
+  function exportLineupJson() {
+    if (!result) return;
+    downloadFormattedJson('排阵结果', {
+      exportedAt: new Date().toISOString(),
+      kind: 'random-lineup',
+      input: {
+        sourceNames: resultSourceNames,
+        orderedNames: resultOrderedNames,
+        groupCount: result.groupCount,
+        orderMode: resultOrderMode,
+      },
+      result,
+    });
+  }
+
+  function exportLineupExcel() {
+    if (!result) return;
+    downloadExcelCsv('排阵结果', [
+      ['档位', ...result.groupNames.map((group) => `${group}组`)],
+      ...result.tiers.map((tier, tierIndex) => [
+        `t${tierIndex + 1}`,
+        ...tier.map((entry) => entry?.name ?? ''),
+      ]),
+    ]);
   }
 
   async function loadRankedUsers() {
@@ -383,6 +418,9 @@
       sourceNames: unknown[];
     }>;
     resultOrderMode = input.orderMode === 'input' ? 'input' : 'rank';
+    resultSourceNames = Array.isArray(input.sourceNames)
+      ? input.sourceNames.filter((name): name is string => typeof name === 'string')
+      : [];
     const savedNames = Array.isArray(input.orderedNames) ? input.orderedNames : input.sourceNames;
     resultOrderedNames = Array.isArray(savedNames)
       ? savedNames.filter((name): name is string => typeof name === 'string')
@@ -990,18 +1028,24 @@
       <div class="lineup-result">
         <div class="result-heading">
           <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
-          {#if desktopRuntime && result}
-            <div class="history-save-control">
-              <button
-                type="button"
-                class="history-save-button"
-                disabled={resultOutdated || historyStatus === 'saving' || historyStatus === 'saved'}
-                on:click={saveCurrentHistory}
-              >{historyStatus === 'saving' ? '保存中' : historyStatus === 'saved' ? '已保存' : historyStatus === 'error' ? '重试保存' : '保存到历史'}</button>
-              {#if historyStatus === 'idle' || historyStatus === 'error'}
-                <span class:error={historyStatus === 'error'} class="history-status" role="status">
-                  {historyStatus === 'idle' ? '尚未保存' : '保存失败'}
-                </span>
+          {#if result}
+            <div class="result-output-actions">
+              <button type="button" class="result-export-button" on:click={exportLineupExcel}>Excel</button>
+              <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
+              {#if desktopRuntime}
+                <div class="history-save-control">
+                  <button
+                    type="button"
+                    class="history-save-button"
+                    disabled={resultOutdated || historyStatus === 'saving' || historyStatus === 'saved'}
+                    on:click={saveCurrentHistory}
+                  >{historyStatus === 'saving' ? '保存中' : historyStatus === 'saved' ? '已保存' : historyStatus === 'error' ? '重试保存' : '保存到历史'}</button>
+                  {#if historyStatus === 'idle' || historyStatus === 'error'}
+                    <span class:error={historyStatus === 'error'} class="history-status" role="status">
+                      {historyStatus === 'idle' ? '尚未保存' : '保存失败'}
+                    </span>
+                  {/if}
+                </div>
               {/if}
             </div>
           {/if}
@@ -1315,7 +1359,10 @@
   .result-heading > div { align-items: center; gap: 11px; }
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid rgba(231, 255, 114, 0.18); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
+  .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
+  .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
+  .result-heading .result-export-button { padding: 8px 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; color: #c6c8bd; }
   .result-heading .history-save-button { padding: 8px 11px; border: 1px solid rgba(231, 255, 114, 0.24); border-radius: 8px; color: var(--accent); }
   .result-heading .history-save-button:disabled { cursor: default; opacity: 0.58; }
 
