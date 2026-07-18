@@ -3,29 +3,13 @@
 
   export let prizes: Prize[];
   export let disabled = false;
+  export let selectedId: string | null = null;
   export let onChange: (next: Prize[]) => void;
-
-  const palette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
+  export let onSelect: (id: string) => void;
+  export let onAdd: () => void;
 
   function updatePrize(id: string, patch: Partial<Prize>) {
     onChange(prizes.map((prize) => (prize.id === id ? { ...prize, ...patch } : prize)));
-  }
-
-  function addPrize() {
-    const id = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `prize-${Date.now()}`;
-
-    onChange([
-      ...prizes,
-      {
-        id,
-        name: `新选项 ${prizes.length + 1}`,
-        weight: 1,
-        color: palette[prizes.length % palette.length],
-        enabled: true,
-      },
-    ]);
   }
 
   function removePrize(id: string) {
@@ -47,7 +31,16 @@
 
 <div class="prize-list">
   {#each prizes as prize, index (prize.id)}
-    <div class:muted={!prize.enabled} class="prize-row">
+    <div
+      class:muted={!prize.enabled}
+      class:selected={selectedId === prize.id}
+      class="prize-row"
+      data-prize-id={prize.id}
+      role="group"
+      aria-label={`候选项 ${index + 1}：${prize.name}`}
+      on:pointerdown={() => onSelect(prize.id)}
+      on:focusin={() => onSelect(prize.id)}
+    >
       <div class="prize-index">{String(index + 1).padStart(2, '0')}</div>
 
       <label class="color-control" title="奖项颜色">
@@ -75,13 +68,12 @@
         <input
           aria-label={`${prize.name}的权重`}
           type="number"
-          min="0.01"
-          max="999"
-          step="0.1"
+          min="1"
+          step="1"
           value={prize.weight}
           {disabled}
           on:change={(event) =>
-            updatePrize(prize.id, { weight: Math.max(0.01, numberValue(event) || 0.01) })}
+            updatePrize(prize.id, { weight: Math.max(1, numberValue(event) || 1) })}
         />
       </label>
 
@@ -112,7 +104,7 @@
 </div>
 
 <div class="prize-actions">
-  <button type="button" class="add-button" {disabled} on:click={addPrize}>
+  <button type="button" class="add-button" {disabled} on:click={onAdd}>
     <span>＋</span>
     添加选项
   </button>
@@ -128,6 +120,7 @@
   }
 
   .prize-row {
+    position: relative;
     display: grid;
     grid-template-columns: 24px 28px minmax(0, 1fr) 60px 28px 24px;
     align-items: center;
@@ -145,8 +138,31 @@
     transform: translateY(-1px);
   }
 
+  .prize-row.selected {
+    z-index: 1;
+    border-color: #899b36;
+    background: #fbffe8;
+    box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.72), 0 7px 18px rgba(87, 99, 34, 0.14);
+    transform: translateX(3px);
+  }
+
+  .prize-row.selected::before {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: -5px;
+    width: 3px;
+    border-radius: 999px;
+    background: #8da139;
+    content: '';
+  }
+
   .prize-row.muted {
     opacity: 0.45;
+  }
+
+  .prize-row.muted.selected {
+    opacity: 0.82;
   }
 
   .prize-index {

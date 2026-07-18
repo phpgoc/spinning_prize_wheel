@@ -78,6 +78,7 @@
   let activePanel: SidebarPanel | null = 'settings';
   let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
+  let selectedPrizeId: string | null = null;
   let commonSelectionInput: HTMLInputElement;
   let commonSelections: CommonSelection[] = [];
   let commonSelectionName = '';
@@ -158,7 +159,7 @@
           retryWeight: number;
         }>;
 
-        if (Array.isArray(parsed.prizes)) prizes = parsed.prizes;
+        if (Array.isArray(parsed.prizes)) prizes = normalizePrizes(parsed.prizes);
         if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
         if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
           animationStyle = parsed.animationStyle!;
@@ -440,6 +441,77 @@
     return Math.max(0, Number(rewardAmount) || 0);
   }
 
+  function normalizePrizes(candidates: Prize[]): Prize[] {
+    return candidates.map((prize) => ({
+      ...prize,
+      weight: Math.max(1, Number(prize.weight) || 1),
+    }));
+  }
+
+  async function selectPrize(id: string | null) {
+    selectedPrizeId = id && prizes.some((prize) => prize.id === id) ? id : null;
+    if (!selectedPrizeId) return;
+    await tick();
+    const row = Array.from(document.querySelectorAll<HTMLElement>('[data-prize-id]'))
+      .find((element) => element.dataset.prizeId === selectedPrizeId);
+    row?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function addPrize() {
+    if (isSpinning) return;
+    const id = createId('prize');
+    updatePrizes([
+      ...prizes,
+      {
+        id,
+        name: `新选项 ${prizes.length + 1}`,
+        weight: 1,
+        color: importPalette[prizes.length % importPalette.length],
+        enabled: true,
+      },
+    ]);
+    void selectPrize(id);
+  }
+
+  function movePrizeSelection(direction: -1 | 1) {
+    if (prizes.length === 0) return;
+    const currentIndex = selectedPrizeId
+      ? prizes.findIndex((prize) => prize.id === selectedPrizeId)
+      : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : prizes.length - 1)
+      : (currentIndex + direction + prizes.length) % prizes.length;
+    void selectPrize(prizes[nextIndex].id);
+  }
+
+  function toggleSelectedPrize() {
+    if (isSpinning || !selectedPrizeId) return;
+    const selected = prizes.find((prize) => prize.id === selectedPrizeId);
+    if (!selected) return;
+    updatePrizes(prizes.map((prize) => (
+      prize.id === selected.id ? { ...prize, enabled: !prize.enabled } : prize
+    )));
+  }
+
+  function adjustSelectedPrizeWeight(delta: -1 | 1) {
+    if (isSpinning || !selectedPrizeId) return;
+    updatePrizes(prizes.map((prize) => (
+      prize.id === selectedPrizeId
+        ? { ...prize, weight: Math.max(1, prize.weight + delta) }
+        : prize
+    )));
+  }
+
+  function deleteSelectedPrize() {
+    if (isSpinning || !selectedPrizeId) return;
+    const currentIndex = prizes.findIndex((prize) => prize.id === selectedPrizeId);
+    if (currentIndex < 0) return;
+    const next = prizes.filter((prize) => prize.id !== selectedPrizeId);
+    const nextSelected = next[Math.min(currentIndex, next.length - 1)]?.id ?? null;
+    updatePrizes(next);
+    void selectPrize(nextSelected);
+  }
+
   function setMode(next: DrawMode) {
     if (isSpinning || mode === next) return;
     mode = next;
@@ -463,7 +535,10 @@
   }
 
   function updatePrizes(next: Prize[]) {
-    prizes = next;
+    prizes = normalizePrizes(next);
+    if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
+      selectedPrizeId = null;
+    }
     eliminatedIds = eliminatedIds.filter((id) => next.some((prize) => prize.id === id));
     if (mode === 'roulette') {
       rouletteFinished = false;
@@ -776,6 +851,7 @@
   function resetSettings() {
     if (isSpinning) return;
     prizes = defaultPrizes.map((prize) => ({ ...prize }));
+    selectedPrizeId = null;
     animationStyle = 'luxury';
     durationSeconds = 4;
     rewardAmount = 0;
@@ -840,15 +916,60 @@
   function handleKeydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement | null;
     const key = event.key.toLowerCase();
+    const modifier = event.ctrlKey || event.metaKey;
+    const editing = target?.matches('input, textarea, select, button, [contenteditable="true"]') ?? false;
 
     if (event.key === 'Escape') {
+      if (selectedPrizeId) {
+        event.preventDefault();
+        selectedPrizeId = null;
+        return;
+      }
       activePanel = null;
       if (importOpen && !importText) importOpen = false;
       commonSelectionSaveOpen = false;
       return;
     }
 
-    const modifier = event.ctrlKey || event.metaKey;
+    if (!modifier && event.altKey && event.shiftKey) {
+      if (key === 'a') {
+        event.preventDefault();
+        addPrize();
+      } else if (key === 's') {
+        event.preventDefault();
+        void openCommonSelectionSaver();
+      } else if (key === 'd') {
+        event.preventDefault();
+        deleteSelectedPrize();
+      }
+      return;
+    }
+
+    if (!modifier && event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+
+    if (modifier && !event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
+      return;
+    }
+
+    if (!modifier && !event.altKey && !event.shiftKey && selectedPrizeId && !editing) {
+      if (event.key === ' ') {
+        event.preventDefault();
+        toggleSelectedPrize();
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addPrize();
+        return;
+      }
+    }
+
     if (!modifier) return;
 
     if (key === 'k' && !event.shiftKey && !event.altKey) {
@@ -863,28 +984,26 @@
       return;
     }
 
-    if (target?.matches('input, textarea, select')) return;
-
-    if (key === 'b' && event.shiftKey) {
+    if (key === 'b' && event.shiftKey && !event.altKey) {
       event.preventDefault();
       activePanel = 'batch';
       runBatch();
-    } else if (key === 'i' && event.shiftKey) {
+    } else if (key === 'i' && event.shiftKey && !event.altKey) {
       event.preventDefault();
       openImporter();
-    } else if (key === 'e' && event.shiftKey) {
+    } else if (key === 'e' && event.shiftKey && !event.altKey) {
       event.preventDefault();
       exportRecords();
-    } else if (key === 'n' && event.shiftKey && mode === 'roulette') {
+    } else if (key === 'n' && event.shiftKey && !event.altKey && mode === 'roulette') {
       event.preventDefault();
       startNewRouletteRound();
-    } else if (event.altKey && event.key === '1') {
+    } else if (event.altKey && !event.shiftKey && event.key === '1') {
       event.preventDefault();
       setMode('selected');
-    } else if (event.altKey && event.key === '2') {
+    } else if (event.altKey && !event.shiftKey && event.key === '2') {
       event.preventDefault();
       setMode('roulette');
-    } else if (event.altKey && event.key === 'Backspace') {
+    } else if (event.altKey && !event.shiftKey && event.key === 'Backspace') {
       event.preventDefault();
       resetSettings();
     }
@@ -1253,7 +1372,14 @@
             </form>
           {/if}
 
-          <PrizeEditor {prizes} disabled={isSpinning} onChange={updatePrizes} />
+          <PrizeEditor
+            {prizes}
+            selectedId={selectedPrizeId}
+            disabled={isSpinning}
+            onChange={updatePrizes}
+            onSelect={(id) => void selectPrize(id)}
+            onAdd={addPrize}
+          />
 
           <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
             <span>⌘</span> 从文本批量导入
@@ -1532,17 +1658,36 @@
 
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
-        <div class="shortcut-list sidebar-shortcut-list">
-          <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
-          <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
-          <div><span>打开文本导入</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>I</kbd></div>
-          <div><span>导出抽奖记录</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>E</kbd></div>
-          <div><span>新建轮盘局</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>N</kbd></div>
-          <div><span>切换选中模式</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>1</kbd></div>
-          <div><span>切换俄罗斯轮盘</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>2</kbd></div>
-          <div><span>恢复默认配置</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>⌫</kbd></div>
-          <div><span>展开 / 收起快捷键</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
-        </div>
+        <section class="shortcut-group">
+          <h3>全局生效</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>选择上一候选行</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
+            <div><span>选择下一候选行</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
+            <div><span>添加候选项</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>A</kbd></div>
+            <div><span>保存当前选择</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>S</kbd></div>
+            <div><span>删除选中候选行</span><kbd>Alt</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>D</kbd></div>
+            <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
+            <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
+            <div><span>打开文本导入</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>I</kbd></div>
+            <div><span>导出抽奖记录</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>E</kbd></div>
+            <div><span>新建轮盘局</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>N</kbd></div>
+            <div><span>切换选中模式</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>1</kbd></div>
+            <div><span>切换俄罗斯轮盘</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>2</kbd></div>
+            <div><span>恢复默认配置</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>⌫</kbd></div>
+            <div><span>展开 / 收起快捷键</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group selected-shortcuts">
+          <h3>选中候选行后</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>取消选中</span><kbd>Esc</kbd></div>
+            <div><span>启用 / 停用</span><kbd>空格</kbd></div>
+            <div><span>权重加 1</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑</kbd></div>
+            <div><span>权重减 1</span><kbd>Ctrl</kbd><b>＋</b><kbd>↓</kbd></div>
+            <div><span>添加候选项</span><kbd>Enter</kbd></div>
+          </div>
+        </section>
       </div>
       {/if}
     </aside>
