@@ -575,6 +575,34 @@
     }, { completed: 0, retries: 0, rewardTotal: 0 });
   }
 
+  function exportDrawHistoriesCsv() {
+    if (drawHistories.length === 0) return;
+    downloadCsv('转盘历史查询', [
+      ['时间', '模式', '候选项数', '有效结果', '重来次数', '累计金额'],
+      ...drawHistories.map((draw) => {
+        const summary = drawHistorySummary(draw);
+        return [
+          new Date(draw.createdAt).toLocaleString('zh-CN', { hour12: false }),
+          draw.mode === 'selected' ? '选中模式' : '俄罗斯轮盘',
+          draw.prizes.length,
+          summary.completed,
+          summary.retries,
+          summary.rewardTotal,
+        ];
+      }),
+    ]);
+  }
+
+  function exportDrawHistoriesJson() {
+    if (drawHistories.length === 0) return;
+    downloadFormattedJson('转盘历史查询', {
+      exportedAt: new Date().toISOString(),
+      kind: 'draw-history-query',
+      variant,
+      histories: drawHistories,
+    });
+  }
+
   function togglePanel(panel: SidebarPanel) {
     activePanel = activePanel === panel ? null : panel;
   }
@@ -2199,6 +2227,8 @@
             </div>
 
             <div class="history-actions sidebar-history-actions">
+              <button type="button" on:click={exportDrawHistoriesCsv}>CSV</button>
+              <button type="button" on:click={exportDrawHistoriesJson}>JSON</button>
               <button type="button" on:click={clearDrawHistories}>清空历史</button>
             </div>
           {/if}

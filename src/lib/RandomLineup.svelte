@@ -405,6 +405,37 @@
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
+  function exportLineupHistoriesCsv() {
+    if (visibleHistories.length === 0) return;
+    downloadCsv('排阵历史查询', [
+      ['时间', '名单项数', '组数', '排阵方式'],
+      ...visibleHistories.map((history) => {
+        const input = history.input as Partial<{
+          sourceNames: unknown[];
+          groupCount: number;
+          orderMode: LineupOrderMode;
+        }>;
+        return [
+          new Date(history.createdAt).toLocaleString('zh-CN', { hour12: false }),
+          Array.isArray(input.sourceNames) ? input.sourceNames.length : 0,
+          Number(input.groupCount) || '',
+          input.orderMode === 'input' ? '输入顺序' : '数据库排名',
+        ];
+      }),
+    ]);
+  }
+
+  function exportLineupHistoriesJson() {
+    if (visibleHistories.length === 0) return;
+    downloadFormattedJson('排阵历史查询', {
+      exportedAt: new Date().toISOString(),
+      kind: 'lineup-history-query',
+      variant,
+      filters: { start: historyStart || null, end: historyEnd || null },
+      histories: visibleHistories,
+    });
+  }
+
   function viewHistory(history: SavedLineup) {
     const historicalResult = history.result as Partial<RandomLineup>;
     if (!Array.isArray(historicalResult.groupNames) || !Array.isArray(historicalResult.tiers)) {
@@ -923,6 +954,10 @@
                     </button>
                   {/each}
                 {/if}
+              </div>
+              <div class="history-export-actions">
+                <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesCsv}>CSV</button>
+                <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesJson}>JSON</button>
               </div>
             </div>
           {/if}
@@ -2248,6 +2283,9 @@
   .lineup-history-list span { color: var(--lineup-dim-on-light); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
   .lineup-history-list strong { overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   .lineup-history-list small { color: #7a842f; font-size: calc(10px * var(--font-scale, 1)); }
+
+  .history-export-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .history-export-actions button { padding: 6px 8px; border: 1px solid rgba(36, 37, 31, 0.12); border-radius: 7px; background: transparent; color: var(--lineup-dim-on-light); cursor: pointer; font-size: calc(10px * var(--font-scale, 1)); }
 
   .history-status {
     margin: 0;
