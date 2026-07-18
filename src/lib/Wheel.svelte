@@ -421,6 +421,78 @@
     display: none;
   }
 
+  .simple .wheel-tilt {
+    inset: 12%;
+    border: 4px solid #eeebe3;
+    background: #eeebe3;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.3),
+      0 0 0 3px #2b2c25,
+      0 13px 28px rgba(5, 6, 4, 0.3);
+  }
+
+  .simple .wheel-rotor {
+    background: #eeebe3;
+    transition-timing-function: cubic-bezier(0.08, 0.66, 0.04, 1);
+  }
+
+  .simple .outer-rim {
+    stroke: rgba(31, 32, 27, 0.75);
+    stroke-width: 2;
+  }
+
+  .simple .segment {
+    stroke: rgba(255, 255, 255, 0.68);
+    stroke-width: 1;
+  }
+
+  .simple .segment-label {
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0;
+  }
+
+  .simple .hub-ring {
+    fill: #f2efe7;
+    stroke: #262720;
+    stroke-width: 1.5;
+  }
+
+  .simple .hub {
+    fill: #f2efe7;
+    stroke: #262720;
+    stroke-width: 1.5;
+  }
+
+  .simple .pointer::before {
+    border-color: #292a23;
+    background: #f2efe7;
+  }
+
+  .simple .pointer div {
+    border-top-color: #292a23;
+  }
+
+  .simple .pointer div::after {
+    border-top-color: #ff7657;
+  }
+
+  .simple .spin-button {
+    border: 1px solid #292a23;
+    background: #f2efe7;
+    color: #24251f;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  .simple .spin-button:hover:not(:disabled),
+  .simple .spin-button:focus-visible {
+    background: #fffdf8;
+  }
+
+  .simple .spin-kicker {
+    color: #d95d43;
+  }
+
   .luxury.spinning .orbit-one {
     animation: orbit-spin 9s linear infinite;
   }

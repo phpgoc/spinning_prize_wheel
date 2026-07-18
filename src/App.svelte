@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import LuxuryWheel from './lib/LuxuryWheel.svelte';
   import PrizeEditor from './lib/PrizeEditor.svelte';
   import Wheel from './lib/Wheel.svelte';
   import {
@@ -8,6 +9,7 @@
     pickWeighted,
     simulateBatch,
   } from './lib/draw';
+  import { parseOptionText } from './lib/parse-options';
   import type {
     AnimationStyle,
     BatchSimulation,
@@ -20,6 +22,7 @@
   } from './lib/types';
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
+  const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
     { id: 'aurora', name: '极光大奖', weight: 1, color: '#ff7557', enabled: true },
     { id: 'starlight', name: '星光礼盒', weight: 1, color: '#e9b949', enabled: true },
@@ -44,6 +47,8 @@
     percent: number;
   }
 
+  type ThreeWheelComponent = typeof import('./lib/ThreeWheel.svelte').default;
+
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
   let animationStyle: AnimationStyle = 'luxury';
@@ -52,6 +57,14 @@
   let retryWeight = 0.65;
   let batchCount = 100;
   let batchTab: 'stats' | 'history' = 'stats';
+  let importOpen = false;
+  let importText = '';
+  let importMode: 'replace' | 'append' = 'replace';
+  let shortcutsOpen = false;
+  let shortcutMod = 'Ctrl';
+  let importTextarea: HTMLTextAreaElement;
+  let ThreeWheelRenderer: ThreeWheelComponent | null = null;
+  let threeWheelLoading = false;
 
   let rotation = 0;
   let isSpinning = false;
@@ -85,10 +98,21 @@
   $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
+  $: parsedImportOptions = parseOptionText(importText);
+  $: if (animationStyle === 'threeD' && !ThreeWheelRenderer && !threeWheelLoading) {
+    loadThreeWheel();
+  }
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ prizes, mode, animationStyle, durationSeconds, retryEnabled, retryWeight }),
+      JSON.stringify({
+        prizes,
+        mode,
+        animationStyle,
+        durationSeconds,
+        retryEnabled,
+        retryWeight,
+      }),
     );
   }
 
@@ -119,6 +143,7 @@
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
+    shortcutMod = /Mac|iPhone|iPad/i.test(navigator.platform) ? '⌘' : 'Ctrl';
     hydrated = true;
   });
 
@@ -130,6 +155,15 @@
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  async function loadThreeWheel() {
+    threeWheelLoading = true;
+    try {
+      ThreeWheelRenderer = (await import('./lib/ThreeWheel.svelte')).default;
+    } finally {
+      threeWheelLoading = false;
+    }
   }
 
   function setMode(next: DrawMode) {
@@ -196,7 +230,7 @@
     result = {
       eyebrow: animationStyle === 'threeD' ? '空间旋转中' : '命运正在选择',
       title: '别眨眼…',
-      detail: `预计 ${durationSeconds.toFixed(1)} 秒后揭晓结果`,
+      detail: `全程 ${durationSeconds.toFixed(1)} 秒，末段会平滑减速后揭晓`,
       tone: 'idle',
     };
 
@@ -421,6 +455,52 @@
     };
   }
 
+  async function openImporter() {
+    importOpen = true;
+    await tick();
+    importTextarea?.focus();
+  }
+
+  function applyImportedOptions() {
+    if (parsedImportOptions.length === 0) return;
+    if (importMode === 'replace' && parsedImportOptions.length < 2) {
+      result = {
+        eyebrow: '无法替换奖池',
+        title: '至少需要两个选项',
+        detail: '继续粘贴，或切换为“追加到现有奖池”。',
+        tone: 'danger',
+      };
+      return;
+    }
+
+    const existingNames = new Set(
+      (importMode === 'append' ? prizes : []).map((prize) => prize.name.toLocaleLowerCase('zh-CN')),
+    );
+    const base = importMode === 'append' ? [...prizes] : [];
+    const additions = parsedImportOptions
+      .filter((name) => !existingNames.has(name.toLocaleLowerCase('zh-CN')))
+      .slice(0, Math.max(0, 100 - base.length))
+      .map((name, index): Prize => ({
+        id: createId('import'),
+        name,
+        weight: 1,
+        color: importPalette[(base.length + index) % importPalette.length],
+        enabled: true,
+      }));
+
+    const next = [...base, ...additions];
+    if (next.length < 2) return;
+    updatePrizes(next);
+    importText = '';
+    importOpen = false;
+    result = {
+      eyebrow: '文本解析完成',
+      title: `${additions.length} 个选项已导入`,
+      detail: importMode === 'replace' ? '原奖池已替换，所有新选项默认等权。' : '新选项已追加，重复名称自动跳过。',
+      tone: 'success',
+    };
+  }
+
   function exportRecords() {
     if (records.length === 0) return;
     const payload = JSON.stringify({ exportedAt: new Date().toISOString(), records }, null, 2);
@@ -434,9 +514,50 @@
 
   function handleKeydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement | null;
-    if (event.code !== 'Space' || target?.matches('input, button, textarea, select')) return;
-    event.preventDefault();
-    spin();
+    const key = event.key.toLowerCase();
+
+    if (event.key === 'Escape') {
+      shortcutsOpen = false;
+      if (importOpen && !importText) importOpen = false;
+      return;
+    }
+
+    const modifier = event.ctrlKey || event.metaKey;
+    if (!modifier) return;
+
+    if (key === 'k' && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      shortcutsOpen = !shortcutsOpen;
+      return;
+    }
+
+    if (target?.matches('input, textarea, select')) return;
+
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      spin();
+    } else if (key === 'b' && event.shiftKey) {
+      event.preventDefault();
+      runBatch();
+    } else if (key === 'i' && event.shiftKey) {
+      event.preventDefault();
+      openImporter();
+    } else if (key === 'e' && event.shiftKey) {
+      event.preventDefault();
+      exportRecords();
+    } else if (key === 'n' && event.shiftKey && mode === 'roulette') {
+      event.preventDefault();
+      startNewRouletteRound();
+    } else if (event.altKey && event.key === '1') {
+      event.preventDefault();
+      setMode('selected');
+    } else if (event.altKey && event.key === '2') {
+      event.preventDefault();
+      setMode('roulette');
+    } else if (event.altKey && event.key === 'Backspace') {
+      event.preventDefault();
+      resetSettings();
+    }
   }
 </script>
 
@@ -479,6 +600,13 @@
 
     <div class="topbar-meta">
       <span class="local-badge"><i></i> 本地运行</span>
+      <button
+        type="button"
+        class="shortcut-trigger"
+        title="查看键盘快捷键"
+        aria-label="查看键盘快捷键"
+        on:click={() => (shortcutsOpen = true)}
+      ><kbd>{shortcutMod}</kbd><kbd>K</kbd></button>
       <button type="button" class="icon-button" title="恢复默认设置" on:click={resetSettings}>↺</button>
     </div>
   </header>
@@ -495,6 +623,38 @@
       <p class="section-note">编辑名称、颜色和权重，修改会自动保存在本机。</p>
 
       <PrizeEditor {prizes} disabled={isSpinning} onChange={updatePrizes} />
+
+      <button type="button" class="import-trigger" disabled={isSpinning} on:click={openImporter}>
+        <span>⌘</span> 从文本批量导入
+        <small>空格 / 逗号 / Excel</small>
+      </button>
+
+      {#if importOpen}
+        <section class="import-box" aria-label="文本批量导入">
+          <div class="import-heading">
+            <strong>粘贴选项文本</strong>
+            <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
+          </div>
+          <textarea
+            bind:this={importTextarea}
+            bind:value={importText}
+            rows="4"
+            placeholder={'一等奖 二等奖 三等奖\n或从 Excel 复制整列后直接粘贴'}
+          ></textarea>
+          <div class="import-modes">
+            <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换奖池</button>
+            <button type="button" class:active={importMode === 'append'} on:click={() => (importMode = 'append')}>追加选项</button>
+          </div>
+          <div class="import-footer">
+            <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
+            <button
+              type="button"
+              disabled={parsedImportOptions.length === 0 || (importMode === 'replace' && parsedImportOptions.length < 2)}
+              on:click={applyImportedOptions}
+            >确认导入</button>
+          </div>
+        </section>
+      {/if}
 
       <div class="section-divider"></div>
 
@@ -564,7 +724,7 @@
           >
             <span class="motion-icon cube-icon">◇</span>
             <strong>3D</strong>
-            <small>空间纵深</small>
+            <small>Three.js 实体</small>
           </button>
         </div>
       </section>
@@ -587,6 +747,7 @@
         />
         <div class="range-labels"><span>迅速</span><span>仪式感</span><span>史诗</span></div>
       </section>
+
     </aside>
 
     <section class="stage-panel">
@@ -617,17 +778,46 @@
       {/if}
 
       <div class="wheel-wrap">
-        <Wheel
-          options={wheelOptions}
-          {rotation}
-          duration={durationSeconds * 1000}
-          {animationStyle}
-          {eliminatedIds}
-          spinning={isSpinning}
-          disabled={spinDisabled}
-          centerLabel={rouletteFinished ? '结束' : '开始'}
-          onSpin={spin}
-        />
+        {#if animationStyle === 'threeD'}
+          {#if ThreeWheelRenderer}
+            <svelte:component
+              this={ThreeWheelRenderer}
+              options={wheelOptions}
+              {rotation}
+              duration={durationSeconds * 1000}
+              {eliminatedIds}
+              spinning={isSpinning}
+              disabled={spinDisabled}
+              centerLabel={rouletteFinished ? '结束' : '开始'}
+              onSpin={spin}
+            />
+          {:else}
+            <div class="three-loading"><i></i><span>正在载入 Three.js 立体轮盘…</span></div>
+          {/if}
+        {:else if animationStyle === 'luxury'}
+          <LuxuryWheel
+            options={wheelOptions}
+            {rotation}
+            duration={durationSeconds * 1000}
+            {eliminatedIds}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开启'}
+            onSpin={spin}
+          />
+        {:else}
+          <Wheel
+            options={wheelOptions}
+            {rotation}
+            duration={durationSeconds * 1000}
+            {animationStyle}
+            {eliminatedIds}
+            spinning={isSpinning}
+            disabled={spinDisabled}
+            centerLabel={rouletteFinished ? '结束' : '开始'}
+            onSpin={spin}
+          />
+        {/if}
       </div>
 
       <div class:success={result.tone === 'success'} class:retry={result.tone === 'retry'} class:danger={result.tone === 'danger'} class="result-card">
@@ -645,7 +835,7 @@
       </div>
 
       <div class="stage-footer">
-        <span><kbd>SPACE</kbd> 快速开始</span>
+        <span><kbd>{shortcutMod}</kbd> + <kbd>ENTER</kbd> 快速开始</span>
         <span>{records.length} 次尝试 · {validCompleted} 个有效结果 · {retryTotal} 次重来</span>
       </div>
     </section>
@@ -753,6 +943,38 @@
       {/if}
     </aside>
   </main>
+
+  {#if shortcutsOpen}
+    <div class="shortcut-modal">
+      <button
+        type="button"
+        class="shortcut-backdrop"
+        aria-label="关闭快捷键列表"
+        on:click={() => (shortcutsOpen = false)}
+      ></button>
+      <div class="shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-title">
+        <div class="shortcut-heading">
+          <div>
+            <span class="eyebrow">KEYBOARD CONTROL</span>
+            <h2 id="shortcut-title">组合键控制台</h2>
+          </div>
+          <button type="button" aria-label="关闭快捷键列表" on:click={() => (shortcutsOpen = false)}>×</button>
+        </div>
+        <p>所有关键操作都要求组合键，避免现场抽奖时误触。</p>
+        <div class="shortcut-list">
+          <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
+          <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
+          <div><span>打开文本导入</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>I</kbd></div>
+          <div><span>导出抽奖记录</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>E</kbd></div>
+          <div><span>新建轮盘局</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>N</kbd></div>
+          <div><span>切换选中模式</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>1</kbd></div>
+          <div><span>切换俄罗斯轮盘</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>2</kbd></div>
+          <div><span>恢复默认配置</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>⌫</kbd></div>
+          <div><span>打开 / 关闭本面板</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <footer>
     <span>FORTUNA / 纯本地随机实验</span>

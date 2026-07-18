@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bun run build:web",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,7 +28,14 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
+    }
   }
 }
-
