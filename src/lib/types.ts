@@ -27,6 +27,7 @@ export interface DrawRecord {
   label: string;
   outcome: DrawOutcome;
   detail: string;
+  rewardAmount: number;
   mode: DrawMode;
   createdAt: number;
   source: 'single' | 'batch';

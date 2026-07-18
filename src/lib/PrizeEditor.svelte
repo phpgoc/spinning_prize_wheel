@@ -20,7 +20,7 @@
       ...prizes,
       {
         id,
-        name: `新奖项 ${prizes.length + 1}`,
+        name: `新选项 ${prizes.length + 1}`,
         weight: 1,
         color: palette[prizes.length % palette.length],
         enabled: true,
@@ -110,7 +110,7 @@
 
 <button type="button" class="add-button" {disabled} on:click={addPrize}>
   <span>＋</span>
-  添加奖项
+  添加选项
 </button>
 
 <style>

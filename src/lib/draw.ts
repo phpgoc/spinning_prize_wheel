@@ -52,7 +52,7 @@ export function pickWeighted<T extends { weight: number }>(
   random: () => number = secureRandom,
 ): T {
   if (options.length === 0) {
-    throw new Error('至少需要一个可抽取的奖项');
+    throw new Error('至少需要一个可抽取的候选项');
   }
 
   const totalWeight = options.reduce(
@@ -87,7 +87,7 @@ export function simulateSelectedBatch(
   const target = Math.max(1, Math.floor(requested));
   const options = buildWheelOptions(prizes, retryEnabled, retryWeight);
   if (!options.some((option) => !option.isRetry)) {
-    throw new Error('至少需要一个启用的奖项，重来不能是唯一选项');
+    throw new Error('至少需要一个启用的候选项，重来不能是唯一选项');
   }
   const prizeCounts = emptyCounts(prizes);
   const events: SimulationEvent[] = [];
@@ -144,7 +144,7 @@ export function simulateRouletteBatch(
 ): BatchSimulation {
   const enabledPrizes = prizes.filter((prize) => prize.enabled);
   if (enabledPrizes.length < 2) {
-    throw new Error('俄罗斯轮盘至少需要两个启用的奖项');
+    throw new Error('俄罗斯轮盘至少需要两个启用的候选项');
   }
 
   const target = Math.max(1, Math.floor(requested));

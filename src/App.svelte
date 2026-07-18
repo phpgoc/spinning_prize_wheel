@@ -23,14 +23,15 @@
   } from './lib/types';
 
   const STORAGE_KEY = 'fortuna-wheel-settings-v1';
+  const HISTORY_STORAGE_KEY = 'fortuna-wheel-history-v1';
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
-    { id: 'aurora', name: '极光大奖', weight: 1, color: '#ff7557', enabled: true },
-    { id: 'starlight', name: '星光礼盒', weight: 1, color: '#e9b949', enabled: true },
-    { id: 'forest', name: '森林假日', weight: 1, color: '#8ac86d', enabled: true },
-    { id: 'ocean', name: '海岛之旅', weight: 1, color: '#4ea59b', enabled: true },
-    { id: 'mystery', name: '神秘福袋', weight: 1, color: '#6574c4', enabled: true },
-    { id: 'encore', name: '幸运加码', weight: 1, color: '#b76a9d', enabled: true },
+    { id: 'candidate-a', name: '林小满', weight: 1, color: '#ff7557', enabled: true },
+    { id: 'candidate-b', name: '陈知行', weight: 1, color: '#e9b949', enabled: true },
+    { id: 'candidate-c', name: '周予安', weight: 1, color: '#8ac86d', enabled: true },
+    { id: 'candidate-d', name: '苏念', weight: 1, color: '#4ea59b', enabled: true },
+    { id: 'candidate-e', name: '许星河', weight: 1, color: '#6574c4', enabled: true },
+    { id: 'candidate-f', name: '唐可', weight: 1, color: '#b76a9d', enabled: true },
   ];
 
   interface ResultCard {
@@ -48,10 +49,17 @@
     percent: number;
   }
 
+  interface CurrentStat extends BatchRow {
+    rewardTotal: number;
+  }
+
+  type SidebarPanel = 'settings' | 'batch' | 'history' | 'shortcuts';
+
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   let mode: DrawMode = 'selected';
   let animationStyle: AnimationStyle = 'luxury';
   let durationSeconds = 4;
+  let rewardAmount = 0;
   let retryEnabled = true;
   let retryWeight = 0.65;
   let batchCount = 100;
@@ -59,7 +67,7 @@
   let importOpen = false;
   let importText = '';
   let importMode: 'replace' | 'append' = 'replace';
-  let shortcutsOpen = false;
+  let activePanel: SidebarPanel | null = 'settings';
   let shortcutMod = 'Ctrl';
   let importTextarea: HTMLTextAreaElement;
 
@@ -93,6 +101,8 @@
     (record) => record.outcome === 'selected' || record.outcome === 'winner',
   ).length;
   $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
+  $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
+  $: currentStats = createCurrentStats(prizes, records, validCompleted);
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = records.filter((record) => record.source === 'batch').slice(0, 160);
   $: parsedImportOptions = parseOptionText(importText);
@@ -104,10 +114,12 @@
         mode,
         animationStyle,
         durationSeconds,
+        rewardAmount,
         retryEnabled,
         retryWeight,
       }),
     );
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(records.slice(0, 5000)));
   }
 
   onMount(() => {
@@ -119,6 +131,7 @@
           mode: DrawMode;
           animationStyle: AnimationStyle;
           durationSeconds: number;
+          rewardAmount: number;
           retryEnabled: boolean;
           retryWeight: number;
         }>;
@@ -131,8 +144,22 @@
         if (typeof parsed.durationSeconds === 'number') {
           durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
         }
+        if (typeof parsed.rewardAmount === 'number') {
+          rewardAmount = Math.max(0, parsed.rewardAmount);
+        }
         if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
         if (typeof parsed.retryWeight === 'number') retryWeight = parsed.retryWeight;
+      }
+
+      const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (savedHistory) {
+        const parsedHistory = JSON.parse(savedHistory) as DrawRecord[];
+        if (Array.isArray(parsedHistory)) {
+          records = parsedHistory.map((record) => ({
+            ...record,
+            rewardAmount: Math.max(0, Number(record.rewardAmount) || 0),
+          }));
+        }
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -149,6 +176,14 @@
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function togglePanel(panel: SidebarPanel) {
+    activePanel = activePanel === panel ? null : panel;
+  }
+
+  function normalizedRewardAmount(): number {
+    return Math.max(0, Number(rewardAmount) || 0);
   }
 
   function setMode(next: DrawMode) {
@@ -195,8 +230,8 @@
     if (realOptions.length === 0) {
       result = {
         eyebrow: '无法开始',
-        title: '请至少启用一个奖项',
-        detail: mode === 'roulette' ? '俄罗斯轮盘需要至少两个启用的奖项。' : '重来不能是唯一选项。',
+        title: '请至少启用一个候选项',
+        detail: mode === 'roulette' ? '俄罗斯轮盘需要至少两个启用的候选项。' : '重来不能是唯一选项。',
         tone: 'danger',
       };
       return;
@@ -260,7 +295,9 @@
       result = {
         eyebrow: `第 ${singleCompleted} 次有效结果`,
         title: picked.label,
-        detail: retryTotal > 0 ? `好运落定 · 当前累计重来 ${retryTotal} 次` : '好运落定，恭喜获得本次结果。',
+        detail: normalizedRewardAmount() > 0
+          ? `本次奖励金额 ${formatAmount(normalizedRewardAmount())}`
+          : retryTotal > 0 ? `好运落定 · 当前累计重来 ${retryTotal} 次` : '好运落定，恭喜获得本次结果。',
         tone: 'success',
       };
       return;
@@ -287,7 +324,9 @@
       result = {
         eyebrow: `第 ${rouletteRound} 局 · 最终赢家`,
         title: winner.name,
-        detail: `${hit.name} 最后出局，轮盘上只剩下赢家。`,
+        detail: normalizedRewardAmount() > 0
+          ? `${hit.name} 最后出局 · 奖励金额 ${formatAmount(normalizedRewardAmount())}`
+          : `${hit.name} 最后出局，轮盘上只剩下赢家。`,
         tone: 'success',
       };
     } else {
@@ -313,6 +352,9 @@
       id: createId('record'),
       sequence: records.length + 1,
       ...event,
+      rewardAmount: event.outcome === 'selected' || event.outcome === 'winner'
+        ? normalizedRewardAmount()
+        : 0,
       mode,
       createdAt: Date.now(),
       source: 'single',
@@ -356,6 +398,9 @@
         id: createId('batch'),
         sequence: records.length + simulation.events.length - index,
         ...event,
+        rewardAmount: event.outcome === 'selected' || event.outcome === 'winner'
+          ? normalizedRewardAmount()
+          : 0,
         mode,
         createdAt: startedAt - index,
         source: 'batch',
@@ -364,8 +409,8 @@
     } catch (error) {
       result = {
         eyebrow: '批量任务未开始',
-        title: '奖池配置不足',
-        detail: error instanceof Error ? error.message : '请检查奖项设置后重试。',
+        title: '候选名单配置不足',
+        detail: error instanceof Error ? error.message : '请检查候选项设置后重试。',
         tone: 'danger',
       };
     }
@@ -399,6 +444,36 @@
     return rows;
   }
 
+  function createCurrentStats(
+    candidates: Prize[],
+    drawRecords: DrawRecord[],
+    completedCount: number,
+  ): CurrentStat[] {
+    const counts = new Map<string, { count: number; rewardTotal: number }>();
+    for (const record of drawRecords) {
+      if (record.outcome !== 'selected' && record.outcome !== 'winner') continue;
+      const current = counts.get(record.optionId) ?? { count: 0, rewardTotal: 0 };
+      current.count += 1;
+      current.rewardTotal += Math.max(0, Number(record.rewardAmount) || 0);
+      counts.set(record.optionId, current);
+    }
+
+    return candidates
+      .map((prize): CurrentStat => {
+        const stat = counts.get(prize.id) ?? { count: 0, rewardTotal: 0 };
+        return {
+          id: prize.id,
+          name: prize.name,
+          color: prize.color,
+          count: stat.count,
+          rewardTotal: stat.rewardTotal,
+          percent: completedCount > 0 ? (stat.count / completedCount) * 100 : 0,
+        };
+      })
+      .filter((stat) => stat.count > 0 || candidates.find((prize) => prize.id === stat.id)?.enabled)
+      .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-CN'));
+  }
+
   function outcomeLabel(outcome: DrawOutcome): string {
     return {
       selected: '命中',
@@ -417,6 +492,10 @@
     }).format(timestamp);
   }
 
+  function formatAmount(amount: number): string {
+    return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(amount);
+  }
+
   function clearHistory() {
     records = [];
     batchResult = null;
@@ -428,6 +507,7 @@
     prizes = defaultPrizes.map((prize) => ({ ...prize }));
     animationStyle = 'luxury';
     durationSeconds = 4;
+    rewardAmount = 0;
     retryEnabled = true;
     retryWeight = 0.65;
     eliminatedIds = [];
@@ -435,12 +515,13 @@
     result = {
       eyebrow: '设置已还原',
       title: '回到默认幸运池',
-      detail: '奖项、动画和重来权重已经恢复。',
+      detail: '候选项、奖励金额、动画和重来权重已经恢复。',
       tone: 'idle',
     };
   }
 
   async function openImporter() {
+    activePanel = 'settings';
     importOpen = true;
     await tick();
     importTextarea?.focus();
@@ -502,7 +583,7 @@
     const key = event.key.toLowerCase();
 
     if (event.key === 'Escape') {
-      shortcutsOpen = false;
+      activePanel = null;
       if (importOpen && !importText) importOpen = false;
       return;
     }
@@ -512,17 +593,21 @@
 
     if (key === 'k' && !event.shiftKey && !event.altKey) {
       event.preventDefault();
-      shortcutsOpen = !shortcutsOpen;
+      togglePanel('shortcuts');
+      return;
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      spin();
       return;
     }
 
     if (target?.matches('input, textarea, select')) return;
 
-    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+    if (key === 'b' && event.shiftKey) {
       event.preventDefault();
-      spin();
-    } else if (key === 'b' && event.shiftKey) {
-      event.preventDefault();
+      activePanel = 'batch';
       runBatch();
     } else if (key === 'i' && event.shiftKey) {
       event.preventDefault();
@@ -590,22 +675,59 @@
         class="shortcut-trigger"
         title="查看键盘快捷键"
         aria-label="查看键盘快捷键"
-        on:click={() => (shortcutsOpen = true)}
+        on:click={() => togglePanel('shortcuts')}
       ><kbd>{shortcutMod}</kbd><kbd>K</kbd></button>
       <button type="button" class="icon-button" title="恢复默认设置" on:click={resetSettings}>↺</button>
     </div>
   </header>
 
-  <main class="workspace" id="top">
-    <aside class="panel config-panel">
+  <main
+    class:settings-open={activePanel === 'settings'}
+    class:batch-open={activePanel === 'batch'}
+    class:history-open={activePanel === 'history'}
+    class:shortcuts-open={activePanel === 'shortcuts'}
+    class="workspace"
+    id="top"
+  >
+    <aside class:open={activePanel === 'settings'} class="accordion-item config-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'settings'}
+        on:click={() => togglePanel('settings')}
+      >
+        <span class="accordion-icon">◎</span>
+        <span><strong>设置</strong><small>名单、金额、模式与动画</small></span>
+        <i>{activePanel === 'settings' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'settings'}
+      <div class="accordion-content settings-content">
       <div class="panel-heading">
         <div>
-          <span class="eyebrow">PRIZE POOL</span>
-          <h2>奖池配置</h2>
+          <span class="eyebrow">CANDIDATE LIST</span>
+          <h2>候选项设置</h2>
         </div>
         <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
       </div>
-      <p class="section-note">编辑名称、颜色和权重，修改会自动保存在本机。</p>
+      <p class="section-note">通常用于人员抽奖，也可以填写任何需要随机选择的内容。</p>
+
+      <label class="reward-setting">
+        <span>
+          <strong>奖励金额</strong>
+          <small>每次有效命中写入统计，允许为 0</small>
+        </span>
+        <span class="reward-input">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            bind:value={rewardAmount}
+            disabled={isSpinning}
+            on:change={() => (rewardAmount = normalizedRewardAmount())}
+          />
+        </span>
+      </label>
 
       <PrizeEditor {prizes} disabled={isSpinning} onChange={updatePrizes} />
 
@@ -624,7 +746,7 @@
             bind:this={importTextarea}
             bind:value={importText}
             rows="4"
-            placeholder={'一等奖 二等奖 三等奖\n或从 Excel 复制整列后直接粘贴'}
+            placeholder={'张三 李四 王五\n或从 Excel 复制整列后直接粘贴'}
           ></textarea>
           <div class="import-modes">
             <button type="button" class:active={importMode === 'replace'} on:click={() => (importMode = 'replace')}>替换奖池</button>
@@ -732,14 +854,15 @@
         />
         <div class="range-labels"><span>迅速</span><span>仪式感</span><span>史诗</span></div>
       </section>
-
+      </div>
+      {/if}
     </aside>
 
     <section class="stage-panel">
       <div class="stage-heading">
         <div>
           <span class="eyebrow">LIVE DRAW</span>
-          <h1>{mode === 'selected' ? '今天，好运会停在哪里？' : '谁能留到最后？'}</h1>
+          <h1>{mode === 'selected' ? '谁会成为本轮幸运得主？' : '谁能留到最后？'}</h1>
         </div>
         <div class="status-pill" class:busy={isSpinning}>
           <i></i>{isSpinning ? '旋转中' : '等待开始'}
@@ -818,9 +941,56 @@
         <span><kbd>{shortcutMod}</kbd> + <kbd>ENTER</kbd> 快速开始</span>
         <span>{records.length} 次尝试 · {validCompleted} 个有效结果 · {retryTotal} 次重来</span>
       </div>
+
+      <section class="current-statistics">
+        <div class="current-stats-heading">
+          <div>
+            <span class="eyebrow">CURRENT DRAW LEDGER</span>
+            <h2>当前抽奖统计</h2>
+            <p>单次抽取和批量实验产生的有效结果都会汇总在这里。</p>
+          </div>
+          <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空当前统计</button>
+        </div>
+
+        <div class="current-stats-summary">
+          <div><span>有效命中</span><strong>{validCompleted}</strong></div>
+          <div><span>重来次数</span><strong>{retryTotal}</strong></div>
+          <div><span>累计奖励金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
+        </div>
+
+        <div class="current-stats-list">
+          {#each currentStats as stat, index (stat.id)}
+            <article>
+              <span class="current-rank">{String(index + 1).padStart(2, '0')}</span>
+              <i style:background={stat.color}></i>
+              <div class="current-stat-main">
+                <div><strong>{stat.name}</strong><span>{stat.percent.toFixed(1)}%</span></div>
+                <div class="current-stat-bar"><span style={`width: ${Math.max(stat.count > 0 ? 3 : 0, stat.percent)}%; background: ${stat.color}`}></span></div>
+              </div>
+              <div class="current-stat-count"><strong>{stat.count}</strong><span>次命中</span></div>
+              <div class="current-stat-amount"><strong>{formatAmount(stat.rewardTotal)}</strong><span>累计金额</span></div>
+            </article>
+          {:else}
+            <div class="current-stats-empty">完成一次抽取后，这里会显示每个候选项的命中次数。</div>
+          {/each}
+        </div>
+      </section>
     </section>
 
-    <aside class="panel batch-panel">
+    <aside class:open={activePanel === 'batch'} class="accordion-item batch-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'batch'}
+        on:click={() => togglePanel('batch')}
+      >
+        <span class="accordion-icon">⌁</span>
+        <span><strong>批量实验室</strong><small>模拟多次抽取并写入统计</small></span>
+        <i>{activePanel === 'batch' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'batch'}
+      <div class="accordion-content batch-content">
       <div class="panel-heading">
         <div>
           <span class="eyebrow">BATCH LAB</span>
@@ -921,27 +1091,70 @@
           <p>选择次数并运行，统计分布和每一次结果会同时保留。</p>
         </div>
       {/if}
+      </div>
+      {/if}
     </aside>
-  </main>
 
-  {#if shortcutsOpen}
-    <div class="shortcut-modal">
+    <aside class:open={activePanel === 'history'} class="accordion-item history-panel">
       <button
         type="button"
-        class="shortcut-backdrop"
-        aria-label="关闭快捷键列表"
-        on:click={() => (shortcutsOpen = false)}
-      ></button>
-      <div class="shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-title">
-        <div class="shortcut-heading">
-          <div>
-            <span class="eyebrow">KEYBOARD CONTROL</span>
-            <h2 id="shortcut-title">组合键控制台</h2>
-          </div>
-          <button type="button" aria-label="关闭快捷键列表" on:click={() => (shortcutsOpen = false)}>×</button>
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'history'}
+        on:click={() => togglePanel('history')}
+      >
+        <span class="accordion-icon">◷</span>
+        <span><strong>历史</strong><small>{records.length} 条尝试记录</small></span>
+        <i>{activePanel === 'history' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'history'}
+      <div class="accordion-content history-content">
+        <div class="history-overview">
+          <div><span>有效命中</span><strong>{validCompleted}</strong></div>
+          <div><span>累计金额</span><strong>{formatAmount(totalRewardAmount)}</strong></div>
         </div>
-        <p>所有关键操作都要求组合键，避免现场抽奖时误触。</p>
-        <div class="shortcut-list">
+
+        <div class="history-list sidebar-history-list">
+          {#each records as record (record.id)}
+            <article>
+              <div class:retry={record.outcome === 'retry'} class:winner={record.outcome === 'winner'} class:eliminated={record.outcome === 'eliminated'} class="outcome-icon">
+                {record.outcome === 'retry' ? '↻' : record.outcome === 'winner' ? '♛' : record.outcome === 'eliminated' ? '×' : '✓'}
+              </div>
+              <div>
+                <strong>{record.label}</strong>
+                <span>{record.detail}</span>
+              </div>
+              <small>{record.rewardAmount > 0 ? formatAmount(record.rewardAmount) : outcomeLabel(record.outcome)}</small>
+            </article>
+          {:else}
+            <div class="sidebar-empty-state"><i>◷</i><strong>还没有历史记录</strong><span>完成抽取后会自动保存在本机。</span></div>
+          {/each}
+        </div>
+
+        <div class="history-actions sidebar-history-actions">
+          <button type="button" disabled={records.length === 0} on:click={exportRecords}>导出 JSON</button>
+          <button type="button" disabled={records.length === 0} on:click={clearHistory}>清空记录</button>
+        </div>
+      </div>
+      {/if}
+    </aside>
+
+    <aside class:open={activePanel === 'shortcuts'} class="accordion-item shortcuts-panel">
+      <button
+        type="button"
+        class="accordion-toggle"
+        aria-expanded={activePanel === 'shortcuts'}
+        on:click={() => togglePanel('shortcuts')}
+      >
+        <span class="accordion-icon">⌘</span>
+        <span><strong>快捷键</strong><small>组合键操作，避免误触</small></span>
+        <i>{activePanel === 'shortcuts' ? '−' : '+'}</i>
+      </button>
+
+      {#if activePanel === 'shortcuts'}
+      <div class="accordion-content shortcuts-content">
+        <p class="section-note">所有关键操作都要求组合键，适合现场抽奖快速控制。</p>
+        <div class="shortcut-list sidebar-shortcut-list">
           <div><span>开始单次旋转</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Enter</kbd></div>
           <div><span>运行批量任务</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>B</kbd></div>
           <div><span>打开文本导入</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Shift</kbd><b>＋</b><kbd>I</kbd></div>
@@ -950,11 +1163,12 @@
           <div><span>切换选中模式</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>1</kbd></div>
           <div><span>切换俄罗斯轮盘</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>2</kbd></div>
           <div><span>恢复默认配置</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>Alt</kbd><b>＋</b><kbd>⌫</kbd></div>
-          <div><span>打开 / 关闭本面板</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
+          <div><span>展开 / 收起快捷键</span><kbd>{shortcutMod}</kbd><b>＋</b><kbd>K</kbd></div>
         </div>
       </div>
-    </div>
-  {/if}
+      {/if}
+    </aside>
+  </main>
 
   <footer>
     <span>FORTUNA / 纯本地随机实验</span>
