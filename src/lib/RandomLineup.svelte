@@ -3,6 +3,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
   import { downloadCsv, downloadFormattedJson } from './file-export';
+  import { parseLineupFile, type LineupFileFormat } from './lineup-file-import';
   import { parseOptionText } from './parse-options';
   import {
     applyCaimiLineupSwap,
@@ -79,6 +80,8 @@
   let insertName = '';
   let insertError = '';
   let insertInput: HTMLInputElement | null = null;
+  let lineupFileInput: HTMLInputElement | null = null;
+  let fileImportError = '';
 
   $: names = parseOptionText(sourceText);
   $: namesSignature = names.join('\u0000');
@@ -774,6 +777,34 @@
     historyStatus = 'idle';
   }
 
+  function openLineupFileImporter() {
+    fileImportError = '';
+    lineupFileInput?.click();
+  }
+
+  async function importLineupFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLocaleLowerCase('zh-CN');
+    if (extension !== 'csv' && extension !== 'json') {
+      fileImportError = '只支持 CSV 或 JSON 文件';
+      return;
+    }
+
+    try {
+      const importedNames = parseLineupFile(await file.text(), extension as LineupFileFormat);
+      sourceText = importedNames.join('\n');
+      historyStatus = 'idle';
+      error = '';
+      fileImportError = '';
+    } catch (reason) {
+      fileImportError = messageFrom(reason, '无法导入名单');
+    }
+  }
+
   function messageFrom(reason: unknown, fallback: string): string {
     if (reason instanceof Error) return reason.message;
     return typeof reason === 'string' && reason ? reason : fallback;
@@ -1106,7 +1137,9 @@
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false"></textarea></label>
-      <div class="sample-actions"><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
+      <input bind:this={lineupFileInput} class="lineup-file-input" type="file" accept=".csv,.json,text/csv,application/json" on:change={importLineupFile} />
+      <div class="sample-actions"><button type="button" on:click={openLineupFileImporter}>导入 CSV/JSON</button><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
+      {#if fileImportError}<div class="file-import-error" role="alert">{fileImportError}</div>{/if}
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
       <div class="rule-note"><span>分档方式</span><p>{desktopRuntime ? `默认按数据库排名每 ${Math.max(2, Number(groupCount) || 2)} 项一档，无排名记为 10000。` : `按输入顺序每 ${Math.max(2, Number(groupCount) || 2)} 项划为一档。`}</p></div>
     </aside>
@@ -1279,6 +1312,8 @@
 
   .names-field { display: block; margin-top: 18px; }
   .names-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .lineup-file-input { display: none; }
+  .file-import-error { margin-top: 7px; color: #ad4b35; font-size: calc(11px * var(--font-scale, 1)); }
   textarea {
     width: 100%;
     min-height: 270px;
