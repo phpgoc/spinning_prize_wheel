@@ -4,6 +4,7 @@ use std::{fs, path::PathBuf, time::Duration};
 use tauri::{AppHandle, Manager};
 
 const UNRANKED_RANK: i64 = 10_000;
+const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.fortuna";
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -49,6 +50,17 @@ const MIGRATIONS: &[(i64, &str)] = &[
          UPDATE user
          SET rank = (SELECT normalized_rank FROM ordered WHERE ordered.id = user.id)
          WHERE id IN (SELECT id FROM ordered);",
+    ),
+    (
+        4,
+        "ALTER TABLE draw_history
+         ADD COLUMN variant TEXT NOT NULL DEFAULT 'standard';
+         CREATE INDEX IF NOT EXISTS draw_history_variant_created_at
+         ON draw_history(variant, created_at DESC);
+         ALTER TABLE lineup_history
+         ADD COLUMN variant TEXT NOT NULL DEFAULT 'standard';
+         CREATE INDEX IF NOT EXISTS lineup_history_variant_created_at
+         ON lineup_history(variant, created_at DESC);",
     ),
 ];
 
@@ -168,9 +180,21 @@ fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
         return Ok(PathBuf::from(directory));
     }
 
-    app.path()
+    let app_directory = app
+        .path()
         .app_data_dir()
-        .map_err(|error| format!("无法定位历史数据库目录：{error}"))
+        .map_err(|error| format!("无法定位历史数据库目录：{error}"))?;
+    Ok(app_directory
+        .parent()
+        .map(|parent| parent.join(SHARED_DATA_DIRECTORY))
+        .unwrap_or(app_directory))
+}
+
+fn validate_variant(variant: &str) -> Result<&str, String> {
+    match variant {
+        "standard" | "caimi" => Ok(variant),
+        _ => Err("应用版本不合法".to_string()),
+    }
 }
 
 fn migrate_database(connection: &mut Connection) -> Result<(), String> {
@@ -380,7 +404,12 @@ fn delete_common_selection(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn save_draw_history_in(connection: &Connection, draw: &SavedDraw) -> Result<(), String> {
+fn save_draw_history_in(
+    connection: &Connection,
+    variant: &str,
+    draw: &SavedDraw,
+) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
     if !valid_selection_id(&draw.id) {
         return Err("抽奖记录编号不合法".to_string());
     }
@@ -396,29 +425,37 @@ fn save_draw_history_in(connection: &Connection, draw: &SavedDraw) -> Result<(),
         serde_json::to_string(&draw).map_err(|error| format!("无法序列化抽奖记录：{error}"))?;
     connection
         .execute(
-            "INSERT INTO draw_history (id, created_at, payload_json)
-             VALUES (?1, ?2, ?3)
+            "INSERT INTO draw_history (id, created_at, payload_json, variant)
+             VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
-               payload_json = excluded.payload_json",
-            params![draw.id, created_at, payload],
+               payload_json = excluded.payload_json,
+               variant = excluded.variant",
+            params![draw.id, created_at, payload, variant],
         )
         .map_err(|error| format!("无法保存抽奖记录：{error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn save_draw_history(app: AppHandle, draw: SavedDraw) -> Result<(), String> {
+fn save_draw_history(app: AppHandle, variant: String, draw: SavedDraw) -> Result<(), String> {
     let connection = app_database(&app)?;
-    save_draw_history_in(&connection, &draw)
+    save_draw_history_in(&connection, &variant, &draw)
 }
 
-fn list_draw_histories_in(connection: &Connection) -> Result<Vec<SavedDraw>, String> {
+fn list_draw_histories_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Vec<SavedDraw>, String> {
+    let variant = validate_variant(variant)?;
     let mut statement = connection
-        .prepare("SELECT payload_json FROM draw_history ORDER BY created_at DESC")
+        .prepare(
+            "SELECT payload_json FROM draw_history
+             WHERE variant = ?1 ORDER BY created_at DESC",
+        )
         .map_err(|error| format!("无法读取历史数据库：{error}"))?;
     let rows = statement
-        .query_map([], |row| row.get::<_, String>(0))
+        .query_map(params![variant], |row| row.get::<_, String>(0))
         .map_err(|error| format!("无法查询抽奖历史：{error}"))?;
 
     let mut histories = Vec::new();
@@ -431,28 +468,36 @@ fn list_draw_histories_in(connection: &Connection) -> Result<Vec<SavedDraw>, Str
 }
 
 #[tauri::command]
-fn list_draw_histories(app: AppHandle) -> Result<Vec<SavedDraw>, String> {
+fn list_draw_histories(app: AppHandle, variant: String) -> Result<Vec<SavedDraw>, String> {
     let connection = app_database(&app)?;
-    list_draw_histories_in(&connection)
+    list_draw_histories_in(&connection, &variant)
 }
 
 #[tauri::command]
-fn delete_draw_history(app: AppHandle, id: String) -> Result<(), String> {
+fn delete_draw_history(app: AppHandle, variant: String, id: String) -> Result<(), String> {
+    let variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("抽奖记录编号不合法".to_string());
     }
     let connection = app_database(&app)?;
     connection
-        .execute("DELETE FROM draw_history WHERE id = ?1", params![id])
+        .execute(
+            "DELETE FROM draw_history WHERE id = ?1 AND variant = ?2",
+            params![id, variant],
+        )
         .map_err(|error| format!("无法删除抽奖记录：{error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn clear_draw_histories(app: AppHandle) -> Result<(), String> {
+fn clear_draw_histories(app: AppHandle, variant: String) -> Result<(), String> {
+    let variant = validate_variant(&variant)?;
     let connection = app_database(&app)?;
     connection
-        .execute("DELETE FROM draw_history", [])
+        .execute(
+            "DELETE FROM draw_history WHERE variant = ?1",
+            params![variant],
+        )
         .map_err(|error| format!("无法清空抽奖历史：{error}"))?;
     Ok(())
 }
@@ -683,7 +728,12 @@ fn resolve_lineup_names(
     resolve_lineup_names_in(&connection, names)
 }
 
-fn save_lineup_history_in(connection: &Connection, lineup: &SavedLineup) -> Result<(), String> {
+fn save_lineup_history_in(
+    connection: &Connection,
+    variant: &str,
+    lineup: &SavedLineup,
+) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
     if !valid_selection_id(&lineup.id) {
         return Err("排阵记录编号不合法".to_string());
     }
@@ -698,33 +748,38 @@ fn save_lineup_history_in(connection: &Connection, lineup: &SavedLineup) -> Resu
         .map_err(|error| format!("无法序列化排阵结果：{error}"))?;
     connection
         .execute(
-            "INSERT INTO lineup_history (id, created_at, input_json, result_json)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
                input_json = excluded.input_json,
-               result_json = excluded.result_json",
-            params![lineup.id, created_at, input_json, result_json],
+               result_json = excluded.result_json,
+               variant = excluded.variant",
+            params![lineup.id, created_at, input_json, result_json, variant],
         )
         .map_err(|error| format!("无法保存排阵记录：{error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn save_lineup_history(app: AppHandle, lineup: SavedLineup) -> Result<(), String> {
+fn save_lineup_history(app: AppHandle, variant: String, lineup: SavedLineup) -> Result<(), String> {
     let connection = app_database(&app)?;
-    save_lineup_history_in(&connection, &lineup)
+    save_lineup_history_in(&connection, &variant, &lineup)
 }
 
-fn list_lineup_histories_in(connection: &Connection) -> Result<Vec<SavedLineup>, String> {
+fn list_lineup_histories_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Vec<SavedLineup>, String> {
+    let variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, input_json, result_json
-             FROM lineup_history ORDER BY created_at DESC",
+             FROM lineup_history WHERE variant = ?1 ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取排阵历史：{error}"))?;
     let rows = statement
-        .query_map([], |row| {
+        .query_map(params![variant], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -751,19 +806,23 @@ fn list_lineup_histories_in(connection: &Connection) -> Result<Vec<SavedLineup>,
 }
 
 #[tauri::command]
-fn list_lineup_histories(app: AppHandle) -> Result<Vec<SavedLineup>, String> {
+fn list_lineup_histories(app: AppHandle, variant: String) -> Result<Vec<SavedLineup>, String> {
     let connection = app_database(&app)?;
-    list_lineup_histories_in(&connection)
+    list_lineup_histories_in(&connection, &variant)
 }
 
 #[tauri::command]
-fn delete_lineup_history(app: AppHandle, id: String) -> Result<(), String> {
+fn delete_lineup_history(app: AppHandle, variant: String, id: String) -> Result<(), String> {
+    let variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("排阵记录编号不合法".to_string());
     }
     let connection = app_database(&app)?;
     connection
-        .execute("DELETE FROM lineup_history WHERE id = ?1", params![id])
+        .execute(
+            "DELETE FROM lineup_history WHERE id = ?1 AND variant = ?2",
+            params![id, variant],
+        )
         .map_err(|error| format!("无法删除排阵记录：{error}"))?;
     Ok(())
 }
@@ -829,7 +888,7 @@ mod tests {
             &connection,
             &["draw_history", "user", "alias", "lineup_history"],
         );
-        assert_eq!(versions, vec![1, 2, 3]);
+        assert_eq!(versions, vec![1, 2, 3, 4]);
     }
 
     #[test]
@@ -946,13 +1005,25 @@ mod tests {
             result: serde_json::json!({"tiers": [["甲", "乙"]]}),
         };
 
-        save_lineup_history_in(&connection, &lineup).expect("保存排阵历史");
-        let histories = list_lineup_histories_in(&connection).expect("读取排阵历史");
+        let caimi_lineup = SavedLineup {
+            id: "lineup-caimi".to_string(),
+            created_at: lineup.created_at + 1,
+            input: lineup.input.clone(),
+            result: lineup.result.clone(),
+        };
+        save_lineup_history_in(&connection, "standard", &lineup).expect("保存普通版排阵历史");
+        save_lineup_history_in(&connection, "caimi", &caimi_lineup).expect("保存猜蜜版排阵历史");
+        let histories =
+            list_lineup_histories_in(&connection, "standard").expect("读取普通版排阵历史");
+        let caimi_histories =
+            list_lineup_histories_in(&connection, "caimi").expect("读取猜蜜版排阵历史");
 
         assert_eq!(histories.len(), 1);
         assert_eq!(histories[0].id, lineup.id);
         assert_eq!(histories[0].input, lineup.input);
         assert_eq!(histories[0].result, lineup.result);
+        assert_eq!(caimi_histories.len(), 1);
+        assert_eq!(caimi_histories[0].id, caimi_lineup.id);
     }
 
     #[test]
@@ -972,8 +1043,21 @@ mod tests {
             ]),
         };
 
-        save_draw_history_in(&connection, &draw).expect("保存抽奖历史");
-        let histories = list_draw_histories_in(&connection).expect("读取抽奖历史");
+        let caimi_draw = SavedDraw {
+            version: draw.version,
+            id: "draw-caimi".to_string(),
+            created_at: draw.created_at + 1,
+            mode: draw.mode.clone(),
+            reward_amount: draw.reward_amount,
+            prizes: draw.prizes.clone(),
+            records: draw.records.clone(),
+        };
+        save_draw_history_in(&connection, "standard", &draw).expect("保存普通版抽奖历史");
+        save_draw_history_in(&connection, "caimi", &caimi_draw).expect("保存猜蜜版抽奖历史");
+        let histories =
+            list_draw_histories_in(&connection, "standard").expect("读取普通版抽奖历史");
+        let caimi_histories =
+            list_draw_histories_in(&connection, "caimi").expect("读取猜蜜版抽奖历史");
 
         assert_eq!(histories.len(), 1);
         assert_eq!(histories[0].id, draw.id);
@@ -982,6 +1066,8 @@ mod tests {
         assert_eq!(histories[0].reward_amount, draw.reward_amount);
         assert_eq!(histories[0].prizes, draw.prizes);
         assert_eq!(histories[0].records, draw.records);
+        assert_eq!(caimi_histories.len(), 1);
+        assert_eq!(caimi_histories[0].id, caimi_draw.id);
     }
 
     fn expect_tables(connection: &Connection, expected: &[&str]) {

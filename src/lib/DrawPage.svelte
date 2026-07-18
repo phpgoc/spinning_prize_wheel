@@ -423,7 +423,7 @@
     }
 
     try {
-      const loaded = await invoke<unknown[]>('list_draw_histories');
+      const loaded = await invoke<unknown[]>('list_draw_histories', { variant });
       drawHistories = Array.isArray(loaded) ? loaded.filter(isSavedDraw) : [];
     } catch (error) {
       drawHistoryError = error instanceof Error ? error.message : String(error);
@@ -447,7 +447,7 @@
     drawHistorySaving = true;
     drawHistoryError = '';
     try {
-      await invoke('save_draw_history', { draw });
+      await invoke('save_draw_history', { draw, variant });
       drawHistories = [draw, ...drawHistories.filter((history) => history.id !== draw.id)];
       if (announce) {
         result = {
@@ -548,7 +548,7 @@
     if (!desktopRuntime) return;
     drawHistoryError = '';
     try {
-      await invoke('delete_draw_history', { id: draw.id });
+      await invoke('delete_draw_history', { id: draw.id, variant });
       drawHistories = drawHistories.filter((history) => history.id !== draw.id);
     } catch (error) {
       drawHistoryError = error instanceof Error ? error.message : String(error);
@@ -559,7 +559,7 @@
     if (!desktopRuntime || drawHistories.length === 0) return;
     drawHistoryError = '';
     try {
-      await invoke('clear_draw_histories');
+      await invoke('clear_draw_histories', { variant });
       drawHistories = [];
     } catch (error) {
       drawHistoryError = error instanceof Error ? error.message : String(error);
