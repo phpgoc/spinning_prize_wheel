@@ -1317,6 +1317,8 @@
 
   async function openImporter() {
     if (guardCandidateChanges()) return;
+    exitCandidateKeyboard();
+    exitCommonKeyboard();
     drawSidePanel = 'candidates';
     importOpen = true;
     await tick();
@@ -1466,11 +1468,6 @@
           deleteSelectedPrize();
           return;
         }
-        if (key === 'a') {
-          event.preventDefault();
-          void addPrize();
-          return;
-        }
         if (shortcutKey === 'space') {
           event.preventDefault();
           toggleSelectedPrize();
@@ -1533,6 +1530,8 @@
     } else if (shortcutKey === 'a') {
       void enterCommonKeyboard();
     } else if (shortcutKey === 'z') {
+      exitCandidateKeyboard();
+      exitCommonKeyboard();
       togglePanel('shortcuts');
     } else if (shortcutKey === 'space') {
       spin();
@@ -2287,7 +2286,6 @@
             <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
             <div><span>退出候选项</span><kbd>Esc</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
-            <div><span>添加选项</span><kbd>A</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
             <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
             <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
