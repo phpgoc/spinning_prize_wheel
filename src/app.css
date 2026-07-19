@@ -449,14 +449,21 @@ p {
   gap: 6px;
   margin-top: 7px;
   padding: 8px 10px;
-  border: 1px solid var(--line-subtle);
+  border: 1px solid #aeb596;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.33);
-  color: var(--text-muted);
+  background: #f8f8ef;
+  color: #3c4431;
   cursor: pointer;
   font-size: calc(12px * var(--font-scale, 1));
   font-weight: 700;
   text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.import-trigger:hover:not(:disabled) {
+  border-color: #7f923f;
+  background: #eef4d8;
+  color: #34420f;
 }
 
 .import-trigger > span {
@@ -473,7 +480,7 @@ p {
 
 .import-trigger small {
   margin-left: auto;
-  color: var(--text-dim);
+  color: #626956;
   font-family: var(--font-mono);
   font-size: calc(10px * var(--font-scale, 1));
   font-weight: 400;
@@ -801,17 +808,25 @@ p {
 
 .draw-session-actions > button {
   padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.26);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
-  color: #d2d4c9;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f4eb;
   cursor: pointer;
   font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 700;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.draw-session-actions > button:hover:not(:disabled) {
+  border-color: rgba(231, 255, 114, 0.58);
+  background: rgba(231, 255, 114, 0.12);
+  color: var(--accent);
 }
 
 .draw-session-actions > .save-draw-button {
-  border-color: rgba(231, 255, 114, 0.2);
-  background: rgba(231, 255, 114, 0.08);
+  border-color: rgba(231, 255, 114, 0.42);
+  background: rgba(231, 255, 114, 0.15);
   color: var(--accent);
 }
 
@@ -968,13 +983,21 @@ kbd {
 
 .quick-counts button {
   padding: 5px;
-  border: 1px solid transparent;
+  border: 1px solid #b8bca8;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.42);
-  color: var(--text-dim);
+  background: #fffdf8;
+  color: #4a513d;
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 700;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.quick-counts button:hover:not(:disabled) {
+  border-color: #7f923f;
+  background: #eef4d8;
+  color: #34420f;
 }
 
 .quick-counts button.active {
@@ -1066,6 +1089,12 @@ kbd {
   cursor: pointer;
   font-size: calc(13px * var(--font-scale, 1));
   font-weight: 700;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.result-tabs button:hover:not(.active) {
+  background: rgba(126, 143, 57, 0.09);
+  color: #4d562f;
 }
 
 .result-tabs button.active {
@@ -1238,12 +1267,32 @@ kbd {
 
 .history-actions button {
   padding: 5px 7px;
-  border: 1px solid var(--line-subtle);
+  border: 1px solid #aeb4a0;
   border-radius: 6px;
-  background: transparent;
-  color: var(--text-dim);
+  background: #f8f8ef;
+  color: #3c4431;
   cursor: pointer;
   font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 700;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.history-actions button:hover:not(:disabled) {
+  border-color: #7f923f;
+  background: #eef4d8;
+  color: #34420f;
+}
+
+.history-actions button:last-child {
+  border-color: #c5a49d;
+  background: #fbf0ed;
+  color: #7e3c31;
+}
+
+.history-actions button:last-child:hover:not(:disabled) {
+  border-color: #b85b49;
+  background: #f7ded8;
+  color: #6d2419;
 }
 
 .batch-empty {
@@ -2185,12 +2234,20 @@ kbd {
 .current-stats-heading > button {
   flex: none;
   padding: 7px 9px;
-  border: 1px solid var(--line-subtle);
+  border: 1px solid #aeb4a0;
   border-radius: 7px;
-  background: var(--surface-raised);
-  color: var(--text-muted);
+  background: #f8f8ef;
+  color: #3c4431;
   cursor: pointer;
   font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 700;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.current-stats-heading > button:hover:not(:disabled) {
+  border-color: #7f923f;
+  background: #eef4d8;
+  color: #34420f;
 }
 
 .current-stats-summary {
@@ -2508,12 +2565,31 @@ kbd {
 
 .side-stats-actions button {
   padding: 8px;
-  border: 1px solid var(--line-subtle);
+  border: 1px solid #aeb596;
   border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
+  background: #f5f7e8;
+  color: #34420f;
   cursor: pointer;
   font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 750;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.side-stats-actions button:hover:not(:disabled) {
+  border-color: #7f923f;
+  background: #e9f2c9;
+}
+
+.side-stats-actions button:last-child {
+  border-color: #c5a49d;
+  background: #fbf0ed;
+  color: #7e3c31;
+}
+
+.side-stats-actions button:last-child:hover:not(:disabled) {
+  border-color: #b85b49;
+  background: #f7ded8;
+  color: #6d2419;
 }
 
 @media (max-width: 1200px) {
