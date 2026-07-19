@@ -57,7 +57,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 bun run build:web
 ```
 
-产物位于 `dist`。普通 Web 构建已经包含普通抽奖、普通排阵、猜蜜抽奖和猜蜜排阵四个地址。
+产物位于 `dist`。普通 Web 构建已经包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。
 
 生成 Release 使用的压缩包：
 

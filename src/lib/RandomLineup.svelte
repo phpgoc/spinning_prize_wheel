@@ -223,7 +223,7 @@
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
     } catch (reason) {
       result = null;
-      error = messageFrom(reason, '无法生成排阵');
+      error = messageFrom(reason, '无法生成分组');
     }
   }
 
@@ -254,7 +254,7 @@
       await loadLineupHistories();
     } catch (reason) {
       historyStatus = 'error';
-      error = messageFrom(reason, '排阵已生成，但无法保存历史');
+      error = messageFrom(reason, '分组已生成，但无法保存历史');
     }
   }
 
@@ -271,7 +271,7 @@
 
   function exportLineupJson() {
     if (!result) return;
-    downloadFormattedJson('排阵结果', {
+    downloadFormattedJson('分组结果', {
       exportedAt: new Date().toISOString(),
       kind: 'random-lineup',
       input: {
@@ -286,7 +286,7 @@
 
   function exportLineupCsv() {
     if (!result) return;
-    downloadCsv('排阵结果', [
+    downloadCsv('分组结果', [
       ['档位', ...result.groupNames.map((group) => `${group}组`)],
       ...result.tiers.map((tier, tierIndex) => [
         `t${tierIndex + 1}`,
@@ -318,7 +318,7 @@
     try {
       lineupHistories = await invoke<SavedLineup[]>('list_lineup_histories', { variant });
     } catch (reason) {
-      historyError = messageFrom(reason, '无法读取排阵历史');
+      historyError = messageFrom(reason, '无法读取分组历史');
     } finally {
       historyLoading = false;
     }
@@ -410,8 +410,8 @@
 
   function exportLineupHistoriesCsv() {
     if (visibleHistories.length === 0) return;
-    downloadCsv('排阵历史查询', [
-      ['时间', '名单项数', '组数', '排阵方式'],
+    downloadCsv('分组历史查询', [
+      ['时间', '名单项数', '组数', '分组方式'],
       ...visibleHistories.map((history) => {
         const input = history.input as Partial<{
           sourceNames: unknown[];
@@ -430,7 +430,7 @@
 
   function exportLineupHistoriesJson() {
     if (visibleHistories.length === 0) return;
-    downloadFormattedJson('排阵历史查询', {
+    downloadFormattedJson('分组历史查询', {
       exportedAt: new Date().toISOString(),
       kind: 'lineup-history-query',
       variant,
@@ -823,15 +823,6 @@
 <svelte:window on:keydown={handleLineupKeydown} />
 
 <main class="lineup-page" id="lineup">
-  <header class="lineup-hero">
-    <div>
-      <span>RANDOM LINEUP</span>
-      <h1>随机排阵</h1>
-      <p>{desktopRuntime ? '数据库排名决定档位，输入别名也能识别到同一个选项。' : '输入顺序决定档位，同一档的选项会被随机分到不同组。'}</p>
-    </div>
-    <div class="rule-badge"><i>1</i><span>唯一规则<strong>同档不同组</strong></span></div>
-  </header>
-
   <div class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
       <aside class="lineup-sidebar">
@@ -971,7 +962,7 @@
 
         <section class:open={desktopPanel === 'history'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('history')}>
-            <span>排阵历史</span><strong>最近 5 条</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
+            <span>分组历史</span><strong>最近 5 条</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             <div class="desktop-accordion-content history-panel">
@@ -982,9 +973,9 @@
               {#if historyError}<div class="ranking-error" role="alert">{historyError}</div>{/if}
               <div class="lineup-history-list">
                 {#if historyLoading}
-                  <p>正在读取排阵历史…</p>
+                  <p>正在读取分组历史…</p>
                 {:else if visibleHistories.length === 0}
-                  <p>日期范围内没有排阵记录。</p>
+                  <p>日期范围内没有分组记录。</p>
                 {:else}
                   {#each visibleHistories as history (history.id)}
                     <button type="button" on:click={() => viewHistory(history)}>
@@ -1088,22 +1079,22 @@
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
         {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
-          <div class="rank-order-lock" role="status">名单中还有红名，数据库排名排阵已锁定；可以先使用输入顺序排阵。</div>
+          <div class="rank-order-lock" role="status">名单中还有红名，数据库排名分组已锁定；可以先使用输入顺序分组。</div>
         {/if}
 
         <div class="lineup-actions">
           {#if desktopRuntime}
-            <button type="button" class="generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名排阵' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名排阵</span><i>→</i></button>
-            <button type="button" class="input-order-button" title="忽略数据库排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序排阵</button>
+            <button type="button" class="generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>
+            <button type="button" class="input-order-button" title="忽略数据库排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序分组</button>
           {:else}
-            <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始排阵</span><i>→</i></button>
+            <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
           {/if}
         </div>
       </div>
 
       <div class="lineup-result">
         <div class="result-heading">
-          <div><span>03</span><div><h2>排阵结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方排阵后生成表格'}</p></div></div>
+          <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
               <button type="button" class="result-export-button" on:click={exportLineupCsv}>CSV</button>
@@ -1126,7 +1117,7 @@
             </div>
           {/if}
         </div>
-        {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新排阵。</div>{/if}
+        {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新分组。</div>{/if}
         {#if result}
           <div class:outdated={resultOutdated} class="lineup-table-wrap">
             <table>
@@ -1139,7 +1130,7 @@
             </table>
           </div>
         {:else}
-          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div><strong>排阵表会显示在这里</strong><p>例如 24 项、6 组，将得到 A–F 六组与 t1–t4 四档。</p></div>
+          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div><strong>分组表会显示在这里</strong><p>例如 24 项、6 组，将得到 A–F 六组与 t1–t4 四档。</p></div>
         {/if}
       </div>
     </section>
@@ -1208,24 +1199,13 @@
     box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
   }
 
-  .lineup-hero,
   .config-heading,
   .group-setting,
   .result-heading,
-  .result-heading > div,
-  .rule-badge {
+  .result-heading > div {
     display: flex;
   }
 
-  .lineup-hero {
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 24px;
-    max-width: 1420px;
-    margin: 0 auto 30px;
-  }
-
-  .lineup-hero > div:first-child > span,
   .config-heading span,
   .result-heading > div > span,
   .rule-note > span {
@@ -1234,49 +1214,6 @@
     font-size: calc(12px * var(--font-scale, 1));
     letter-spacing: 0.14em;
   }
-
-  .lineup-hero h1 {
-    margin-top: 5px;
-    font-size: clamp(
-      calc(37px * var(--font-scale, 1)),
-      calc(5vw * var(--font-scale, 1)),
-      calc(69px * var(--font-scale, 1))
-    );
-    letter-spacing: -0.07em;
-    line-height: 0.95;
-  }
-
-  .lineup-hero p {
-    margin-top: 12px;
-    color: var(--lineup-muted-on-dark);
-    font-size: calc(16px * var(--font-scale, 1));
-  }
-
-  .rule-badge {
-    align-items: center;
-    gap: 11px;
-    padding: 10px 14px;
-    border: 1px solid rgba(231, 255, 114, 0.16);
-    border-radius: 13px;
-    background: rgba(231, 255, 114, 0.05);
-  }
-
-  .rule-badge i {
-    display: grid;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: #1e2017;
-    font-style: normal;
-    font-weight: 900;
-    place-items: center;
-  }
-
-  .rule-badge span,
-  .rule-badge strong { display: block; }
-  .rule-badge span { color: var(--lineup-dim-on-dark); font-size: calc(11px * var(--font-scale, 1)); }
-  .rule-badge strong { margin-top: 2px; color: #f6f3ea; font-size: calc(14px * var(--font-scale, 1)); }
 
   .lineup-workbench {
     display: grid;
@@ -2414,8 +2351,6 @@
 
   @media (max-width: 600px) {
     .lineup-page { padding: 24px 14px; }
-    .lineup-hero { align-items: flex-start; flex-direction: column; }
-    .rule-badge { align-self: stretch; }
     .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .lineup-actions { flex-direction: column; }

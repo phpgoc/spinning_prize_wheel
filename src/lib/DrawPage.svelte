@@ -2325,7 +2325,7 @@
 
         {#if desktopRuntime}
           <section class="shortcut-group">
-            <h3>随机排阵</h3>
+            <h3>分组</h3>
             <div class="shortcut-list sidebar-shortcut-list">
               <div><span>排名 / 历史</span><kbd>A / Z</kbd></div>
               <div><span>选择</span><kbd>↑ / ↓</kbd></div>

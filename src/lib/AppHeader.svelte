@@ -19,7 +19,7 @@
     <span><strong>转盘</strong></span>
   </a>
 
-  <div class="topbar-controls">
+  <div class:desktop-controls={desktopRuntime} class="topbar-controls">
     {#if !desktopRuntime}
       <nav class="variant-switch" aria-label="版本页面">
         <button type="button" class:active={variant === 'standard'} on:click={() => onNavigateVariant('standard')}>普通版</button>
@@ -34,9 +34,12 @@
         class:active={page === 'lineup'}
         disabled={drawBusy}
         on:click={() => onNavigatePage('lineup')}
-      >随机排阵</button>
+      >分组</button>
     </nav>
 
+  </div>
+
+  <div class="topbar-meta">
     {#if page === 'draw'}
       <div class="mode-switch" aria-label="抽奖模式">
         <button
@@ -58,11 +61,6 @@
           俄罗斯轮盘
         </button>
       </div>
-    {/if}
-  </div>
-
-  <div class="topbar-meta">
-    {#if page === 'draw'}
       <button type="button" class="icon-button" title="恢复默认设置" on:click={onResetDraw}>↺</button>
     {/if}
   </div>

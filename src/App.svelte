@@ -73,7 +73,7 @@
 </script>
 
 <svelte:head>
-  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '随机排阵'} · 转盘</title>
+  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '分组'} · 转盘</title>
   <link
     rel="icon"
     type={variant === 'caimi' ? 'image/png' : 'image/svg+xml'}
@@ -82,10 +82,6 @@
 </svelte:head>
 
 <div class:caimi-variant={variant === 'caimi'} class="app-shell" style={`--font-scale: ${fontScale}`}>
-  {#if variant === 'caimi'}
-    <CaimiBanner />
-  {/if}
-
   <AppHeader
     {page}
     {variant}
@@ -97,6 +93,10 @@
     onModeChange={changeDrawMode}
     onResetDraw={resetDraw}
   />
+
+  {#if variant === 'caimi'}
+    <CaimiBanner />
+  {/if}
 
   <div class:page-hidden={page !== 'draw'} aria-hidden={page !== 'draw'}>
     <DrawPage

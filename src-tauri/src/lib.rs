@@ -746,17 +746,17 @@ fn save_lineup_history_in(
 ) -> Result<(), String> {
     let variant = validate_variant(variant)?;
     if !valid_selection_id(&lineup.id) {
-        return Err("排阵记录编号不合法".to_string());
+        return Err("分组记录编号不合法".to_string());
     }
     if lineup.input.is_null() || lineup.result.is_null() {
-        return Err("排阵记录内容不合法".to_string());
+        return Err("分组记录内容不合法".to_string());
     }
     let created_at =
-        i64::try_from(lineup.created_at).map_err(|_| "排阵记录时间不合法".to_string())?;
+        i64::try_from(lineup.created_at).map_err(|_| "分组记录时间不合法".to_string())?;
     let input_json = serde_json::to_string(&lineup.input)
-        .map_err(|error| format!("无法序列化排阵输入：{error}"))?;
+        .map_err(|error| format!("无法序列化分组输入：{error}"))?;
     let result_json = serde_json::to_string(&lineup.result)
-        .map_err(|error| format!("无法序列化排阵结果：{error}"))?;
+        .map_err(|error| format!("无法序列化分组结果：{error}"))?;
     connection
         .execute(
             "INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
@@ -768,7 +768,7 @@ fn save_lineup_history_in(
                variant = excluded.variant",
             params![lineup.id, created_at, input_json, result_json, variant],
         )
-        .map_err(|error| format!("无法保存排阵记录：{error}"))?;
+        .map_err(|error| format!("无法保存分组记录：{error}"))?;
     Ok(())
 }
 
@@ -788,7 +788,7 @@ fn list_lineup_histories_in(
             "SELECT id, created_at, input_json, result_json
              FROM lineup_history WHERE variant = ?1 ORDER BY created_at DESC",
         )
-        .map_err(|error| format!("无法读取排阵历史：{error}"))?;
+        .map_err(|error| format!("无法读取分组历史：{error}"))?;
     let rows = statement
         .query_map(params![variant], |row| {
             Ok((
@@ -798,19 +798,19 @@ fn list_lineup_histories_in(
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|error| format!("无法查询排阵历史：{error}"))?;
+        .map_err(|error| format!("无法查询分组历史：{error}"))?;
 
     let mut histories = Vec::new();
     for row in rows {
         let (id, created_at, input_json, result_json) =
-            row.map_err(|error| format!("无法解析排阵历史：{error}"))?;
+            row.map_err(|error| format!("无法解析分组历史：{error}"))?;
         histories.push(SavedLineup {
             id,
-            created_at: u64::try_from(created_at).map_err(|_| "排阵记录时间不合法".to_string())?,
+            created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
             input: serde_json::from_str(&input_json)
-                .map_err(|error| format!("无法解析排阵输入：{error}"))?,
+                .map_err(|error| format!("无法解析分组输入：{error}"))?,
             result: serde_json::from_str(&result_json)
-                .map_err(|error| format!("无法解析排阵结果：{error}"))?,
+                .map_err(|error| format!("无法解析分组结果：{error}"))?,
         });
     }
     Ok(histories)
@@ -826,7 +826,7 @@ fn list_lineup_histories(app: AppHandle, variant: String) -> Result<Vec<SavedLin
 fn delete_lineup_history(app: AppHandle, variant: String, id: String) -> Result<(), String> {
     let variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
-        return Err("排阵记录编号不合法".to_string());
+        return Err("分组记录编号不合法".to_string());
     }
     let connection = app_database(&app)?;
     connection
@@ -834,7 +834,7 @@ fn delete_lineup_history(app: AppHandle, variant: String, id: String) -> Result<
             "DELETE FROM lineup_history WHERE id = ?1 AND variant = ?2",
             params![id, variant],
         )
-        .map_err(|error| format!("无法删除排阵记录：{error}"))?;
+        .map_err(|error| format!("无法删除分组记录：{error}"))?;
     Ok(())
 }
 
