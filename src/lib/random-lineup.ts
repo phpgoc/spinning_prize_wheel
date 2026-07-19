@@ -195,11 +195,6 @@ export function uniqueResolvedLineupPeople(
   });
 }
 
-/** 最后一项尚未用分隔符结束时仍处于输入中，不应立即按别名回写去重。 */
-export function hasPendingLineupNameInput(sourceText: string): boolean {
-  return sourceText.trim().length > 0 && !/[\s,，、;；|]$/u.test(sourceText);
-}
-
 /** 关联排名时只接受连续数字，退格逐位撤销。 */
 export function updateRankShortcutInput(current: string, key: string): string {
   if (key === 'Backspace') return current.slice(0, -1);

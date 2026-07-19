@@ -30,6 +30,7 @@
   } from './draw-history';
   import { downloadCsv, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
+  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
   import {
     DEFAULT_FONT_SCALE,
     normalizeFontScale,
@@ -1569,15 +1570,31 @@
       return;
     }
 
-    if (event.key === 'Enter' && event.altKey && target === importTextarea) {
+    if (target === importTextarea && isMultilineTextConfirm(event)) {
       event.preventDefault();
       applyImportedOptions();
       return;
     }
 
-    if (event.key === 'Enter' && !modifier && !event.altKey && !event.shiftKey && target?.classList.contains('name-input')) {
+    if (target === importTextarea && isTextEditCancel(event)) {
+      event.preventDefault();
+      importText = '';
+      importOpen = false;
+      focusGlobalShortcuts();
+      return;
+    }
+
+    if (target?.classList.contains('name-input') && isSingleLineTextConfirm(event)) {
       event.preventDefault();
       (target as HTMLInputElement).blur();
+      candidateKeyboardActive = true;
+      return;
+    }
+
+    if (target instanceof HTMLInputElement && target.classList.contains('name-input') && isTextEditCancel(event)) {
+      event.preventDefault();
+      target.value = prizes.find((prize) => prize.id === selectedPrizeId)?.name ?? target.defaultValue;
+      target.blur();
       candidateKeyboardActive = true;
       return;
     }
@@ -1607,7 +1624,7 @@
         movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
         return;
       }
-      if (!modifier && event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      if (!editing && !modifier && event.altKey && !event.shiftKey && selectedPrizeId && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         event.preventDefault();
         adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
         return;
@@ -2100,6 +2117,7 @@
               <textarea
                 bind:this={importTextarea}
                 bind:value={importText}
+                aria-keyshortcuts="Alt+Enter"
                 rows="4"
                 placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
               ></textarea>
@@ -2427,6 +2445,15 @@
         </section>
 
         <section class="shortcut-group context-shortcuts">
+          <h3>文本编辑</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>单行确认</span><kbd>Enter</kbd></div>
+            <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
+            <div><span>取消编辑</span><kbd>Esc</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group context-shortcuts">
           <h3>候选项</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>添加一项并编辑</span><kbd>N</kbd></div>
@@ -2437,8 +2464,7 @@
             <div><span>退出候选项</span><kbd>Esc</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
-            <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
-            <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
+            <div><span>编辑当前项</span><kbd>Enter</kbd></div>
           </div>
         </section>
 
@@ -2470,20 +2496,20 @@
             <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">
               <div><span>上一项 / 下一项</span><kbd>↑ / ↓</kbd></div>
-              <div><span>修改名称</span><kbd>Enter</kbd></div>
+              <div><span>编辑名称</span><kbd>Enter</kbd></div>
               <div><span>添加排名</span><kbd>A</kbd></div>
               <div><span>添加新别名</span><kbd>S</kbd></div>
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>
               <div><span>选中排序</span><kbd>空格</kbd></div>
               <div><span>选择插入 / 替换位置</span><kbd>↑ / ↓</kbd></div>
-              <div><span>插入 / 替换</span><kbd>空格 / Enter</kbd></div>
+              <div><span>插入 / 替换</span><kbd>空格</kbd></div>
               <div><span>取消排序</span><kbd>Esc</kbd></div>
               <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
               <div><span>执行当前项操作</span><kbd>空格</kbd></div>
               <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
               <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
-              <div><span>确认 / 取消关联</span><kbd>Enter / Esc</kbd></div>
+              <div><span>确认 / 取消关联</span><kbd>空格 / Esc</kbd></div>
             </div>
           </section>
         {/if}

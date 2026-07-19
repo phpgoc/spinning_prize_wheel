@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
   import { downloadCsv, downloadFormattedJson } from './file-export';
   import {
@@ -18,7 +18,6 @@
   import {
     applyCaimiLineupSwap,
     createRandomLineup,
-    hasPendingLineupNameInput,
     insertLineupPreviewName,
     isResolvedLineupName,
     lineupOrderAvailability,
@@ -37,6 +36,7 @@
     type RankedUserDropTarget,
     type RandomLineup,
   } from './random-lineup';
+  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
   import type { RankedUser, ResolvedLineupName, SavedLineup } from './types';
 
   export let desktopRuntime = false;
@@ -46,6 +46,8 @@
   type DesktopPanel = 'ranking' | 'history';
 
   let sourceText = '';
+  let confirmedSourceText = '';
+  let sourceTextarea: HTMLTextAreaElement | null = null;
   let groupCount = 4;
   let result: RandomLineup | null = null;
   let resultSignature = '';
@@ -54,7 +56,6 @@
   let desktopInitialized = false;
   let resolvingNames = false;
   let resolvedNames: ResolvedLineupName[] = [];
-  let resolveTimer: ReturnType<typeof setTimeout> | undefined;
   let resolutionRequest = 0;
   let rankedUsers: RankedUser[] = [];
   let rankingLoading = false;
@@ -122,7 +123,8 @@
   let allLineupCellsRevealed = false;
   let hiddenLineupCellKeys = new Set<string>();
 
-  $: names = uniqueLineupNames(parseOptionText(sourceText));
+  $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
+  $: sourceTextDirty = sourceText !== confirmedSourceText;
   $: namesSignature = names.join('\u0000');
   $: desktopRankSignature = desktopRuntime
     ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
@@ -169,23 +171,14 @@
     resolvingNames,
     unresolvedPreviewCount,
   );
-  $: canGenerateByInput = orderAvailability.input;
-  $: canGenerateByRank = orderAvailability.rank;
+  $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
+  $: canGenerateByRank = !sourceTextDirty && orderAvailability.rank;
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
-  }
-  $: if (mounted && desktopRuntime && desktopInitialized) {
-    namesSignature;
-    scheduleNameResolution();
   }
 
   onMount(() => {
     mounted = true;
-  });
-
-  onDestroy(() => {
-    mounted = false;
-    if (resolveTimer) clearTimeout(resolveTimer);
   });
 
   function isTextEditingTarget(target: EventTarget | null): boolean {
@@ -199,22 +192,11 @@
     await resolveNames();
   }
 
-  function scheduleNameResolution() {
-    if (resolveTimer) clearTimeout(resolveTimer);
-    if (names.length === 0) {
+  async function resolveNames() {
+    if (!desktopRuntime || names.length === 0) {
+      resolutionRequest += 1;
       resolvedNames = [];
       resolvingNames = false;
-      return;
-    }
-    resolveTimer = setTimeout(() => {
-      resolveTimer = undefined;
-      void resolveNames();
-    }, 220);
-  }
-
-  async function resolveNames(finalizeSourceText = false) {
-    if (!desktopRuntime || names.length === 0) {
-      resolvedNames = [];
       return;
     }
     const request = ++resolutionRequest;
@@ -223,18 +205,11 @@
       const resolved = await invoke<ResolvedLineupName[]>('resolve_lineup_names', { names });
       if (request === resolutionRequest) {
         const uniquePeople = uniqueResolvedLineupPeople(resolved);
-        if (
-          !finalizeSourceText
-          && uniquePeople.length !== names.length
-          && hasPendingLineupNameInput(sourceText)
-        ) {
-          // 保留正在输入的最后一项，避免输入“12”时先输入的“1”被别名去重弹走。
-          resolvedNames = resolved;
-          return;
-        }
         resolvedNames = uniquePeople;
         if (uniquePeople.length !== names.length) {
-          sourceText = uniquePeople.map((person) => person.inputName).join('\n');
+          const keepDraft = sourceTextDirty;
+          confirmedSourceText = uniquePeople.map((person) => person.inputName).join('\n');
+          if (!keepDraft) sourceText = confirmedSourceText;
           historyStatus = 'idle';
           await tick();
         }
@@ -248,6 +223,22 @@
     } finally {
       if (request === resolutionRequest) resolvingNames = false;
     }
+  }
+
+  async function commitSourceNames(nextNames: readonly string[]) {
+    const text = uniqueLineupNames(nextNames).join('\n');
+    confirmedSourceText = text;
+    sourceText = text;
+    historyStatus = 'idle';
+    error = '';
+    await tick();
+    await resolveNames();
+  }
+
+  async function confirmSourceText() {
+    cancelPreviewMove();
+    cancelPreviewInsertion();
+    await commitSourceNames(parseOptionText(sourceText));
   }
 
   function orderedNamesForLineup(orderMode: LineupOrderMode): string[] {
@@ -277,8 +268,6 @@
     historyStatus = 'idle';
     try {
       if (desktopRuntime) {
-        if (resolveTimer) clearTimeout(resolveTimer);
-        await resolveNames(true);
         if (
           orderMode === 'rank'
           && unresolvedLineupNameCount(names, resolvedNames) > 0
@@ -590,10 +579,9 @@
     if (insertIndex === null) return;
     try {
       const updated = insertLineupPreviewName(names, insertIndex, insertName);
-      sourceText = updated.join('\n');
-      historyStatus = 'idle';
       cancelPreviewMove();
       cancelPreviewInsertion();
+      void commitSourceNames(updated);
     } catch (reason) {
       insertError = messageFrom(reason, '无法插入姓名');
     }
@@ -616,8 +604,7 @@
     } else {
       updated[index] = name;
     }
-    sourceText = updated.join('\n');
-    historyStatus = 'idle';
+    void commitSourceNames(updated);
   }
 
   function removePreviewName(index: number) {
@@ -625,8 +612,7 @@
     cancelPreviewMove();
     const updated = [...names];
     updated.splice(index, 1);
-    sourceText = updated.join('\n');
-    historyStatus = 'idle';
+    void commitSourceNames(updated);
   }
 
   function cancelPreviewMove() {
@@ -649,9 +635,8 @@
     const source = previewMoveSourceIndex;
     const updated = moveLineupPreviewName(names, source, insertAt);
     const movedIndex = source < insertAt ? insertAt - 1 : insertAt;
-    sourceText = updated.join('\n');
-    historyStatus = 'idle';
     cancelPreviewMove();
+    await commitSourceNames(updated);
     await focusPreviewPosition(Math.min(updated.length - 1, movedIndex));
   }
 
@@ -673,6 +658,9 @@
       event.preventDefault();
       event.stopPropagation();
       selectOrConfirmPreviewMove(index);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
     } else if (event.key === 'Escape' && previewMoveSourceIndex !== null) {
       event.preventDefault();
       event.stopPropagation();
@@ -686,10 +674,13 @@
       event.preventDefault();
       event.stopPropagation();
       void focusPreviewPosition(event.key === 'ArrowUp' ? names.length - 1 : 0);
-    } else if (event.code === 'Space' || event.key === 'Enter') {
+    } else if (event.code === 'Space') {
       event.preventDefault();
       event.stopPropagation();
       void confirmPreviewMove(names.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -1261,6 +1252,24 @@
   }
 
   function handleLineupKeydown(event: KeyboardEvent) {
+    const target = event.target;
+    if (target === sourceTextarea && isMultilineTextConfirm(event)) {
+      event.preventDefault();
+      void confirmSourceText();
+      return;
+    }
+    if (target === sourceTextarea && isTextEditCancel(event)) {
+      event.preventDefault();
+      sourceText = confirmedSourceText;
+      (target as HTMLTextAreaElement).blur();
+      return;
+    }
+    if (target instanceof HTMLInputElement && target.type === 'text' && isSingleLineTextConfirm(event)) {
+      event.preventDefault();
+      if (target.form) target.form.requestSubmit();
+      else target.blur();
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     const key = event.key.toLowerCase();
 
@@ -1315,9 +1324,12 @@
       } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault();
         moveRankedUserSelection(event.key === 'ArrowUp' ? -1 : 1);
-      } else if (event.key === 'Enter') {
+      } else if (event.code === 'Space') {
         event.preventDefault();
         void confirmAliasLink();
+      } else if (event.key === 'Enter') {
+        // 位置型操作统一使用空格，关联模式下禁用回车的按钮默认激活行为。
+        event.preventDefault();
       } else if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
         event.preventDefault();
         updateAliasLinkRankShortcut(event.key);
@@ -1378,9 +1390,11 @@
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault();
         moveKeyboardRankDropPoint(event.key === 'ArrowUp' ? -1 : 1);
-      } else if (event.key === 'Enter' || event.code === 'Space') {
+      } else if (event.code === 'Space') {
         event.preventDefault();
         confirmKeyboardRankMove();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
       }
       return;
     }
@@ -1428,17 +1442,13 @@
   function clearAll() {
     cancelPreviewMove();
     sourceText = '';
+    confirmedSourceText = '';
+    resolutionRequest += 1;
+    resolvedNames = [];
+    resolvingNames = false;
     result = null;
     error = '';
     historyStatus = 'idle';
-  }
-
-  function finalizeSourceNames() {
-    if (resolveTimer) {
-      clearTimeout(resolveTimer);
-      resolveTimer = undefined;
-    }
-    void resolveNames(true);
   }
 
   function focusLineupResult() {
@@ -1485,7 +1495,7 @@
                 {#if aliasLinkName !== null}
                   <div class="rank-keyboard-order active alias-link-order">
                     <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}{aliasLinkRankInput ? ` · 排名 ${aliasLinkRankInput}` : ''}</small></span>
-                    <button type="button" aria-keyshortcuts="Enter" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
+                    <button type="button" aria-keyshortcuts="Space" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
                     <button type="button" class="cancel-rank-move" aria-keyshortcuts="Escape" on:click={cancelAliasLink}>取消</button>
                   </div>
                 {:else}
@@ -1531,14 +1541,14 @@
                             <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
                               <div>
                                 {#if editingRankField === 'name'}
-                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
                                 {:else}
                                   <strong>{userName}</strong>
                                 {/if}
                                 <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}
@@ -1595,14 +1605,14 @@
                             <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
                               <div>
                                 {#if editingRankField === 'name'}
-                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
                                 {:else}
                                   <strong>{userName}</strong>
                                 {/if}
                                 <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}
@@ -1709,7 +1719,7 @@
                 <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
                   <label>
                     <span>插入到 {row.name} 前</span>
-                    <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label={`插入到 ${row.name} 前`} on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                    <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label={`插入到 ${row.name} 前`} on:keydown|stopPropagation={(event) => isTextEditCancel(event) && cancelPreviewInsertion()} />
                   </label>
                   <button type="submit">插入</button>
                   <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
@@ -1755,7 +1765,7 @@
               <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
                 <label>
                   <span>添加到名单末尾</span>
-                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加到名单末尾" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加到名单末尾" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && cancelPreviewInsertion()} />
                 </label>
                 <button type="submit">添加</button>
                 <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
@@ -1779,7 +1789,7 @@
               <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
                 <label>
                   <span>添加第一项</span>
-                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加第一项" on:keydown={(event) => event.key === 'Escape' && cancelPreviewInsertion()} />
+                  <input bind:this={insertInput} bind:value={insertName} maxlength="18" aria-label="添加第一项" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && cancelPreviewInsertion()} />
                 </label>
                 <button type="submit">添加</button>
                 <button type="button" class="cancel" on:click={cancelPreviewInsertion}>取消</button>
@@ -1870,8 +1880,11 @@
 
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove} on:blur={finalizeSourceNames}></textarea></label>
-      <div class="list-actions"><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove}></textarea></label>
+      <div class="list-actions">
+        <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
+        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={clearAll}>清空</button>
+      </div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
     </aside>
   </div>
@@ -2054,7 +2067,7 @@
   textarea::placeholder { color: var(--lineup-dim-on-light); opacity: 1; }
   textarea:focus { border-color: #8a993e; box-shadow: 0 0 0 3px rgba(138, 153, 62, 0.12); }
 
-  .list-actions { display: flex; justify-content: flex-end; margin-top: 7px; }
+  .list-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 7px; }
   .list-actions button {
     padding: 6px 9px;
     border: 1px solid rgba(36, 37, 31, 0.24);
@@ -2066,8 +2079,10 @@
     font-weight: 700;
     transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
   }
-  .list-actions button { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
-  .list-actions button:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
+  .list-actions .confirm-list { border-color: #a8b86b; background: #f2f6df; color: #52601d; }
+  .list-actions .confirm-list:hover:not(:disabled) { border-color: #829638; background: #e8f1c7; color: #34420f; }
+  .list-actions .clear-list { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
+  .list-actions .clear-list:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
 
   .group-setting {
     align-items: stretch;
