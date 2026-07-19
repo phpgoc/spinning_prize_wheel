@@ -9,6 +9,7 @@ import {
   lineupOrderAvailability,
   lineupPreviewTierStarts,
   moveLineupPreviewName,
+  nextRankedUserActionIndex,
   orderResolvedLineupNames,
   rankedUserIdAtShortcut,
   rankedUserDropTargetForCard,
@@ -200,6 +201,15 @@ describe('随机排阵', () => {
       { target: { kind: 'swap', userId: 22 }, cardId: 22, position: 'swap' },
       { target: { kind: 'insert', index: 2 }, cardId: 22, position: 'after' },
     ]);
+  });
+
+  test('排名操作行可以用左右键经过第三个操作并返回整条', () => {
+    expect(nextRankedUserActionIndex(-1, 'right', 3)).toBe(0);
+    expect(nextRankedUserActionIndex(0, 'right', 3)).toBe(1);
+    expect(nextRankedUserActionIndex(1, 'right', 3)).toBe(2);
+    expect(nextRankedUserActionIndex(2, 'right', 3)).toBe(2);
+    expect(nextRankedUserActionIndex(2, 'left', 3)).toBe(1);
+    expect(nextRankedUserActionIndex(0, 'left', 3)).toBe(-1);
   });
 
   test('排阵历史按日期筛选并只保留最新 5 条', () => {

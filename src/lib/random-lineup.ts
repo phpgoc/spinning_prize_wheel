@@ -38,6 +38,18 @@ export interface RankedUserKeyboardDropPoint {
   position: 'before' | 'swap' | 'after' | 'unranked';
 }
 
+/** 排名右侧操作在同一行，左右键只在线性操作行与整条之间移动。 */
+export function nextRankedUserActionIndex(
+  currentIndex: number,
+  direction: 'left' | 'right',
+  actionCount: number,
+): number {
+  const lastIndex = Math.max(-1, Math.floor(actionCount) - 1);
+  return direction === 'left'
+    ? Math.max(-1, currentIndex - 1)
+    : Math.min(lastIndex, currentIndex + 1);
+}
+
 /** 排名卡片上、下四分之一用于插入，中间二分之一用于替换。 */
 export function rankedUserDropTargetForCard(
   userId: number,

@@ -24,6 +24,7 @@
     lineupOrderAvailability,
     lineupPreviewTierStarts,
     moveLineupPreviewName,
+    nextRankedUserActionIndex,
     orderResolvedLineupNames,
     rankedUserIdAtShortcut,
     rankedUserDropTargetForCard,
@@ -852,14 +853,14 @@
     cancelKeyboardRankMove();
   }
 
-  async function moveRankedUserActionFocus(delta: -1 | 1) {
+  async function moveRankedUserActionFocus(direction: 'left' | 'right') {
     const userId = selectedRankedUserId;
     if (userId === null) return;
     const card = document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`);
     if (!card) return;
     const actions = [...card.querySelectorAll<HTMLElement>('[data-rank-action]')]
       .filter((action) => !action.matches(':disabled'));
-    const nextIndex = Math.max(-1, Math.min(actions.length - 1, rankedUserActionIndex + delta));
+    const nextIndex = nextRankedUserActionIndex(rankedUserActionIndex, direction, actions.length);
     rankedUserActionIndex = nextIndex;
     await tick();
     if (nextIndex < 0) card.focus({ preventScroll: true });
@@ -1090,6 +1091,7 @@
     const keepAdding = editingUserId === null;
     rankingSaving = true;
     rankingError = '';
+    let continueAdding = false;
     try {
       if (editingUserId !== null && editingRankField === 'aliases') {
         await invoke('add_ranked_user_alias', {
@@ -1117,15 +1119,19 @@
       }
       await loadRankedUsers();
       await resolveNames();
-      if (keepAdding) {
-        rankingFocusActive = true;
-        await tick();
-        document.querySelector<HTMLInputElement>('.rank-person-form input')?.focus();
-      }
+      continueAdding = keepAdding;
     } catch (reason) {
       rankingError = messageFrom(reason, '无法保存排名选项');
     } finally {
       rankingSaving = false;
+      if (continueAdding) {
+        rankingFocusActive = true;
+        await tick();
+        const input = userNameInput
+          ?? document.querySelector<HTMLInputElement>('.rank-person-form input');
+        input?.focus({ preventScroll: true });
+        input?.select();
+      }
     }
   }
 
@@ -1341,11 +1347,12 @@
     }
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault();
-      void moveRankedUserActionFocus(event.key === 'ArrowLeft' ? -1 : 1);
+      const direction = event.key === 'ArrowLeft' ? 'left' : 'right';
+      void moveRankedUserActionFocus(direction);
       return;
     }
     if (rankedUserActionIndex >= 0) {
-      // 操作按钮保留原生空格/回车点击；上下键不会再误改排名。
+      // 操作按钮保留原生空格/回车点击，其他单键不触发排名排序。
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
       return;
     }
@@ -1498,12 +1505,12 @@
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
                               <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                               <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                            </div>
-                            <div class="ranked-user-aliases">
-                              <small>{otherAliasSummary(user)}</small>
                               {#if hasOtherAliases(user)}
                                 <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
                               {/if}
+                            </div>
+                            <div class="ranked-user-aliases">
+                              <small>{otherAliasSummary(user)}</small>
                             </div>
                           {/if}
                         </div>
@@ -1557,12 +1564,12 @@
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
                               <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                               <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                            </div>
-                            <div class="ranked-user-aliases">
-                              <small>{otherAliasSummary(user)}</small>
                               {#if hasOtherAliases(user)}
                                 <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
                               {/if}
+                            </div>
+                            <div class="ranked-user-aliases">
+                              <small>{otherAliasSummary(user)}</small>
                             </div>
                           {/if}
                         </div>
@@ -1941,7 +1948,7 @@
   }
 
   .lineup-workbench.desktop {
-    grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(350px, 410px) minmax(0, 1fr) minmax(300px, 360px);
     gap: clamp(14px, 1.7vw, 25px);
   }
 
@@ -2598,13 +2605,19 @@
   .desktop-accordion-content { padding: 12px; }
 
   .rank-manager {
+    --rank-gold: #f7d66d;
+    --rank-lime: #dff66c;
+    --rank-ink: #101711;
     display: flex;
     min-height: 0;
     flex: 1;
     flex-direction: column;
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 180px),
-      #dfe4ce;
+      radial-gradient(circle at 18% 0%, rgba(223, 246, 108, 0.2), transparent 29%),
+      radial-gradient(circle at 92% 18%, rgba(247, 214, 109, 0.16), transparent 26%),
+      linear-gradient(155deg, #17231a, #0d1510 58%, #182017);
+    color: #f7f3df;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
   }
 
   .rank-manager form {
@@ -2615,9 +2628,12 @@
   .rank-person-form {
     margin-top: 14px;
     padding: 12px;
-    border: 1px solid rgba(100, 112, 46, 0.16);
-    border-radius: 10px;
-    background: #f9faef;
+    border: 1px solid rgba(247, 214, 109, 0.38);
+    border-radius: 12px;
+    background:
+      linear-gradient(135deg, rgba(247, 214, 109, 0.12), rgba(223, 246, 108, 0.06)),
+      rgba(5, 10, 7, 0.52);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.18);
   }
 
   .rank-form-heading {
@@ -2627,7 +2643,9 @@
   }
 
   .rank-form-heading strong {
+    color: var(--rank-gold);
     font-size: calc(15px * var(--font-scale, 1));
+    letter-spacing: 0.08em;
   }
 
   .rank-manager form > label {
@@ -2638,7 +2656,7 @@
   }
 
   .rank-manager label > span {
-    color: var(--lineup-muted-on-light);
+    color: #e6e8cd;
     font-size: calc(12px * var(--font-scale, 1));
   }
 
@@ -2646,28 +2664,31 @@
     width: 100%;
     min-width: 0;
     padding: 9px 10px;
-    border: 1px solid rgba(36, 37, 31, 0.12);
-    border-radius: 7px;
+    border: 1px solid rgba(247, 214, 109, 0.42);
+    border-radius: 8px;
     outline: 0;
-    background: #fffdf8;
-    color: #24251f;
+    background: #fffdf5;
+    color: #182017;
     font-family: var(--font-sans);
     font-size: calc(14px * var(--font-scale, 1));
   }
 
   .rank-manager input:focus {
-    border-color: #8a993e;
+    border-color: var(--rank-lime);
+    box-shadow: 0 0 0 3px rgba(223, 246, 108, 0.17), 0 0 20px rgba(223, 246, 108, 0.1);
   }
 
   .save-user {
     padding: 9px;
     border: 0;
     border-radius: 7px;
-    background: #292a23;
-    color: #f7f5ed;
+    border: 1px solid rgba(247, 214, 109, 0.55);
+    background: linear-gradient(135deg, #d9ed60, #aebc3f);
+    color: #17200e;
     cursor: pointer;
     font-size: calc(13px * var(--font-scale, 1));
-    font-weight: 750;
+    font-weight: 900;
+    box-shadow: 0 6px 18px rgba(175, 197, 66, 0.19);
   }
 
   .ranking-error {
@@ -2700,18 +2721,20 @@
 
   .ranking-transfer-actions button {
     padding: 6px 8px;
-    border: 1px solid rgba(84, 96, 36, 0.25);
-    border-radius: 6px;
-    background: #f8f7f0;
-    color: #4f5b20;
+    border: 1px solid rgba(223, 246, 108, 0.34);
+    border-radius: 7px;
+    background: linear-gradient(145deg, #26331f, #141d16);
+    color: #eef4cd;
     cursor: pointer;
     font-size: calc(11px * var(--font-scale, 1));
-    font-weight: 750;
+    font-weight: 850;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.18);
   }
 
   .ranking-transfer-actions button.delete-all-rankings {
-    border-color: rgba(159, 65, 47, 0.28);
-    color: #8a3e32;
+    border-color: rgba(255, 127, 99, 0.45);
+    background: linear-gradient(145deg, #3b211d, #211311);
+    color: #ffb3a2;
   }
 
   .rank-keyboard-order {
@@ -2722,32 +2745,34 @@
     gap: 5px;
     margin: 2px 0 7px;
     padding: 7px 8px;
-    border: 1px solid rgba(36, 37, 31, 0.13);
-    border-radius: 8px;
-    background: #e5e2d8;
+    border: 1px solid rgba(247, 214, 109, 0.36);
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(247, 214, 109, 0.15), rgba(223, 246, 108, 0.07));
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.07);
   }
 
   .rank-keyboard-order.active {
-    border-color: rgba(105, 120, 42, 0.46);
-    background: #eef3d5;
+    border-color: rgba(223, 246, 108, 0.74);
+    background: linear-gradient(135deg, rgba(223, 246, 108, 0.23), rgba(247, 214, 109, 0.12));
+    box-shadow: 0 0 24px rgba(223, 246, 108, 0.12);
   }
 
   .rank-keyboard-order > span { min-width: 0; }
   .rank-keyboard-order strong,
   .rank-keyboard-order small { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-keyboard-order strong { color: #292b24; font-size: calc(12px * var(--font-scale, 1)); }
-  .rank-keyboard-order small { margin-left: 6px; color: #4b4e45; font-size: calc(11px * var(--font-scale, 1)); }
+  .rank-keyboard-order strong { color: #fff1ba; font-size: calc(13px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { margin-left: 6px; color: #e2e7c3; font-size: calc(12px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
     padding: 5px 7px;
-    border: 1px solid rgba(86, 101, 30, 0.32);
+    border: 1px solid rgba(223, 246, 108, 0.4);
     border-radius: 6px;
-    background: #f7f8ed;
-    color: #4d5a1e;
+    background: #24311d;
+    color: #ecf6b8;
     cursor: pointer;
     font-size: calc(11px * var(--font-scale, 1));
     font-weight: 800;
   }
-  .rank-keyboard-order .cancel-rank-move { border-color: rgba(137, 66, 51, 0.24); color: #833f33; }
+  .rank-keyboard-order .cancel-rank-move { border-color: rgba(255, 127, 99, 0.42); color: #ffc0b0; }
 
   .ranked-user-list {
     display: grid;
@@ -2781,7 +2806,7 @@
   .rank-zone.unranked-zone {
     margin-top: 13px;
     padding-top: 9px;
-    border-top: 1px solid rgba(36, 37, 31, 0.1);
+    border-top: 1px solid rgba(247, 214, 109, 0.28);
     transition: border-color 120ms ease, background 120ms ease;
   }
 
@@ -2799,13 +2824,14 @@
   }
 
   .rank-zone-heading strong {
-    color: #303229;
-    font-size: calc(14px * var(--font-scale, 1));
+    color: #f7e5a7;
+    font-size: calc(15px * var(--font-scale, 1));
+    letter-spacing: 0.08em;
   }
 
   .rank-zone-heading span {
-    color: var(--lineup-dim-on-light);
-    font-size: calc(11px * var(--font-scale, 1));
+    color: #d7dfa7;
+    font-size: calc(12px * var(--font-scale, 1));
     text-align: right;
   }
 
@@ -2832,33 +2858,38 @@
     position: relative;
     display: grid;
     min-width: 0;
-    min-height: 86px;
-    grid-template-columns: 40px minmax(0, 1fr);
+    min-height: 94px;
+    grid-template-columns: 46px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     padding: 12px 11px;
-    border: 1px solid rgba(92, 105, 43, 0.24);
-    border-radius: 12px;
+    border: 1px solid rgba(247, 214, 109, 0.52);
+    border-radius: 14px;
     overflow: hidden;
-    background: linear-gradient(135deg, #fffefa, #faf8ef);
+    background:
+      radial-gradient(circle at 96% 0%, rgba(247, 214, 109, 0.2), transparent 29%),
+      linear-gradient(135deg, #fffdf4, #f3ecd3);
     cursor: grab;
     touch-action: none;
     user-select: none;
-    box-shadow: 0 4px 12px rgba(54, 56, 42, 0.045);
+    box-shadow: 0 9px 24px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.9);
     transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease;
   }
 
   .ranked-user-list article:active { cursor: grabbing; }
 
   .ranked-user-list article:hover {
-    border-color: rgba(113, 126, 48, 0.3);
-    box-shadow: 0 7px 18px rgba(54, 56, 42, 0.09);
+    border-color: rgba(223, 246, 108, 0.82);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 0 18px rgba(223, 246, 108, 0.11);
   }
 
   .ranked-user-list article.keyboard-selected {
-    outline: 2px solid rgba(56, 111, 171, 0.48);
-    outline-offset: 1px;
-    background: linear-gradient(135deg, #fffffb, #f1f5dd);
+    outline: 3px solid rgba(223, 246, 108, 0.82);
+    outline-offset: 2px;
+    background:
+      radial-gradient(circle at 96% 0%, rgba(247, 214, 109, 0.28), transparent 31%),
+      linear-gradient(135deg, #fffef7, #eef3c9);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), 0 0 24px rgba(223, 246, 108, 0.18);
   }
 
   .ranked-user-list article.insert-before {
@@ -2879,11 +2910,19 @@
   .ranked-user-list article.drag-source { opacity: 0.44; }
 
   .rank-number {
-    color: #7a842f;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(247, 214, 109, 0.78);
+    border-radius: 12px;
+    background: linear-gradient(145deg, #24341d, #111a13);
+    color: var(--rank-lime);
     font-family: var(--font-mono);
-    font-size: calc(18px * var(--font-scale, 1));
-    font-weight: 800;
+    font-size: calc(19px * var(--font-scale, 1));
+    font-weight: 950;
     text-align: center;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 5px 12px rgba(0, 0, 0, 0.24);
+    place-items: center;
   }
 
   .ranked-user-content { min-width: 0; }
@@ -2892,7 +2931,7 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .ranked-user-heading button {
@@ -2908,9 +2947,9 @@
     flex: 1;
     display: block;
     overflow: hidden;
-    color: #24251f;
-    font-size: calc(16px * var(--font-scale, 1));
-    font-weight: 800;
+    color: #172018;
+    font-size: calc(18px * var(--font-scale, 1));
+    font-weight: 950;
     text-align: left;
     text-overflow: ellipsis;
   }
@@ -2918,7 +2957,11 @@
   .alias-action,
   .delete-user,
   .clear-aliases {
-    color: #72782e;
+    padding: 4px 5px !important;
+    border: 1px solid rgba(93, 115, 36, 0.34) !important;
+    border-radius: 6px;
+    background: #edf3ce !important;
+    color: #4f5f19;
     font-size: calc(11px * var(--font-scale, 1));
     opacity: 0;
     visibility: hidden;
@@ -2945,18 +2988,19 @@
   }
 
   .delete-user,
-  .clear-aliases { color: #8f4437; }
+  .clear-aliases {
+    border-color: rgba(159, 65, 47, 0.34) !important;
+    background: #f9dfd8 !important;
+    color: #8f382b;
+  }
 
   .alias-action:hover { color: #4f5819; }
   .delete-user:hover,
   .clear-aliases:hover { color: #a92f1b; }
 
   .ranked-user-aliases {
-    display: grid;
+    display: block;
     min-width: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 7px;
     margin-top: 7px;
   }
 
@@ -2966,8 +3010,8 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 4px;
-    color: var(--lineup-dim-on-light);
-    font-size: calc(13px * var(--font-scale, 1));
+    color: #4b5142;
+    font-size: calc(14px * var(--font-scale, 1));
     line-height: 1.45;
     overflow-wrap: anywhere;
     scrollbar-color: #888b7c #e7e4da;
@@ -3320,7 +3364,7 @@
 
   @media (max-width: 1250px) {
     .lineup-workbench.desktop {
-      grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+      grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
     }
 
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
