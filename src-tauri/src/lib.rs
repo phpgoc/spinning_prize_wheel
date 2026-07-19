@@ -1732,6 +1732,39 @@ mod tests {
         assert!(message.contains("重新打开应用"));
     }
 
+    #[test]
+    fn corrupted_ranking_reports_database_recovery_steps() {
+        let connection = test_database();
+        connection
+            .execute("DROP TABLE user", [])
+            .expect("模拟排名表被手工破坏");
+
+        let error = list_ranked_users_in(&connection).expect_err("损坏的排名表不能被静默忽略");
+        let message = database_file_error(error);
+        assert!(message.contains("数据库文件错误"));
+        assert!(message.contains(DATABASE_FILE_NAME));
+        assert!(message.contains("重新打开应用"));
+    }
+
+    #[test]
+    fn corrupted_lineup_history_reports_database_recovery_steps() {
+        let connection = test_database();
+        connection
+            .execute(
+                "INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
+                 VALUES ('broken', 1, '{broken json', '{}', 'standard')",
+                [],
+            )
+            .expect("写入损坏测试数据");
+
+        let error = list_lineup_histories_in(&connection, "standard")
+            .expect_err("损坏的分组历史不能被静默忽略");
+        let message = database_file_error(error);
+        assert!(message.contains("数据库文件错误"));
+        assert!(message.contains(DATABASE_FILE_NAME));
+        assert!(message.contains("重新打开应用"));
+    }
+
     fn expect_tables(connection: &Connection, expected: &[&str]) {
         for table in expected {
             let exists = connection
