@@ -239,6 +239,7 @@
         if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
           animationStyle = parsed.animationStyle!;
         }
+        if (mode === 'roulette' && animationStyle === 'threeD') animationStyle = 'luxury';
         if (typeof parsed.durationSeconds === 'number') {
           durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
         }
@@ -774,6 +775,7 @@
 
   export function setMode(next: DrawMode) {
     if (isSpinning || mode === next) return;
+    if (next === 'roulette' && animationStyle === 'threeD') animationStyle = 'luxury';
     mode = next;
     rouletteHits = {};
     rouletteFinished = false;
@@ -1649,7 +1651,7 @@
 
       <section class="setting-block">
         <h3>动画质感</h3>
-        <div class="animation-options">
+        <div class:roulette-mode={mode === 'roulette'} class="animation-options">
           <button
             type="button"
             class:active={animationStyle === 'simple'}
@@ -1668,15 +1670,17 @@
             <span class="motion-icon luxury-icon">✦</span>
             <strong>高级</strong>
           </button>
-          <button
-            type="button"
-            class:active={animationStyle === 'threeD'}
-            disabled={isSpinning}
-            on:click={() => (animationStyle = 'threeD')}
-          >
-            <span class="motion-icon board-icon">⬡</span>
-            <strong>大富翁</strong>
-          </button>
+          {#if mode !== 'roulette'}
+            <button
+              type="button"
+              class:active={animationStyle === 'threeD'}
+              disabled={isSpinning}
+              on:click={() => (animationStyle = 'threeD')}
+            >
+              <span class="motion-icon board-icon">⬡</span>
+              <strong>大富翁</strong>
+            </button>
+          {/if}
         </div>
       </section>
 
