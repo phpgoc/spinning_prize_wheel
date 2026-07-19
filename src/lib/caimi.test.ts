@@ -31,6 +31,26 @@ describe('猜蜜版隐藏权重', () => {
     expect(pickWeighted(hiddenOptions, () => 0.4).id).toBe('caimi');
   });
 
+  test('选中模式把隐藏权重和重来放进同一个总权重池', () => {
+    const prizes = [
+      { id: 'caimi', name: '猜猜猜猜', weight: 1, color: '#fff', enabled: true },
+      ...Array.from({ length: 6 }, (_, index) => ({
+        id: `normal-${index}`,
+        name: `普通项 ${index}`,
+        weight: 1,
+        color: '#000',
+        enabled: true,
+      })),
+    ];
+    const options = buildWheelOptions(applyCaimiSelectedWeights(prizes), true, 0.7);
+    const totalWeight = options.reduce((total, option) => total + option.weight, 0);
+
+    expect(totalWeight).toBeCloseTo(22.7);
+    expect(options.find((option) => option.id === 'caimi')!.weight / totalWeight).toBeCloseTo(16 / 22.7);
+    expect(options.find((option) => option.id === 'normal-0')!.weight / totalWeight).toBeCloseTo(1 / 22.7);
+    expect(options.find((option) => option.isRetry)!.weight / totalWeight).toBeCloseTo(0.7 / 22.7);
+  });
+
   test('批量实验室使用猜蜜隐藏权重', () => {
     const prizes = applyCaimiSelectedWeights([
       { id: 'normal', name: '普通项', weight: 1, color: '#000', enabled: true },

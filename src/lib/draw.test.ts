@@ -3,6 +3,7 @@ import {
   buildWheelOptions,
   normalizeBatchCount,
   pickWeighted,
+  scaleRouletteRetryWeight,
   simulateRouletteBatch,
   simulateSelectedBatch,
 } from './draw';
@@ -79,6 +80,19 @@ describe('draw engine', () => {
     expect(result.prizeCounts).toEqual({ a: 0, b: 1 });
     expect(result.events[0].detail).toContain('还剩 1 命');
     expect(result.events.at(-1)?.outcome).toBe('winner');
+  });
+
+  test('俄罗斯残局保持开场时的重来概率', () => {
+    expect(scaleRouletteRetryWeight(0.6, 2, 3)).toBeCloseTo(0.4);
+
+    const threePrizes = [
+      ...prizes,
+      { id: 'c', name: 'C', weight: 1, color: '#f00', enabled: true },
+    ];
+    const result = simulateRouletteBatch(threePrizes, 1, true, 0.6, sequence([0, 0.8]));
+
+    expect(result.retryCount).toBe(0);
+    expect(result.attempts).toBe(2);
   });
 
   test('实验室次数只按模拟规模归一化', () => {

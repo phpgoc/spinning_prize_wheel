@@ -13,6 +13,7 @@
     buildWheelOptions,
     normalizeBatchCount,
     pickWeighted,
+    scaleRouletteRetryWeight,
     simulateBatch,
   } from './draw';
   import {
@@ -861,14 +862,26 @@
   }
 
   function currentDrawOptions(): WheelOption[] {
-    if (variant === 'caimi' && mode === 'roulette') {
-      return activeDrawOptions.map((option) => (
-        option.isRetry
-          ? option
-          : { ...option, weight: caimiRouletteWeight(option.label, option.weight) }
-      ));
-    }
-    return activeDrawOptions;
+    if (mode !== 'roulette') return activeDrawOptions;
+    const applyModeWeight = (option: WheelOption) => (
+      variant === 'caimi' && !option.isRetry
+        ? { ...option, weight: caimiRouletteWeight(option.label, option.weight) }
+        : option
+    );
+    const currentOptions = activeDrawOptions.map(applyModeWeight);
+    const initialOptions = wheelOptions.map(applyModeWeight);
+    const candidateTotal = (options: WheelOption[]) => options.reduce(
+      (total, option) => total + (option.isRetry ? 0 : Math.max(0.01, Number(option.weight) || 0.01)),
+      0,
+    );
+    const effectiveRetryWeight = scaleRouletteRetryWeight(
+      retryWeight,
+      candidateTotal(currentOptions),
+      candidateTotal(initialOptions),
+    );
+    return currentOptions.map((option) => (
+      option.isRetry ? { ...option, weight: effectiveRetryWeight } : option
+    ));
   }
 
   function normalizeContinuousTarget() {
@@ -1223,14 +1236,18 @@
 
   function createBatchRows(simulation: BatchSimulation | null): BatchRow[] {
     if (!simulation) return [];
+    // 选中模式的候选项和重来共用同一个总权重池，百分比必须统一按总尝试数计算。
+    const candidatePercentDenominator = simulation.mode === 'selected'
+      ? simulation.attempts
+      : simulation.completed;
     const rows = prizes
       .map((prize) => ({
         id: prize.id,
         name: prize.name,
         color: prize.color,
         count: simulation.prizeCounts[prize.id] ?? 0,
-        percent: simulation.completed > 0
-          ? ((simulation.prizeCounts[prize.id] ?? 0) / simulation.completed) * 100
+        percent: candidatePercentDenominator > 0
+          ? ((simulation.prizeCounts[prize.id] ?? 0) / candidatePercentDenominator) * 100
           : 0,
       }))
       .filter((row) => row.count > 0 || prizes.find((prize) => prize.id === row.id)?.enabled)
@@ -1239,7 +1256,7 @@
     if (simulation.retryCount > 0) {
       rows.push({
         id: RETRY_ID,
-        name: '重来一次',
+        name: simulation.mode === 'roulette' ? '重来（每次转动）' : '重来一次',
         color: '#f2eee5',
         count: simulation.retryCount,
         percent: simulation.attempts > 0 ? (simulation.retryCount / simulation.attempts) * 100 : 0,

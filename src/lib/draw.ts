@@ -73,6 +73,19 @@ export function pickWeighted<T extends { weight: number }>(
   return options[options.length - 1];
 }
 
+/** 俄罗斯模式固定使用本局开场时算出的重来概率，避免残局反复抬高概率。 */
+export function scaleRouletteRetryWeight(
+  configuredRetryWeight: number,
+  activeCandidateWeight: number,
+  initialCandidateWeight: number,
+): number {
+  const retryWeight = Math.max(0.01, Number(configuredRetryWeight) || 0.01);
+  const activeWeight = Math.max(0, Number(activeCandidateWeight) || 0);
+  const initialWeight = Math.max(0, Number(initialCandidateWeight) || 0);
+  if (activeWeight <= 0 || initialWeight <= 0) return retryWeight;
+  return retryWeight * (activeWeight / initialWeight);
+}
+
 function emptyCounts(prizes: Prize[]): Record<string, number> {
   return Object.fromEntries(prizes.map((prize) => [prize.id, 0]));
 }
@@ -157,6 +170,10 @@ export function simulateRouletteBatch(
   const target = Math.max(1, Math.floor(requested));
   const prizeCounts = emptyCounts(prizes);
   const events: SimulationEvent[] = [];
+  const initialCandidateWeight = enabledPrizes.reduce(
+    (total, prize) => total + Math.max(0.01, Number(selectionWeight(prize)) || 0.01),
+    0,
+  );
   let attempts = 0;
   let retryCount = 0;
 
@@ -164,10 +181,22 @@ export function simulateRouletteBatch(
     let active = [...enabledPrizes];
 
     while (active.length > 1) {
+      const weightedActive = active.map((prize) => ({
+        ...prize,
+        weight: Math.max(0.01, Number(selectionWeight(prize)) || 0.01),
+      }));
+      const activeCandidateWeight = weightedActive.reduce(
+        (total, prize) => total + prize.weight,
+        0,
+      );
       const options = buildWheelOptions(
-        active.map((prize) => ({ ...prize, weight: selectionWeight(prize) })),
+        weightedActive,
         retryEnabled,
-        retryWeight,
+        scaleRouletteRetryWeight(
+          retryWeight,
+          activeCandidateWeight,
+          initialCandidateWeight,
+        ),
       );
       const picked = pickWeighted(options, random);
       attempts += 1;
