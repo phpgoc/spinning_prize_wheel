@@ -88,6 +88,7 @@
 <div
   class:caimi-variant={variant === 'caimi'}
   class:desktop-runtime={desktopRuntime}
+  class:draw-active={page === 'draw'}
   class="app-shell"
   style={`--font-scale: ${fontScale}`}
 >
@@ -108,7 +109,7 @@
     <CaimiBanner />
   {/if}
 
-  <div class:page-hidden={page !== 'draw'} aria-hidden={page !== 'draw'}>
+  <div class:page-hidden={page !== 'draw'} class="draw-page-host" aria-hidden={page !== 'draw'}>
     <DrawPage
       bind:this={drawPage}
       bind:mode={drawMode}

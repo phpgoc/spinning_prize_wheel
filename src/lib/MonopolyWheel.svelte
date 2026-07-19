@@ -351,7 +351,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: min(100%, 580px);
+    width: min(100%, 660px, max(320px, calc(100vh - var(--draw-page-offset, 108px) - 130px)));
     margin: auto;
     isolation: isolate;
   }

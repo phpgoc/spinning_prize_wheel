@@ -164,7 +164,7 @@
 <style>
   .wheel-stage {
     position: relative;
-    width: min(100%, 540px);
+    width: min(100%, 640px, max(320px, calc(100vh - var(--draw-page-offset, 108px) - 130px)));
     aspect-ratio: 1;
     margin: auto;
     perspective: 900px;
