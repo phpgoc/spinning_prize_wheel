@@ -84,6 +84,39 @@ button:not(:disabled):active { filter: brightness(0.94); }
   padding: 18px;
 }
 
+/* 桌面窗口本身就是页面边界，不再套 Web 端的居中画布和装饰外框。 */
+.app-shell.desktop-runtime {
+  --desktop-page-offset: 68px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-shell.desktop-runtime.caimi-variant { --desktop-page-offset: 251px; }
+
+.app-shell.desktop-runtime .topbar { padding-inline: 18px; }
+
+.app-shell.desktop-runtime .workspace {
+  height: calc(100vh - var(--desktop-page-offset));
+  min-height: calc(100vh - var(--desktop-page-offset));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-shell.desktop-runtime .lineup-page {
+  min-height: calc(100vh - var(--desktop-page-offset));
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-shell.desktop-runtime .lineup-workbench.desktop {
+  max-width: none;
+}
+
 .page-hidden { display: none; }
 
 .caimi-banner {

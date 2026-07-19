@@ -85,7 +85,12 @@
   />
 </svelte:head>
 
-<div class:caimi-variant={variant === 'caimi'} class="app-shell" style={`--font-scale: ${fontScale}`}>
+<div
+  class:caimi-variant={variant === 'caimi'}
+  class:desktop-runtime={desktopRuntime}
+  class="app-shell"
+  style={`--font-scale: ${fontScale}`}
+>
   <ExportNotice />
   <AppHeader
     {page}
