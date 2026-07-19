@@ -2280,7 +2280,7 @@
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
         <section class="shortcut-group">
-          <h3>全局生效 · {desktopRuntime ? '桌面端' : '网页版'}</h3>
+          <h3>全局</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
@@ -2331,10 +2331,17 @@
               <div><span>选择</span><kbd>↑ / ↓</kbd></div>
               <div><span>名称 / 别名</span><kbd>Enter / E</kbd></div>
               <div><span>删除 / 清空别名</span><kbd>D / F</kbd></div>
-              <div><span>确认 / 取消</span><kbd>Y / Enter · N / Esc</kbd></div>
             </div>
           </section>
         {/if}
+
+        <section class="shortcut-group confirm-shortcuts">
+          <h3>确认框</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>同意</span><kbd>Y</kbd><b>/</b><kbd>Enter</kbd></div>
+            <div><span>拒绝</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
+          </div>
+        </section>
       </div>
       {/if}
     </aside>

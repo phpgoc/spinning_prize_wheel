@@ -1460,6 +1460,21 @@ kbd {
   color: #71812f;
 }
 
+.confirm-shortcuts h3 {
+  color: #8b4336;
+}
+
+.confirm-shortcuts .shortcut-list > div {
+  border-color: rgba(164, 76, 58, 0.24);
+  background: rgba(255, 244, 240, 0.72);
+}
+
+.confirm-shortcuts .shortcut-list kbd {
+  border-color: #c9a79f;
+  background: #fff8f5;
+  color: #74382e;
+}
+
 .shortcut-list > div {
   display: flex;
   min-height: 42px;
