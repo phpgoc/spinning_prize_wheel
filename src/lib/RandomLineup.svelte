@@ -3,8 +3,18 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
   import { downloadCsv, downloadFormattedJson } from './file-export';
-  import { parseLineupFile, type LineupFileFormat } from './lineup-file-import';
+  import {
+    createLineupHistoryTransfer,
+    lineupHistoryCsvRows,
+    parseLineupHistoryTransfer,
+    type LineupHistoryFileFormat,
+  } from './lineup-history-transfer';
   import { parseOptionText } from './parse-options';
+  import {
+    createRankingTransfer,
+    parseRankingTransfer,
+    type RankedUserTransfer,
+  } from './ranking-transfer';
   import {
     applyCaimiLineupSwap,
     createRandomLineup,
@@ -17,6 +27,7 @@
     rankedUserKeyboardDropPoints,
     recentLineupHistories,
     unresolvedLineupNameCount,
+    uniqueLineupNames,
     type RankedUserDropTarget,
     type RandomLineup,
   } from './random-lineup';
@@ -61,7 +72,7 @@
   let draggingUserId: number | null = null;
   let activeRankDropTarget: RankedUserDropTarget | null = null;
   let activeRankDropCardId: number | null = null;
-  let activeRankDropPosition: 'before' | 'swap' | 'after' | null = null;
+  let activeRankDropPosition: 'before' | 'after' | null = null;
   let rankDragPointerId: number | null = null;
   let rankDragStartX = 0;
   let rankDragStartY = 0;
@@ -71,6 +82,7 @@
   let keyboardMovingUserId: number | null = null;
   let keyboardDropPointIndex = -1;
   let keyboardRankLabel = '选择一项';
+  let aliasLinkName: string | null = null;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
   let resultSourceNames: string[] = [];
@@ -78,16 +90,26 @@
   let lineupHistories: SavedLineup[] = [];
   let historyLoading = false;
   let historyError = '';
+  let historyImportStatus = '';
   let historyStart = '';
   let historyEnd = '';
   let insertIndex: number | null = null;
   let insertName = '';
   let insertError = '';
   let insertInput: HTMLInputElement | null = null;
-  let lineupFileInput: HTMLInputElement | null = null;
-  let fileImportError = '';
+  let rankingFileInput: HTMLInputElement | null = null;
+  let historyFileInput: HTMLInputElement | null = null;
+  let pendingRankingImport: RankedUserTransfer[] | null = null;
+  let rankingImporting = false;
+  let historyImporting = false;
+  let importErrorDialog: { title: string; detail: string } | null = null;
+  let lineupResultElement: HTMLElement | null = null;
+  let slowRevealEnabled = false;
+  let revealedLineupCells = new Set<string>();
+  let allLineupCellsRevealed = false;
+  let hiddenLineupCellKeys = new Set<string>();
 
-  $: names = parseOptionText(sourceText);
+  $: names = uniqueLineupNames(parseOptionText(sourceText));
   $: namesSignature = names.join('\u0000');
   $: desktopRankSignature = desktopRuntime
     ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
@@ -116,6 +138,18 @@
     keyboardRankLabel = keyboardRankDropLabel();
   }
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
+  $: hiddenLineupCellKeys = (() => {
+    if (!result || !desktopRuntime || !slowRevealEnabled || allLineupCellsRevealed) {
+      return new Set<string>();
+    }
+    return new Set(result.tiers.flatMap((tier, tierIndex) => (
+      tierIndex === 0
+        ? []
+        : tier.map((_, groupIndex) => lineupCellKey(tierIndex, groupIndex))
+          .filter((key) => !revealedLineupCells.has(key))
+    )));
+  })();
+  $: hiddenLineupCellCount = hiddenLineupCellKeys.size;
   $: orderAvailability = lineupOrderAvailability(
     names.length,
     desktopRuntime,
@@ -189,7 +223,9 @@
   function orderedNamesForLineup(orderMode: LineupOrderMode): string[] {
     if (!desktopRuntime) return names;
     if (orderMode === 'input') {
-      return resolvedNames.map((person) => person.canonicalName ?? person.inputName);
+      return uniqueLineupNames(
+        resolvedNames.map((person) => person.canonicalName ?? person.inputName),
+      );
     }
     return orderResolvedLineupNames(resolvedNames);
   }
@@ -219,7 +255,7 @@
           orderMode === 'rank'
           && unresolvedLineupNameCount(names, resolvedNames) > 0
         ) {
-          throw new Error('请先在排名表中补齐所有高亮选项');
+          throw new Error('请先在排名表中补齐所有未关联项');
         }
       }
       const orderedNames = orderedNamesForLineup(orderMode);
@@ -235,6 +271,7 @@
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
+      resetLineupReveal();
     } catch (reason) {
       result = null;
       error = messageFrom(reason, '无法生成分组');
@@ -325,6 +362,51 @@
     }
   }
 
+  function exportRanking() {
+    downloadFormattedJson('排名', createRankingTransfer(rankedUsers));
+  }
+
+  function openRankingImporter() {
+    rankingFileInput?.click();
+  }
+
+  async function readRankingFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.name.split('.').pop()?.toLocaleLowerCase('zh-CN') !== 'json') {
+      showImportError('排名导入失败', '排名同步只支持 JSON 文件');
+      return;
+    }
+    try {
+      pendingRankingImport = parseRankingTransfer(await file.text());
+    } catch (reason) {
+      showImportError('排名文件格式错误', messageFrom(reason, '无法读取排名文件'));
+    }
+  }
+
+  async function confirmRankingImport() {
+    const users = pendingRankingImport;
+    if (!users || rankingImporting) return;
+    rankingImporting = true;
+    rankingError = '';
+    try {
+      rankedUsers = await invoke<RankedUser[]>('replace_ranked_users', { users });
+      pendingRankingImport = null;
+      resetUserForm();
+      cancelKeyboardRankMove();
+      selectedRankedUserId = rankedUsers[0]?.id ?? null;
+      await resolveNames();
+    } catch (reason) {
+      pendingRankingImport = null;
+      showImportError('排名导入失败', messageFrom(reason, '无法导入排名'));
+      await loadRankedUsers();
+    } finally {
+      rankingImporting = false;
+    }
+  }
+
   async function loadLineupHistories() {
     if (!desktopRuntime) return;
     historyLoading = true;
@@ -356,9 +438,73 @@
   }
 
   function addUnknownPerson(name: string) {
+    cancelAliasLink();
     resetUserForm();
     desktopPanel = 'ranking';
     userName = name;
+  }
+
+  async function startAliasLink(name: string) {
+    cancelKeyboardRankMove();
+    resetUserForm();
+    aliasLinkName = name;
+    await openDesktopPanel('ranking');
+    if (rankedUsers.length > 0) {
+      await selectRankedUser(
+        rankedUsers.some((user) => user.id === selectedRankedUserId)
+          ? selectedRankedUserId!
+          : rankedUsers[0].id,
+      );
+    }
+  }
+
+  function cancelAliasLink() {
+    aliasLinkName = null;
+  }
+
+  async function confirmAliasLink() {
+    const alias = aliasLinkName;
+    const userId = selectedRankedUserId;
+    if (!alias || userId === null || rankingSaving) return;
+    rankingSaving = true;
+    rankingError = '';
+    try {
+      const updated = await invoke<RankedUser>('add_ranked_user_alias', { userId, alias });
+      rankedUsers = rankedUsers.map((user) => user.id === updated.id ? updated : user);
+      aliasLinkName = null;
+      await resolveNames();
+    } catch (reason) {
+      rankingError = messageFrom(reason, '无法关联名称');
+    } finally {
+      rankingSaving = false;
+    }
+  }
+
+  function resetLineupReveal() {
+    revealedLineupCells = new Set();
+    allLineupCellsRevealed = false;
+  }
+
+  function updateSlowReveal(event: Event) {
+    slowRevealEnabled = (event.currentTarget as HTMLInputElement).checked;
+    resetLineupReveal();
+  }
+
+  function lineupCellKey(tierIndex: number, groupIndex: number): string {
+    return `${tierIndex}:${groupIndex}`;
+  }
+
+  function isLineupCellHidden(tierIndex: number, groupIndex: number): boolean {
+    return hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex));
+  }
+
+  function revealLineupCell(tierIndex: number, groupIndex: number) {
+    if (!isLineupCellHidden(tierIndex, groupIndex)) return;
+    revealedLineupCells = new Set(revealedLineupCells).add(lineupCellKey(tierIndex, groupIndex));
+  }
+
+  function revealAllLineupCells() {
+    allLineupCellsRevealed = true;
   }
 
   async function openPreviewInsertion(index: number) {
@@ -421,44 +567,62 @@
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
-  function exportLineupHistoriesCsv() {
-    if (visibleHistories.length === 0) return;
-    downloadCsv('分组历史查询', [
-      ['时间', '名单项数', '组数', '分组方式'],
-      ...visibleHistories.map((history) => {
-        const input = history.input as Partial<{
-          sourceNames: unknown[];
-          groupCount: number;
-          orderMode: LineupOrderMode;
-        }>;
-        return [
-          new Date(history.createdAt).toLocaleString('zh-CN', { hour12: false }),
-          Array.isArray(input.sourceNames) ? input.sourceNames.length : 0,
-          Number(input.groupCount) || '',
-          input.orderMode === 'input' ? '输入顺序' : '数据库排名',
-        ];
-      }),
-    ]);
+  function exportLineupHistoryCsv(history: SavedLineup) {
+    downloadCsv('分组历史', lineupHistoryCsvRows([history]));
   }
 
-  function exportLineupHistoriesJson() {
-    if (visibleHistories.length === 0) return;
-    downloadFormattedJson('分组历史查询', {
-      exportedAt: new Date().toISOString(),
-      kind: 'lineup-history-query',
-      variant,
-      filters: { start: historyStart || null, end: historyEnd || null },
-      histories: visibleHistories,
-    });
+  function exportLineupHistoryJson(history: SavedLineup) {
+    downloadFormattedJson('分组历史', createLineupHistoryTransfer([history], variant));
   }
 
-  async function openLineupDatabaseFolder() {
+  function openLineupHistoryImporter() {
+    historyFileInput?.click();
+  }
+
+  async function importLineupHistoryFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const extension = file.name.split('.').pop()?.toLocaleLowerCase('zh-CN');
+    if (extension !== 'csv' && extension !== 'json') {
+      showImportError('分组历史导入失败', '只支持 CSV 或 JSON 文件');
+      return;
+    }
+    historyImporting = true;
     historyError = '';
+    historyImportStatus = '';
+    try {
+      const histories = parseLineupHistoryTransfer(
+        await file.text(),
+        extension as LineupHistoryFileFormat,
+      );
+      lineupHistories = await invoke<SavedLineup[]>('import_lineup_histories', {
+        variant,
+        histories,
+      });
+      historyImportStatus = `已导入 ${histories.length} 条`;
+    } catch (reason) {
+      showImportError('分组历史导入失败', messageFrom(reason, '无法导入分组历史'));
+    } finally {
+      historyImporting = false;
+    }
+  }
+
+  async function openLineupDatabaseFolder(source: 'ranking' | 'history' = 'history') {
+    if (source === 'ranking') rankingError = '';
+    else historyError = '';
     try {
       await invoke('open_database_folder');
     } catch (reason) {
-      historyError = messageFrom(reason, '无法打开数据库文件夹');
+      const message = messageFrom(reason, '无法打开数据库文件夹');
+      if (source === 'ranking') rankingError = message;
+      else historyError = message;
     }
+  }
+
+  function isDatabaseFileError(message: string): boolean {
+    return message.startsWith('数据库文件错误：');
   }
 
   function viewHistory(history: SavedLineup) {
@@ -483,6 +647,7 @@
       : [];
     resultSignature = inputSignature;
     historyStatus = 'saved';
+    resetLineupReveal();
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -529,7 +694,7 @@
   async function showKeyboardRankDropPoint(index: number) {
     const points = keyboardRankDropPoints();
     if (points.length === 0) return;
-    keyboardDropPointIndex = Math.min(points.length - 1, Math.max(0, index));
+    keyboardDropPointIndex = (index + points.length) % points.length;
     const point = points[keyboardDropPointIndex];
     activeRankDropTarget = point.target;
     activeRankDropCardId = point.cardId;
@@ -544,9 +709,12 @@
   function beginKeyboardRankMove() {
     if (rankingReordering || selectedRankedUserId === null) return;
     const points = keyboardRankDropPoints();
-    const sourcePoint = points.findIndex(
-      (point) => point.target.kind === 'swap' && point.target.userId === selectedRankedUserId,
-    );
+    const selected = rankedUsers.find((user) => user.id === selectedRankedUserId);
+    const sourcePoint = selected?.rank === 10_000
+      ? points.findIndex((point) => point.target.kind === 'unranked')
+      : points.findIndex(
+        (point) => point.target.kind === 'insert' && point.target.index === (selected?.rank ?? 1) - 1,
+      );
     if (sourcePoint < 0) return;
     clearRankDragState();
     keyboardMovingUserId = selectedRankedUserId;
@@ -586,11 +754,10 @@
     const point = keyboardRankDropPoints()[keyboardDropPointIndex];
     if (!point) return '选择落点';
     if (point.target.kind === 'unranked') return '放到无排名';
-    if (point.target.kind === 'insert') return `插入第 ${point.target.index + 1} 位`;
-    if (point.target.kind === 'swap') {
-      const targetUserId = point.target.userId;
-      const target = rankedUsers.find((user) => user.id === targetUserId);
-      return `替换 ${target?.name ?? '当前项'}`;
+    if (point.target.kind === 'insert') {
+      if (point.position === 'after') return '插入排名末尾';
+      const target = rankedUsers.find((user) => user.id === point.cardId);
+      return `插入 ${target?.name ?? `第 ${point.target.index + 1} 位`} 前`;
     }
     return '选择落点';
   }
@@ -601,6 +768,14 @@
     if (panel === 'ranking' && rankedUsers.length > 0) {
       await selectRankedUser(selectedRankedUserId ?? rankedUsers[0].id);
     }
+  }
+
+  function toggleDesktopPanelShortcut(panel: DesktopPanel) {
+    if (desktopPanel === panel) {
+      toggleDesktopPanel(panel);
+      return;
+    }
+    void openDesktopPanel(panel);
   }
 
   function otherAliasSummary(user: RankedUser): string {
@@ -618,7 +793,7 @@
 
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
     selectedRankedUserId = userId;
-    if (rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
+    if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
     pendingRankDragUserId = userId;
     rankDragPointerId = event.pointerId;
@@ -646,11 +821,11 @@
         const target = rankedUserDropTargetForCard(userId, rankIndex, verticalRatio);
         activeRankDropPosition = target.kind === 'insert'
           ? target.index === rankIndex ? 'before' : 'after'
-          : 'swap';
+          : null;
         return target;
       }
-      activeRankDropPosition = 'swap';
-      return rankedUserDropTargetForCard(userId, null, 0.5);
+      activeRankDropCardId = null;
+      return { kind: 'unranked' };
     }
 
     const zone = pointed?.closest<HTMLElement>('[data-rank-zone]')?.dataset.rankZone;
@@ -701,10 +876,6 @@
 
   async function moveRankedUser(userId: number, target: RankedUserDropTarget) {
     if (rankingReordering) return;
-    if (target.kind === 'swap' && target.userId === userId) {
-      clearRankDragState();
-      return;
-    }
 
     rankingReordering = true;
     rankingError = '';
@@ -806,10 +977,29 @@
   }
 
   function handleLineupKeydown(event: KeyboardEvent) {
-    if (!desktopRuntime || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     const key = event.key.toLowerCase();
 
-    if (pendingDeleteUser || pendingAliasClearUser) {
+    if (importErrorDialog) {
+      if (event.key === 'Escape' || event.key === 'Enter') {
+        event.preventDefault();
+        importErrorDialog = null;
+      }
+      return;
+    }
+
+    if (pendingRankingImport) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        pendingRankingImport = null;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        void confirmRankingImport();
+      }
+      return;
+    }
+
+    if (desktopRuntime && (pendingDeleteUser || pendingAliasClearUser)) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
         pendingDeleteUser = null;
@@ -822,28 +1012,56 @@
       return;
     }
 
+    if (aliasLinkName !== null) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelAliasLink();
+      } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveRankedUserSelection(event.key === 'ArrowUp' ? -1 : 1);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        void confirmAliasLink();
+      }
+      return;
+    }
+
     if (event.key === 'Escape') {
       event.preventDefault();
       if (keyboardMovingUserId !== null) {
         cancelKeyboardRankMove();
         return;
       }
+      const hadLocalOperation = editingUserId !== null
+        || selectedRankedUserId !== null
+        || insertIndex !== null
+        || pendingRankDragUserId !== null
+        || draggingUserId !== null;
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      cancelPreviewInsertion();
       resetUserForm();
       selectedRankedUserId = null;
       clearRankDragState();
+      if (!hadLocalOperation && desktopRuntime) desktopPanel = null;
       return;
     }
 
     if (isTextEditingTarget(event.target)) return;
+    if (key === 'x') {
+      event.preventDefault();
+      cancelKeyboardRankMove();
+      focusLineupResult();
+      return;
+    }
+    if (!desktopRuntime) return;
     if (key === 'a') {
       event.preventDefault();
-      void openDesktopPanel('ranking');
+      toggleDesktopPanelShortcut('ranking');
       return;
     }
     if (key === 'z') {
       event.preventDefault();
-      void openDesktopPanel('history');
+      toggleDesktopPanelShortcut('history');
       return;
     }
     if (desktopPanel !== 'ranking') {
@@ -904,32 +1122,14 @@
     historyStatus = 'idle';
   }
 
-  function openLineupFileImporter() {
-    fileImportError = '';
-    lineupFileInput?.click();
+  function focusLineupResult() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    lineupResultElement?.focus({ preventScroll: true });
+    lineupResultElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
-  async function importLineupFile(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-
-    const extension = file.name.split('.').pop()?.toLocaleLowerCase('zh-CN');
-    if (extension !== 'csv' && extension !== 'json') {
-      fileImportError = '只支持 CSV 或 JSON 文件';
-      return;
-    }
-
-    try {
-      const importedNames = parseLineupFile(await file.text(), extension as LineupFileFormat);
-      sourceText = importedNames.join('\n');
-      historyStatus = 'idle';
-      error = '';
-      fileImportError = '';
-    } catch (reason) {
-      fileImportError = messageFrom(reason, '无法导入名单');
-    }
+  function showImportError(title: string, detail: string) {
+    importErrorDialog = { title, detail };
   }
 
   function messageFrom(reason: unknown, fallback: string): string {
@@ -950,15 +1150,33 @@
           </button>
           {#if desktopPanel === 'ranking'}
             <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
-              {#if rankingError}<div class="ranking-error" role="alert">{rankingError}</div>{/if}
-              <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">
-                <span>
-                  <strong>{keyboardMovingUserId === null ? '键盘排序' : rankedUsers.find((user) => user.id === keyboardMovingUserId)?.name}</strong>
-                  <small>{keyboardRankLabel}</small>
-                </span>
-                <button type="button" disabled={selectedRankedUserId === null || rankingReordering} on:click={toggleKeyboardRankMove}>{keyboardMovingUserId === null ? '选中' : '放下'}</button>
-                {#if keyboardMovingUserId !== null}<button type="button" class="cancel-rank-move" on:click={cancelKeyboardRankMove}>取消</button>{/if}
+              {#if rankingError}
+                <div class="ranking-error" role="alert">{rankingError}</div>
+                {#if isDatabaseFileError(rankingError)}
+                  <button type="button" class="database-folder-button" on:click={() => openLineupDatabaseFolder('ranking')}>打开文件夹</button>
+                {/if}
+              {/if}
+              <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
+              <div class="ranking-transfer-actions">
+                <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
+                <button type="button" on:click={openRankingImporter}>导入 JSON</button>
               </div>
+              {#if aliasLinkName !== null}
+                <div class="rank-keyboard-order active alias-link-order">
+                  <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}</small></span>
+                  <button type="button" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
+                  <button type="button" class="cancel-rank-move" on:click={cancelAliasLink}>取消</button>
+                </div>
+              {:else}
+                <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">
+                  <span>
+                    <strong>{keyboardMovingUserId === null ? '键盘排序' : rankedUsers.find((user) => user.id === keyboardMovingUserId)?.name}</strong>
+                    <small>{keyboardRankLabel}</small>
+                  </span>
+                  <button type="button" disabled={selectedRankedUserId === null || rankingReordering} on:click={toggleKeyboardRankMove}>{keyboardMovingUserId === null ? '选中' : '放下'}</button>
+                  {#if keyboardMovingUserId !== null}<button type="button" class="cancel-rank-move" on:click={cancelKeyboardRankMove}>取消</button>{/if}
+                </div>
+              {/if}
               <div class="ranked-user-list">
                 {#if rankingLoading}
                   <p>正在读取排名表…</p>
@@ -969,11 +1187,10 @@
                       <div class:active={activeRankDropTarget?.kind === 'insert'} class="empty-ranked-drop">拖入排名</div>
                     {/if}
                     {#each rankedPeople as user, index (user.id)}
-                      <!-- 卡片用纵向四分区处理插入与替换，内部按钮保留独立操作。 -->
+                      <!-- 卡片上下两区分别表示前插和后插。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
                         class:keyboard-selected={selectedRankedUserId === user.id}
-                        class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:insert-before={activeRankDropCardId === user.id && activeRankDropPosition === 'before'}
                         class:insert-after={activeRankDropCardId === user.id && activeRankDropPosition === 'after'}
                         class:drag-source={rankMoveSourceId === user.id}
@@ -1018,7 +1235,7 @@
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
                         {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}
-                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i><i></i></div>
+                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i></div>
                         {/if}
                       </article>
                     {/each}
@@ -1035,7 +1252,6 @@
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
                         class:keyboard-selected={selectedRankedUserId === user.id}
-                        class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:drag-source={rankMoveSourceId === user.id}
                         data-rank-user-id={user.id}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
@@ -1076,7 +1292,6 @@
                           {/if}
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
-                        {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}<div class="swap-drop-guide" aria-hidden="true"></div>{/if}
                       </article>
                     {/each}
                   </section>
@@ -1101,6 +1316,7 @@
           </button>
           {#if desktopPanel === 'history'}
             <div class="desktop-accordion-content history-panel">
+              <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".csv,.json,text/csv,application/json" on:change={importLineupHistoryFile} />
               <div class="history-dates">
                 <label><span>开始日期</span><input type="date" bind:value={historyStart} /></label>
                 <label><span>结束日期</span><input type="date" bind:value={historyEnd} /></label>
@@ -1113,19 +1329,25 @@
                   <p>日期范围内没有分组记录。</p>
                 {:else}
                   {#each visibleHistories as history (history.id)}
-                    <button type="button" on:click={() => viewHistory(history)}>
-                      <span>{formatHistoryDate(history.createdAt)}</span>
-                      <strong>{historySummary(history)}</strong>
-                      <small>查看结果 →</small>
-                    </button>
+                    <article>
+                      <button type="button" class="history-view" on:click={() => viewHistory(history)}>
+                        <span>{formatHistoryDate(history.createdAt)}</span>
+                        <strong>{historySummary(history)}</strong>
+                        <small>查看结果 →</small>
+                      </button>
+                      <div class="history-item-actions">
+                        <button type="button" on:click={() => exportLineupHistoryCsv(history)}>CSV</button>
+                        <button type="button" on:click={() => exportLineupHistoryJson(history)}>JSON</button>
+                      </div>
+                    </article>
                   {/each}
                 {/if}
               </div>
               <div class="history-export-actions">
-                <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesCsv}>CSV</button>
-                <button type="button" disabled={visibleHistories.length === 0} on:click={exportLineupHistoriesJson}>JSON</button>
-                <button type="button" on:click={openLineupDatabaseFolder}>打开文件夹</button>
+                <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 CSV/JSON'}</button>
+                <button type="button" on:click={() => openLineupDatabaseFolder('history')}>打开文件夹</button>
               </div>
+              {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
             </div>
           {/if}
         </section>
@@ -1174,7 +1396,10 @@
                   {/if}
                 </div>
                 {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
-                  <button type="button" class="add-preview-user" title="添加到排名表" on:click={() => addUnknownPerson(row.name)}>录入</button>
+                  <div class="preview-link-actions">
+                    <button type="button" class="link-preview-user" title="关联到现有排名" on:click={() => startAliasLink(row.name)}>关联</button>
+                    <button type="button" class="add-preview-user" title="添加到排名表" on:click={() => addUnknownPerson(row.name)}>录入</button>
+                  </div>
                 {/if}
                 <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>×</button>
               </div>
@@ -1214,9 +1439,12 @@
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
         {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
-          <div class="rank-order-lock" role="status">名单中还有红名，数据库排名分组已锁定；可以先使用输入顺序分组。</div>
+          <div class="rank-order-lock" role="status">还有未关联项，数据库排名分组暂不可用；可以使用输入顺序分组。</div>
         {/if}
 
+        {#if desktopRuntime}
+          <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>缓慢开启</span></label>
+        {/if}
         <div class="lineup-actions">
           {#if desktopRuntime}
             <button type="button" class="generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>
@@ -1227,11 +1455,14 @@
         </div>
       </div>
 
-      <div class="lineup-result">
+      <div bind:this={lineupResultElement} class="lineup-result" tabindex="-1">
         <div class="result-heading">
           <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
+              {#if hiddenLineupCellCount > 0}
+                <button type="button" class="result-export-button reveal-all-button" on:click={revealAllLineupCells}>显示全部</button>
+              {/if}
               <button type="button" class="result-export-button" on:click={exportLineupCsv}>CSV</button>
               <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
               {#if desktopRuntime}
@@ -1255,11 +1486,23 @@
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新分组。</div>{/if}
         {#if result}
           <div class:outdated={resultOutdated} class="lineup-table-wrap">
-            <table>
+            <table style={`--lineup-group-count: ${result.groupCount}`}>
               <thead><tr><th scope="col">档位</th>{#each result.groupNames as group}<th scope="col"><span>{group}</span>组</th>{/each}</tr></thead>
               <tbody>
                 {#each result.tiers as tier, tierIndex}
-                  <tr><th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>{#each tier as entry}<td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'}>{#if entry}{#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '守护' : '支援'}</i>{/if}<strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>{:else}<span>—</span>{/if}</td>{/each}</tr>
+                  <tr>
+                    <th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>
+                    {#each tier as entry, groupIndex}
+                      <td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'} class:slow-hidden={hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex))}>
+                        {#if hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex))}
+                          <button type="button" class="slow-reveal-cell" aria-label={`显示 t${tierIndex + 1} ${result.groupNames[groupIndex]} 组`} on:click={() => revealLineupCell(tierIndex, groupIndex)}>·</button>
+                        {:else if entry}
+                          {#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '守护' : '支援'}</i>{/if}
+                          <strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>
+                        {:else}<span>—</span>{/if}
+                      </td>
+                    {/each}
+                  </tr>
                 {/each}
               </tbody>
             </table>
@@ -1273,11 +1516,8 @@
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false"></textarea></label>
-      <input bind:this={lineupFileInput} class="lineup-file-input" type="file" accept=".csv,.json,text/csv,application/json" on:change={importLineupFile} />
-      <div class="sample-actions"><button type="button" on:click={openLineupFileImporter}>导入 CSV/JSON</button><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
-      {#if fileImportError}<div class="file-import-error" role="alert">{fileImportError}</div>{/if}
+      <div class="sample-actions"><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
-      <div class="rule-note"><span>分档方式</span><p>{desktopRuntime ? `默认按数据库排名每 ${Math.max(2, Number(groupCount) || 2)} 项一档，无排名记为 10000。` : `按输入顺序每 ${Math.max(2, Number(groupCount) || 2)} 项划为一档。`}</p></div>
     </aside>
   </div>
 </main>
@@ -1316,6 +1556,31 @@
   </div>
 {/if}
 
+{#if pendingRankingImport}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog ranking-import-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ranking-import-title" aria-describedby="ranking-import-detail" tabindex="-1">
+      <span class="delete-confirm-icon">⇄</span>
+      <h2 id="ranking-import-title">导入 {pendingRankingImport.length} 项排名？</h2>
+      <p id="ranking-import-detail">当前排名和别名会被文件内容完整替换。</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={rankingImporting} on:click={() => (pendingRankingImport = null)}><span>取消</span><kbd>N / Esc</kbd></button>
+        <button type="button" class="confirm-import" aria-keyshortcuts="Y Enter" disabled={rankingImporting} on:click={confirmRankingImport}><span>{rankingImporting ? '导入中…' : '确认导入'}</span><kbd>Y / Enter</kbd></button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if importErrorDialog}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog import-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="import-error-title" aria-describedby="import-error-detail" tabindex="-1">
+      <span class="delete-confirm-icon">!</span>
+      <h2 id="import-error-title">{importErrorDialog.title}</h2>
+      <p id="import-error-detail">{importErrorDialog.detail}</p>
+      <div><button type="button" class="confirm-import" on:click={() => (importErrorDialog = null)}>知道了</button></div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .lineup-page {
     --lineup-muted-on-dark: #d9dbd2;
@@ -1342,16 +1607,14 @@
   }
 
   .config-heading span,
-  .result-heading > div > span,
-  .rule-note > span {
+  .result-heading > div > span {
     color: #c9d66f;
     font-family: var(--font-mono);
     font-size: calc(12px * var(--font-scale, 1));
     letter-spacing: 0.14em;
   }
 
-  .config-heading span,
-  .rule-note > span {
+  .config-heading span {
     color: #626d1f;
   }
 
@@ -1400,7 +1663,6 @@
   .names-field { display: block; margin-top: 18px; }
   .names-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .lineup-file-input { display: none; }
-  .file-import-error { margin-top: 7px; color: #ad4b35; font-size: calc(11px * var(--font-scale, 1)); }
   textarea {
     width: 100%;
     min-height: 270px;
@@ -1493,17 +1755,15 @@
   }
   .generate-button i { color: var(--accent); font-family: var(--font-mono); font-size: calc(21px * var(--font-scale, 1)); font-style: normal; }
 
-  .rule-note {
-    margin-top: 15px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(36, 37, 31, 0.09);
-  }
-  .rule-note p { margin-top: 5px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.6; }
-
   .lineup-result {
     min-width: 0;
     padding: clamp(20px, 3vw, 34px);
     background: rgba(11, 12, 9, 0.27);
+  }
+
+  .lineup-result:focus {
+    outline: 2px solid rgba(231, 255, 114, 0.42);
+    outline-offset: 3px;
   }
 
   .lineup-center {
@@ -1550,7 +1810,13 @@
 
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
-  table { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 7px; table-layout: fixed; }
+  table {
+    width: 100%;
+    min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));
+    border-collapse: separate;
+    border-spacing: 7px;
+    table-layout: fixed;
+  }
   th, td { padding: 13px 9px; border-radius: 10px; text-align: center; }
   thead th { color: var(--lineup-muted-on-dark); font-size: calc(11px * var(--font-scale, 1)); font-weight: 600; }
   thead th:first-child { width: 68px; }
@@ -1566,6 +1832,32 @@
   td strong { overflow: hidden; color: #f4f1e8; font-size: calc(14px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   td small { margin-top: 4px; color: var(--lineup-dim-on-dark); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
   td.empty { color: var(--lineup-dim-on-dark); }
+  td.slow-hidden {
+    padding: 4px;
+    border-color: rgba(231, 255, 114, 0.1);
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow: none;
+  }
+  .slow-reveal-cell {
+    width: 100%;
+    min-height: 58px;
+    border: 1px dashed rgba(231, 255, 114, 0.2);
+    border-radius: 8px;
+    background: rgba(231, 255, 114, 0.025);
+    color: #aeb676;
+    cursor: pointer;
+    font-size: calc(24px * var(--font-scale, 1));
+    line-height: 1;
+  }
+  .slow-reveal-cell:hover {
+    border-color: rgba(231, 255, 114, 0.42);
+    background: rgba(231, 255, 114, 0.08);
+    color: #e7ff72;
+  }
+  .result-heading .reveal-all-button {
+    border-color: rgba(231, 255, 114, 0.46);
+    color: #e3ecac;
+  }
   td.caimi-swapped {
     position: relative;
     border-color: rgba(255, 151, 174, 0.58);
@@ -1576,6 +1868,12 @@
     border-color: rgba(255, 218, 96, 0.78);
     background: linear-gradient(145deg, rgba(255, 218, 96, 0.22), rgba(255, 129, 164, 0.16));
     box-shadow: 0 0 20px rgba(255, 205, 91, 0.14), inset 0 0 0 1px rgba(255, 218, 96, 0.18);
+  }
+  td.slow-hidden.caimi-swapped,
+  td.slow-hidden.caimi-favored {
+    border-color: rgba(231, 255, 114, 0.1);
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow: none;
   }
   .caimi-swap-badge {
     position: absolute;
@@ -1610,7 +1908,7 @@
     font-size: calc(12px * var(--font-scale, 1));
   }
 
-  .preview-status.warning { color: #ff8e74; }
+  .preview-status.warning { color: #dca797; }
 
   .preview-list {
     display: grid;
@@ -1657,9 +1955,9 @@
   }
 
   .preview-row.unknown {
-    border-color: rgba(255, 117, 87, 0.42);
-    background: rgba(255, 117, 87, 0.08);
-    box-shadow: inset 3px 0 #ff7657;
+    border-color: rgba(221, 151, 132, 0.24);
+    background: rgba(221, 151, 132, 0.035);
+    box-shadow: inset 2px 0 rgba(221, 151, 132, 0.5);
   }
 
   .preview-row > span {
@@ -1694,7 +1992,7 @@
     white-space: nowrap;
   }
 
-  .preview-row.unknown small { color: #ff957d; }
+  .preview-row.unknown small { color: #d8aaa0; }
 
   .insert-before-button,
   .append-preview-user,
@@ -1785,6 +2083,7 @@
     font-size: calc(10px * var(--font-scale, 1));
   }
 
+  .link-preview-user,
   .add-preview-user,
   .remove-preview-user {
     padding: 0;
@@ -1793,13 +2092,22 @@
     cursor: pointer;
   }
 
+  .preview-link-actions {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .link-preview-user,
   .add-preview-user {
     padding: 4px 6px;
-    border: 1px solid rgba(255, 142, 116, 0.28);
+    border: 1px solid rgba(221, 170, 155, 0.24);
     border-radius: 6px;
-    color: #ff9b84;
+    color: #d8b1a7;
     font-size: calc(10px * var(--font-scale, 1));
   }
+
+  .link-preview-user { border-color: rgba(205, 219, 126, 0.22); color: #cbd58e; }
 
   .remove-preview-user {
     width: 21px;
@@ -1827,10 +2135,10 @@
   .rank-order-lock {
     margin-top: 12px;
     padding: 9px 11px;
-    border: 1px solid rgba(255, 117, 87, 0.24);
+    border: 1px solid rgba(210, 181, 117, 0.18);
     border-radius: 9px;
-    background: rgba(255, 117, 87, 0.08);
-    color: #ffab97;
+    background: rgba(210, 181, 117, 0.045);
+    color: #d4c49e;
     font-size: calc(12px * var(--font-scale, 1));
     line-height: 1.55;
   }
@@ -1840,6 +2148,22 @@
     align-items: stretch;
     gap: 9px;
     margin-top: 13px;
+  }
+
+  .slow-reveal-setting {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 12px;
+    color: var(--lineup-muted-on-dark);
+    cursor: pointer;
+    font-size: calc(11px * var(--font-scale, 1));
+  }
+
+  .slow-reveal-setting input {
+    width: 15px;
+    height: 15px;
+    accent-color: #bcca63;
   }
 
   .lineup-actions .generate-button {
@@ -1982,14 +2306,44 @@
     font-size: calc(11px * var(--font-scale, 1));
   }
 
+  .database-folder-button {
+    margin: 6px 0;
+    padding: 5px 8px;
+    border: 1px solid rgba(159, 65, 47, 0.3);
+    border-radius: 6px;
+    background: #fbefec;
+    color: #7d3d31;
+    cursor: pointer;
+    font-size: calc(10px * var(--font-scale, 1));
+    font-weight: 750;
+  }
+
+  .ranking-transfer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: 3px 0 8px;
+  }
+
+  .ranking-transfer-actions button {
+    padding: 5px 7px;
+    border: 1px solid rgba(84, 96, 36, 0.25);
+    border-radius: 6px;
+    background: #f8f7f0;
+    color: #4f5b20;
+    cursor: pointer;
+    font-size: calc(10px * var(--font-scale, 1));
+    font-weight: 750;
+  }
+
   .rank-keyboard-order {
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 6px;
-    margin: 3px 0 10px;
-    padding: 8px;
+    gap: 5px;
+    margin: 2px 0 7px;
+    padding: 4px 5px;
     border: 1px solid rgba(36, 37, 31, 0.13);
     border-radius: 8px;
     background: #e5e2d8;
@@ -2002,11 +2356,11 @@
 
   .rank-keyboard-order > span { min-width: 0; }
   .rank-keyboard-order strong,
-  .rank-keyboard-order small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-keyboard-order strong { color: #292b24; font-size: calc(11px * var(--font-scale, 1)); }
-  .rank-keyboard-order small { margin-top: 2px; color: #4b4e45; font-size: calc(9px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-keyboard-order strong { color: #292b24; font-size: calc(10px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { margin-left: 5px; color: #4b4e45; font-size: calc(9px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
-    padding: 5px 7px;
+    padding: 3px 6px;
     border: 1px solid rgba(86, 101, 30, 0.32);
     border-radius: 6px;
     background: #f7f8ed;
@@ -2019,10 +2373,12 @@
 
   .ranked-user-list {
     display: grid;
-    max-height: 540px;
-    gap: 13px;
+    height: min(540px, 56vh);
+    min-height: 240px;
+    grid-template-rows: minmax(112px, 2fr) minmax(112px, 1fr);
+    gap: 10px;
     margin-top: 4px;
-    overflow: auto;
+    overflow: hidden;
   }
 
   .rank-manager.reordering .ranked-user-list {
@@ -2039,11 +2395,15 @@
 
   .rank-zone {
     display: grid;
+    min-height: 0;
+    align-content: start;
     gap: 8px;
+    padding-right: 3px;
+    overflow-y: auto;
   }
 
   .rank-zone.unranked-zone {
-    padding-top: 11px;
+    padding-top: 9px;
     border-top: 1px solid rgba(36, 37, 31, 0.1);
   }
 
@@ -2135,11 +2495,6 @@
   .ranked-user-list article.keyboard-selected {
     outline: 2px solid rgba(56, 111, 171, 0.48);
     outline-offset: 1px;
-  }
-
-  .ranked-user-list article.drop-target {
-    border-color: #7a842f;
-    box-shadow: 0 0 0 3px rgba(122, 132, 47, 0.14);
   }
 
   .ranked-user-list article.insert-before {
@@ -2306,7 +2661,7 @@
     inset: 0;
     z-index: 3;
     display: grid;
-    grid-template-rows: 1fr 2fr 1fr;
+    grid-template-rows: repeat(2, 1fr);
     background: rgba(255, 253, 248, 0.76);
     pointer-events: none;
   }
@@ -2318,32 +2673,11 @@
     opacity: 0.72;
   }
 
-  .rank-drop-guides i:nth-child(2) {
-    background: rgba(130, 145, 57, 0.12);
-  }
-
   .insert-before .rank-drop-guides i:first-child,
   .insert-after .rank-drop-guides i:last-child {
     background: rgba(48, 119, 194, 0.42);
     opacity: 1;
   }
-
-  .drop-target .rank-drop-guides i:nth-child(2) {
-    background: rgba(123, 145, 42, 0.42);
-    opacity: 1;
-  }
-
-  .swap-drop-guide {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    display: grid;
-    background: rgba(130, 145, 57, 0.13);
-    pointer-events: none;
-    place-items: center;
-  }
-
-  .drop-target .swap-drop-guide { background: rgba(123, 145, 42, 0.42); }
 
   .rank-drag-ghost {
     position: fixed;
@@ -2455,6 +2789,19 @@
     background: #69772b;
   }
 
+  .delete-confirm-dialog button.confirm-import {
+    border-color: #788830;
+    background: #e7ff72;
+    color: #303714;
+  }
+
+  .ranking-import-dialog .delete-confirm-icon {
+    background: rgba(114, 132, 43, 0.13);
+    color: #667621;
+  }
+
+  .import-error-dialog > div { grid-template-columns: minmax(0, 1fr); }
+
   .history-dates {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2489,24 +2836,52 @@
     text-align: center;
   }
 
-  .lineup-history-list > button {
+  .lineup-history-list > article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    border: 1px solid rgba(36, 37, 31, 0.08);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fffdf8;
+  }
+
+  .lineup-history-list .history-view {
     display: grid;
     width: 100%;
     gap: 3px;
     padding: 9px 10px;
-    border: 1px solid rgba(36, 37, 31, 0.08);
-    border-radius: 8px;
-    background: #fffdf8;
+    border: 0;
+    background: transparent;
     color: #24251f;
     cursor: pointer;
     text-align: left;
+  }
+
+  .history-item-actions {
+    display: grid;
+    align-content: center;
+    gap: 4px;
+    padding: 5px;
+    border-left: 1px solid rgba(36, 37, 31, 0.08);
+  }
+
+  .history-item-actions button {
+    padding: 3px 5px;
+    border: 1px solid rgba(84, 96, 36, 0.24);
+    border-radius: 5px;
+    background: #f3f4e8;
+    color: #4d5920;
+    cursor: pointer;
+    font-size: calc(9px * var(--font-scale, 1));
+    font-weight: 750;
   }
 
   .lineup-history-list span { color: var(--lineup-dim-on-light); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
   .lineup-history-list strong { overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   .lineup-history-list small { color: #7a842f; font-size: calc(10px * var(--font-scale, 1)); }
 
-  .history-export-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .history-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
   .history-export-actions button {
     padding: 6px 8px;
     border: 1px solid rgba(36, 37, 31, 0.26);
@@ -2520,6 +2895,13 @@
   }
   .history-export-actions button:hover:not(:disabled) { border-color: #7f923f; background: #e9f2c9; color: #34420f; }
 
+  .history-import-status {
+    margin-top: 7px;
+    color: #59651f;
+    font-size: calc(10px * var(--font-scale, 1));
+    text-align: right;
+  }
+
   .history-status {
     margin: 0;
     color: #909b51;
@@ -2528,6 +2910,26 @@
   }
 
   .history-status.error { color: #dc725b; }
+
+  @media (min-width: 1251px) {
+    .lineup-workbench:not(.desktop) .lineup-center { display: contents; }
+    .lineup-workbench:not(.desktop) .preview-panel { grid-column: 1; grid-row: 1; }
+    .lineup-workbench:not(.desktop) .lineup-config { grid-column: 2; grid-row: 1; }
+    .lineup-workbench:not(.desktop) .lineup-result {
+      grid-column: 1 / 3;
+      grid-row: 2;
+      margin-top: clamp(18px, 2.5vw, 34px);
+    }
+    .lineup-workbench.desktop .lineup-center { display: contents; }
+    .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
+    .lineup-workbench.desktop .preview-panel { grid-column: 2; grid-row: 1; }
+    .lineup-workbench.desktop .lineup-config { grid-column: 3; grid-row: 1; }
+    .lineup-workbench.desktop .lineup-result {
+      grid-column: 2 / 4;
+      grid-row: 2;
+      margin-top: clamp(18px, 2.5vw, 34px);
+    }
+  }
 
   @media (max-width: 1250px) {
     .lineup-workbench.desktop {

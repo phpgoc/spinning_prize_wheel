@@ -3,7 +3,7 @@
   "productName": "转盘",
   "mainBinaryName": "转盘",
   "version": "0.1.0",
-  "identifier": "com.phpgoc.fortuna",
+  "identifier": "com.phpgoc.wheel",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:5173",

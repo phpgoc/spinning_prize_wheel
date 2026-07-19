@@ -16,7 +16,8 @@
   import { normalizeFontScale } from './lib/ui-settings';
   import type { DrawMode } from './lib/types';
 
-  const STORAGE_KEY = 'fortuna-wheel-settings-v1';
+  const STORAGE_KEY = 'wheel-settings-v1';
+  const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
 
   let page: AppPage = 'draw';
   let variant: AppVariant = BUILD_VARIANT;
@@ -36,7 +37,9 @@
   function initialFontScale(): number {
     if (typeof window === 'undefined') return 1;
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { fontScale?: unknown };
+      const saved = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
+      ) as { fontScale?: unknown };
       return normalizeFontScale(saved.fontScale);
     } catch {
       return 1;

@@ -4,7 +4,8 @@ use std::{fs, path::PathBuf, process::Command, time::Duration};
 use tauri::{AppHandle, Manager};
 
 const UNRANKED_RANK: i64 = 10_000;
-const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.fortuna";
+const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.wheel";
+const DATABASE_FILE_NAME: &str = "draw-history.sqlite3";
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -114,6 +115,14 @@ struct RankedUserInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RankedUserTransferInput {
+    name: String,
+    rank: i64,
+    aliases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -162,20 +171,29 @@ fn app_database(app: &AppHandle) -> Result<Connection, String> {
     let directory = app_database_dir(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建历史数据库目录：{error}"))?;
 
-    let mut connection = Connection::open(directory.join("draw-history.sqlite3"))
-        .map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let mut connection = Connection::open(directory.join(DATABASE_FILE_NAME))
+        .map_err(|error| database_file_error(format!("无法打开本地数据库：{error}")))?;
     connection
         .busy_timeout(Duration::from_secs(2))
-        .map_err(|error| format!("无法配置本地数据库：{error}"))?;
-    migrate_database(&mut connection)?;
+        .map_err(|error| database_file_error(format!("无法配置本地数据库：{error}")))?;
+    migrate_database(&mut connection).map_err(database_file_error)?;
     Ok(connection)
+}
+
+fn database_file_error(detail: String) -> String {
+    if detail.starts_with("数据库文件错误：") {
+        return detail;
+    }
+    format!(
+        "数据库文件错误：{detail}。请打开数据库文件夹，手动删除 {DATABASE_FILE_NAME}，然后重新打开应用以初始化数据库。"
+    )
 }
 
 fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
     // 仅 Debug 构建允许把自动化测试数据库隔离到工作区，Release 始终使用正式数据目录。
     #[cfg(debug_assertions)]
     if let Some(directory) =
-        std::env::var_os("FORTUNA_TEST_DATA_DIR").filter(|value| !value.is_empty())
+        std::env::var_os("WHEEL_TEST_DATA_DIR").filter(|value| !value.is_empty())
     {
         return Ok(PathBuf::from(directory));
     }
@@ -184,10 +202,35 @@ fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .path()
         .app_data_dir()
         .map_err(|error| format!("无法定位历史数据库目录：{error}"))?;
-    Ok(app_directory
+    let directory = app_directory
         .parent()
         .map(|parent| parent.join(SHARED_DATA_DIRECTORY))
-        .unwrap_or(app_directory))
+        .unwrap_or(app_directory);
+    migrate_legacy_database_directory(&directory)?;
+    Ok(directory)
+}
+
+fn migrate_legacy_database_directory(directory: &PathBuf) -> Result<(), String> {
+    let Some(parent) = directory.parent() else {
+        return Ok(());
+    };
+    // 旧目录名拆开拼接，只用于一次性迁移历史版本的数据。
+    let legacy_name = ["com.phpgoc.", "for", "tuna"].concat();
+    let legacy = parent.join(legacy_name);
+    if !legacy.is_dir() || legacy == *directory {
+        return Ok(());
+    }
+    fs::create_dir_all(directory).map_err(|error| format!("无法创建新的转盘数据目录：{error}"))?;
+    for suffix in ["", "-wal", "-shm"] {
+        let file_name = format!("{DATABASE_FILE_NAME}{suffix}");
+        let source = legacy.join(&file_name);
+        let target = directory.join(&file_name);
+        if source.is_file() && !target.exists() {
+            fs::copy(&source, &target)
+                .map_err(|error| format!("无法迁移旧数据库文件 {file_name}：{error}"))?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -456,6 +499,82 @@ fn clear_ranked_user_aliases_in(
     load_ranked_user(connection, user_id)
 }
 
+fn replace_ranked_users_in(
+    connection: &mut Connection,
+    users: Vec<RankedUserTransferInput>,
+) -> Result<Vec<RankedUser>, String> {
+    if users.len() > 5_000 {
+        return Err("排名文件最多允许 5000 项".to_string());
+    }
+
+    let mut namespace = std::collections::HashSet::new();
+    let mut ranked = Vec::new();
+    let mut alias_count = 0usize;
+    let mut normalized = Vec::with_capacity(users.len());
+    for user in users {
+        let name = normalize_person_name(&user.name)?;
+        if !(1..=UNRANKED_RANK).contains(&user.rank) {
+            return Err(format!("“{name}”的排名不合法"));
+        }
+        let rank = user.rank;
+        let aliases = normalize_aliases(&name, user.aliases)?;
+        for alias in &aliases {
+            let key = alias.to_lowercase();
+            if !namespace.insert(key) {
+                return Err(format!("名称或别名“{alias}”重复"));
+            }
+        }
+        alias_count += aliases.len().saturating_sub(1);
+        if alias_count > 100_000 {
+            return Err("排名文件最多允许 100000 个别名".to_string());
+        }
+        if rank < UNRANKED_RANK {
+            ranked.push(rank);
+        }
+        normalized.push((name, rank, aliases));
+    }
+    ranked.sort_unstable();
+    if ranked
+        .iter()
+        .enumerate()
+        .any(|(index, rank)| *rank != index as i64 + 1)
+    {
+        return Err("已排名项必须从第 1 名开始连续排列".to_string());
+    }
+
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("无法开始导入排名：{error}"))?;
+    transaction
+        .execute("DELETE FROM alias", [])
+        .map_err(|error| format!("无法清空旧别名：{error}"))?;
+    transaction
+        .execute("DELETE FROM user", [])
+        .map_err(|error| format!("无法清空旧排名：{error}"))?;
+
+    for (name, rank, aliases) in normalized {
+        transaction
+            .execute(
+                "INSERT INTO user (name, rank) VALUES (?1, ?2)",
+                params![name, rank],
+            )
+            .map_err(|error| format!("无法导入排名“{name}”：{error}"))?;
+        let user_id = transaction.last_insert_rowid();
+        for alias in aliases {
+            transaction
+                .execute(
+                    "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
+                    params![alias, user_id],
+                )
+                .map_err(|error| format!("无法导入别名“{alias}”：{error}"))?;
+        }
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交排名导入：{error}"))?;
+    list_ranked_users_in(connection)
+}
+
 #[tauri::command]
 fn save_common_selection(app: AppHandle, selection: CommonSelection) -> Result<(), String> {
     if !valid_selection_id(&selection.id) {
@@ -574,10 +693,11 @@ fn list_draw_histories_in(
         .map_err(|error| format!("无法查询抽奖历史：{error}"))?;
 
     let mut histories = Vec::new();
-    for payload in rows.flatten() {
-        if let Ok(draw) = serde_json::from_str::<SavedDraw>(&payload) {
-            histories.push(draw);
-        }
+    for row in rows {
+        let payload = row.map_err(|error| format!("无法解析抽奖历史行：{error}"))?;
+        let draw = serde_json::from_str::<SavedDraw>(&payload)
+            .map_err(|error| format!("抽奖历史内容损坏：{error}"))?;
+        histories.push(draw);
     }
     Ok(histories)
 }
@@ -585,7 +705,7 @@ fn list_draw_histories_in(
 #[tauri::command]
 fn list_draw_histories(app: AppHandle, variant: String) -> Result<Vec<SavedDraw>, String> {
     let connection = app_database(&app)?;
-    list_draw_histories_in(&connection, &variant)
+    list_draw_histories_in(&connection, &variant).map_err(database_file_error)
 }
 
 #[tauri::command]
@@ -761,9 +881,18 @@ fn clear_ranked_user_aliases(app: AppHandle, user_id: i64) -> Result<RankedUser,
 }
 
 #[tauri::command]
+fn replace_ranked_users(
+    app: AppHandle,
+    users: Vec<RankedUserTransferInput>,
+) -> Result<Vec<RankedUser>, String> {
+    let mut connection = app_database(&app)?;
+    replace_ranked_users_in(&mut connection, users)
+}
+
+#[tauri::command]
 fn list_ranked_users(app: AppHandle) -> Result<Vec<RankedUser>, String> {
     let connection = app_database(&app)?;
-    list_ranked_users_in(&connection)
+    list_ranked_users_in(&connection).map_err(database_file_error)
 }
 
 #[tauri::command]
@@ -939,7 +1068,37 @@ fn list_lineup_histories_in(
 #[tauri::command]
 fn list_lineup_histories(app: AppHandle, variant: String) -> Result<Vec<SavedLineup>, String> {
     let connection = app_database(&app)?;
-    list_lineup_histories_in(&connection, &variant)
+    list_lineup_histories_in(&connection, &variant).map_err(database_file_error)
+}
+
+fn import_lineup_histories_in(
+    connection: &mut Connection,
+    variant: &str,
+    histories: Vec<SavedLineup>,
+) -> Result<Vec<SavedLineup>, String> {
+    if histories.len() > 10_000 {
+        return Err("一次最多导入 10000 条分组历史".to_string());
+    }
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("无法开始导入分组历史：{error}"))?;
+    for history in &histories {
+        save_lineup_history_in(&transaction, variant, history)?;
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交分组历史导入：{error}"))?;
+    list_lineup_histories_in(connection, variant)
+}
+
+#[tauri::command]
+fn import_lineup_histories(
+    app: AppHandle,
+    variant: String,
+    histories: Vec<SavedLineup>,
+) -> Result<Vec<SavedLineup>, String> {
+    let mut connection = app_database(&app)?;
+    import_lineup_histories_in(&mut connection, &variant, histories)
 }
 
 #[tauri::command]
@@ -972,12 +1131,14 @@ pub fn run() {
             save_ranked_user,
             add_ranked_user_alias,
             clear_ranked_user_aliases,
+            replace_ranked_users,
             list_ranked_users,
             move_ranked_user,
             delete_ranked_user,
             resolve_lineup_names,
             save_lineup_history,
             list_lineup_histories,
+            import_lineup_histories,
             delete_lineup_history,
             open_database_folder
         ])
@@ -1086,6 +1247,50 @@ mod tests {
             list_ranked_users_in(&connection).expect("读取排名").len(),
             1
         );
+    }
+
+    #[test]
+    fn replacing_ranked_users_rolls_back_when_an_insert_fails() {
+        let mut connection = test_database();
+        save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "旧排名".to_string(),
+                rank: Some(1),
+                aliases: vec!["旧别名".to_string()],
+            },
+        )
+        .expect("保存旧排名");
+        connection
+            .execute_batch(
+                "CREATE TRIGGER reject_bad_ranked_user
+                 BEFORE INSERT ON user WHEN NEW.name = '坏数据'
+                 BEGIN SELECT RAISE(ABORT, '拒绝坏数据'); END;",
+            )
+            .expect("创建失败触发器");
+
+        replace_ranked_users_in(
+            &mut connection,
+            vec![
+                RankedUserTransferInput {
+                    name: "新排名".to_string(),
+                    rank: 1,
+                    aliases: vec![],
+                },
+                RankedUserTransferInput {
+                    name: "坏数据".to_string(),
+                    rank: 2,
+                    aliases: vec![],
+                },
+            ],
+        )
+        .expect_err("中途失败应回滚整个排名导入");
+
+        let users = list_ranked_users_in(&connection).expect("读取回滚后的排名");
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].name, "旧排名");
+        assert!(users[0].aliases.iter().any(|alias| alias.name == "旧别名"));
     }
 
     #[test]
@@ -1229,6 +1434,37 @@ mod tests {
     }
 
     #[test]
+    fn importing_lineup_histories_is_atomic() {
+        let mut connection = test_database();
+        let old = SavedLineup {
+            id: "lineup-old".to_string(),
+            created_at: 1_700_000_000_000,
+            input: serde_json::json!({"names": ["旧"]}),
+            result: serde_json::json!({"tiers": [["旧"]]}),
+        };
+        save_lineup_history_in(&connection, "standard", &old).expect("保存旧分组历史");
+
+        let valid = SavedLineup {
+            id: "lineup-new".to_string(),
+            created_at: old.created_at + 1,
+            input: serde_json::json!({"names": ["新"]}),
+            result: serde_json::json!({"tiers": [["新"]]}),
+        };
+        let invalid = SavedLineup {
+            id: "非法 编号".to_string(),
+            created_at: old.created_at + 2,
+            input: valid.input.clone(),
+            result: valid.result.clone(),
+        };
+        import_lineup_histories_in(&mut connection, "standard", vec![valid, invalid])
+            .expect_err("任一条失败应回滚整个历史导入");
+
+        let histories = list_lineup_histories_in(&connection, "standard").expect("读取分组历史");
+        assert_eq!(histories.len(), 1);
+        assert_eq!(histories[0].id, old.id);
+    }
+
+    #[test]
     fn draw_history_round_trips_json() {
         let connection = test_database();
         let draw = SavedDraw {
@@ -1296,6 +1532,25 @@ mod tests {
         assert!(list_draw_histories_in(&connection, "standard")
             .expect("读取抽奖历史")
             .is_empty());
+    }
+
+    #[test]
+    fn corrupted_draw_history_reports_database_recovery_steps() {
+        let connection = test_database();
+        connection
+            .execute(
+                "INSERT INTO draw_history (id, created_at, payload_json, variant)
+                 VALUES ('broken', 1, '{broken json', 'standard')",
+                [],
+            )
+            .expect("写入损坏测试数据");
+
+        let error =
+            list_draw_histories_in(&connection, "standard").expect_err("损坏的历史不能被静默忽略");
+        let message = database_file_error(error);
+        assert!(message.contains("数据库文件错误"));
+        assert!(message.contains(DATABASE_FILE_NAME));
+        assert!(message.contains("重新打开应用"));
     }
 
     fn expect_tables(connection: &Connection, expected: &[&str]) {

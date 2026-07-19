@@ -23,6 +23,11 @@
     normalizeResultLimit,
     remainingResultSlots,
   } from './draw-limit';
+  import {
+    aggregateDrawHistories,
+    filterDrawHistories,
+    singleDrawHistoryStats,
+  } from './draw-history';
   import { downloadCsv, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import {
@@ -52,8 +57,10 @@
   export let variant: AppVariant = 'standard';
   export let active = true;
 
-  const STORAGE_KEY = 'fortuna-wheel-settings-v1';
-  const COMMON_SELECTION_STORAGE_KEY = 'fortuna-wheel-common-selections-v1';
+  const STORAGE_KEY = 'wheel-settings-v1';
+  const COMMON_SELECTION_STORAGE_KEY = 'wheel-common-selections-v1';
+  const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
+  const LEGACY_COMMON_SELECTION_STORAGE_KEY = ['for', 'tuna-wheel-common-selections-v1'].join('');
   const MAX_ROULETTE_ROUNDS = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [
@@ -125,8 +132,12 @@
   let drawHistories: SavedDraw[] = [];
   let drawHistoryLoading = true;
   let drawHistorySaving = false;
+  let drawHistoryDeleting = false;
   let drawHistoryError = '';
+  let drawHistoryStart = '';
+  let drawHistoryEnd = '';
   let autoSaveHistory = true;
+  let pendingDrawHistoryDeletion: { kind: 'one'; draw: SavedDraw } | { kind: 'all' } | null = null;
   let continuousTarget = 0;
   let continuousIntervalSeconds = 3;
   export let continuousRunning = false;
@@ -180,6 +191,12 @@
   $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
   $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
   $: currentStats = createCurrentStats(prizes, records, validCompleted);
+  $: filteredDrawHistories = filterDrawHistories(
+    drawHistories,
+    drawHistoryStart,
+    drawHistoryEnd,
+  );
+  $: visibleDrawHistories = filteredDrawHistories.slice(0, 5);
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = batchResult ? [...batchResult.events].reverse().slice(0, 160) : [];
   $: parsedImportOptions = parseOptionText(importText);
@@ -222,7 +239,7 @@
 
   onMount(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<{
           mode: DrawMode;
@@ -313,7 +330,11 @@
     try {
       const loaded = desktopRuntime
         ? await invoke<unknown[]>('list_common_selections')
-        : JSON.parse(localStorage.getItem(COMMON_SELECTION_STORAGE_KEY) ?? '[]') as unknown[];
+        : JSON.parse(
+          localStorage.getItem(COMMON_SELECTION_STORAGE_KEY)
+            ?? localStorage.getItem(LEGACY_COMMON_SELECTION_STORAGE_KEY)
+            ?? '[]',
+        ) as unknown[];
       commonSelections = Array.isArray(loaded)
         ? loaded.filter(isCommonSelection).sort((left, right) => right.createdAt - left.createdAt)
         : [];
@@ -544,6 +565,24 @@
     };
   }
 
+  function requestDeleteDrawHistory(draw: SavedDraw) {
+    pendingDrawHistoryDeletion = { kind: 'one', draw };
+  }
+
+  function requestClearDrawHistories() {
+    if (drawHistories.length > 0) pendingDrawHistoryDeletion = { kind: 'all' };
+  }
+
+  async function confirmDrawHistoryDeletion() {
+    const pending = pendingDrawHistoryDeletion;
+    if (!desktopRuntime || !pending || drawHistoryDeleting) return;
+    drawHistoryDeleting = true;
+    if (pending.kind === 'one') await deleteDrawHistory(pending.draw);
+    else await clearDrawHistories();
+    drawHistoryDeleting = false;
+    pendingDrawHistoryDeletion = null;
+  }
+
   async function deleteDrawHistory(draw: SavedDraw) {
     if (!desktopRuntime) return;
     drawHistoryError = '';
@@ -579,31 +618,29 @@
   }
 
   function exportDrawHistoriesCsv() {
-    if (drawHistories.length === 0) return;
+    if (filteredDrawHistories.length === 0) return;
+    const rows = aggregateDrawHistories(filteredDrawHistories);
     downloadCsv('转盘历史查询', [
-      ['时间', '模式', '候选项数', '有效结果', '重来次数', '累计金额'],
-      ...drawHistories.map((draw) => {
-        const summary = drawHistorySummary(draw);
-        return [
-          new Date(draw.createdAt).toLocaleString('zh-CN', { hour12: false }),
-          draw.mode === 'selected' ? '选中模式' : '俄罗斯轮盘',
-          draw.prizes.length,
-          summary.completed,
-          summary.retries,
-          summary.rewardTotal,
-        ];
-      }),
+      ['名字', '参与次数', '中奖次数', '中奖金额'],
+      ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
     ]);
   }
 
   function exportDrawHistoriesJson() {
-    if (drawHistories.length === 0) return;
-    downloadFormattedJson('转盘历史查询', {
-      exportedAt: new Date().toISOString(),
-      kind: 'draw-history-query',
-      variant,
-      histories: drawHistories,
-    });
+    if (filteredDrawHistories.length === 0) return;
+    downloadFormattedJson('转盘历史查询', aggregateDrawHistories(filteredDrawHistories));
+  }
+
+  function exportDrawHistoryCsv(draw: SavedDraw) {
+    const rows = singleDrawHistoryStats(draw);
+    downloadCsv('抽奖历史', [
+      ['名字', '权重', '中奖次数', '中奖金额'],
+      ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
+    ]);
+  }
+
+  function exportDrawHistoryJson(draw: SavedDraw) {
+    downloadFormattedJson('抽奖历史', singleDrawHistoryStats(draw));
   }
 
   async function openDrawDatabaseFolder() {
@@ -683,6 +720,15 @@
     activePanel = 'common';
     selectedCommonId = commonSelections[0]?.id ?? null;
     await scrollSelectedCommonIntoView();
+  }
+
+  function toggleCommonKeyboard() {
+    if (activePanel === 'common') {
+      exitCommonKeyboard();
+      activePanel = null;
+      return;
+    }
+    void enterCommonKeyboard();
   }
 
   function exitCommonKeyboard() {
@@ -1487,6 +1533,17 @@
     const editing = target?.matches('input, textarea, select, button, [contenteditable="true"]') ?? false;
     const shortcutKey = event.code === 'Space' ? 'space' : key;
 
+    if (pendingDrawHistoryDeletion) {
+      if (!modifier && !event.altKey && !event.shiftKey && (event.key === 'Enter' || key === 'y')) {
+        event.preventDefault();
+        void confirmDrawHistoryDeletion();
+      } else if (!modifier && !event.altKey && !event.shiftKey && (event.key === 'Escape' || key === 'n')) {
+        event.preventDefault();
+        pendingDrawHistoryDeletion = null;
+      }
+      return;
+    }
+
     if (event.key === 'Enter' && event.altKey && target === importTextarea) {
       event.preventDefault();
       applyImportedOptions();
@@ -1596,7 +1653,7 @@
     } else if (shortcutKey === 'r') {
       void startNewDraw(true);
     } else if (shortcutKey === 'a') {
-      void enterCommonKeyboard();
+      toggleCommonKeyboard();
     } else if (shortcutKey === 'z') {
       exitCandidateKeyboard();
       exitCommonKeyboard();
@@ -2249,7 +2306,7 @@
       <div class="accordion-content history-content">
         <div class="panel-heading">
           <div><h2>历史</h2></div>
-          {#if desktopRuntime}<span class="count-badge">{drawHistories.length}</span>{/if}
+          {#if desktopRuntime}<span class="count-badge">{filteredDrawHistories.length}</span>{/if}
         </div>
 
         {#if !desktopRuntime}
@@ -2264,30 +2321,36 @@
             <div class="common-error">{drawHistoryError}</div>
           {/if}
 
+          <div class="draw-history-dates">
+            <label><span>开始日期</span><input type="date" bind:value={drawHistoryStart} /></label>
+            <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={drawHistoryEnd} /></label>
+          </div>
+
           {#if drawHistories.length === 0}
             <div class="sidebar-empty-state"><i>◷</i><strong>还没有保存的抽奖</strong></div>
+          {:else if filteredDrawHistories.length === 0}
+            <div class="sidebar-empty-state"><i>◷</i><strong>日期范围内没有记录</strong></div>
           {:else}
             <div class="draw-history-list">
-              {#each drawHistories as draw (draw.id)}
+              {#each visibleDrawHistories as draw (draw.id)}
                 {@const summary = drawHistorySummary(draw)}
                 <article class="draw-history-card">
                   <div class="draw-history-heading">
-                    <div>
-                      <strong>{formatSelectionDate(draw.createdAt)}</strong>
-                      <span>{draw.mode === 'selected' ? '选中模式' : '俄罗斯轮盘'} · {draw.prizes.length} 个候选项</span>
-                    </div>
+                    <strong>{formatSelectionDate(draw.createdAt)}</strong>
+                    <span>{draw.prizes.length} 项 · {summary.completed} 次</span>
                     <button
                       type="button"
                       aria-label={`删除 ${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
                       title="删除"
-                      on:click={() => deleteDrawHistory(draw)}
+                      on:click={() => requestDeleteDrawHistory(draw)}
                     >×</button>
                   </div>
-                  <p>{draw.prizes.slice(0, 4).map((prize) => prize.name).join('、') || '空名单'}{draw.prizes.length > 4 ? '…' : ''}</p>
-                  <div class="draw-history-metrics">
-                    <div><span>有效结果</span><strong>{summary.completed}</strong></div>
-                    <div><span>重来</span><strong>{summary.retries}</strong></div>
-                    <div><span>累计金额</span><strong>{formatAmount(summary.rewardTotal)}</strong></div>
+                  <div class="draw-history-bottom">
+                    <p title={draw.prizes.map((prize) => prize.name).join('、')}>{draw.prizes.map((prize) => prize.name).join('、') || '空名单'}</p>
+                    <div class="draw-history-export-actions">
+                      <button type="button" on:click={() => exportDrawHistoryCsv(draw)}>CSV</button>
+                      <button type="button" on:click={() => exportDrawHistoryJson(draw)}>JSON</button>
+                    </div>
                   </div>
                 </article>
               {/each}
@@ -2295,10 +2358,10 @@
 
           {/if}
           <div class="history-actions sidebar-history-actions">
-            <button type="button" disabled={drawHistories.length === 0} on:click={exportDrawHistoriesCsv}>CSV</button>
-            <button type="button" disabled={drawHistories.length === 0} on:click={exportDrawHistoriesJson}>JSON</button>
+            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesCsv}>汇总 CSV</button>
+            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</button>
             <button type="button" on:click={openDrawDatabaseFolder}>打开文件夹</button>
-            <button type="button" disabled={drawHistories.length === 0} on:click={clearDrawHistories}>清空历史</button>
+            <button type="button" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</button>
           </div>
         {/if}
       </div>
@@ -2325,8 +2388,8 @@
             <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
             <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
-            <div><span>打开常用选择</span><kbd>A</kbd></div>
-            <div><span>打开快捷键</span><kbd>Z</kbd></div>
+            <div><span>打开 / 关闭常用选择</span><kbd>A</kbd></div>
+            <div><span>打开 / 关闭快捷键</span><kbd>Z</kbd></div>
             <div><span>开始抽奖</span><kbd>空格</kbd></div>
             <div><span>修改奖励金额</span><kbd>M</kbd></div>
             {#if desktopRuntime}
@@ -2354,6 +2417,17 @@
           </div>
         </section>
 
+        <section class="shortcut-group">
+          <h3>分组</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>聚焦分组结果</span><kbd>X</kbd></div>
+            {#if desktopRuntime}
+              <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
+              <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>
+            {/if}
+          </div>
+        </section>
+
         <section class="shortcut-group context-shortcuts">
           <h3>常用选择</h3>
           <div class="shortcut-list sidebar-shortcut-list">
@@ -2367,16 +2441,17 @@
           <section class="shortcut-group">
             <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>打开排名 / 历史</span><kbd>A / Z</kbd></div>
               <div><span>上一项 / 下一项</span><kbd>↑ / ↓</kbd></div>
               <div><span>修改名称</span><kbd>Enter</kbd></div>
               <div><span>添加新别名</span><kbd>E</kbd></div>
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>
               <div><span>选中排序</span><kbd>空格</kbd></div>
-              <div><span>选择插入 / 替换落点</span><kbd>↑ / ↓</kbd></div>
-              <div><span>放下</span><kbd>空格 / Enter</kbd></div>
+              <div><span>选择插入位置</span><kbd>↑ / ↓</kbd></div>
+              <div><span>插入</span><kbd>空格 / Enter</kbd></div>
               <div><span>取消排序</span><kbd>Esc</kbd></div>
+              <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
+              <div><span>确认 / 取消关联</span><kbd>Enter / Esc</kbd></div>
             </div>
           </section>
         {/if}
@@ -2392,3 +2467,17 @@
       {/if}
     </aside>
   </main>
+
+  {#if pendingDrawHistoryDeletion}
+    <div class="draw-confirm-backdrop">
+      <div class="draw-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="draw-confirm-title" aria-describedby="draw-confirm-detail">
+        <span class="draw-confirm-icon">!</span>
+        <h2 id="draw-confirm-title">{pendingDrawHistoryDeletion.kind === 'all' ? '清空全部抽奖历史？' : '删除这条抽奖历史？'}</h2>
+        <p id="draw-confirm-detail">删除后无法恢复。</p>
+        <div>
+          <button type="button" disabled={drawHistoryDeleting} on:click={() => (pendingDrawHistoryDeletion = null)}><span>取消</span><kbd>N / Esc</kbd></button>
+          <button type="button" class="confirm-delete" disabled={drawHistoryDeleting} on:click={confirmDrawHistoryDeletion}><span>{drawHistoryDeleting ? '删除中…' : '删除'}</span><kbd>Y / Enter</kbd></button>
+        </div>
+      </div>
+    </div>
+  {/if}

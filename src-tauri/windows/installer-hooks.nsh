@@ -17,6 +17,11 @@
     IDNO keep_wheel_data
 
   ; 两个版本的排名数据库共用普通版目录，用户明确同意后才一起清理。
+  RMDir /r "$APPDATA\com.phpgoc.wheel"
+  RMDir /r "$APPDATA\com.phpgoc.wheel.caimi"
+  RMDir /r "$LOCALAPPDATA\com.phpgoc.wheel"
+  RMDir /r "$LOCALAPPDATA\com.phpgoc.wheel.caimi"
+  ; 同意清理时也删除旧版本遗留目录。
   RMDir /r "$APPDATA\com.phpgoc.fortuna"
   RMDir /r "$APPDATA\com.phpgoc.fortuna.caimi"
   RMDir /r "$LOCALAPPDATA\com.phpgoc.fortuna"

@@ -29,49 +29,43 @@ export interface LineupOrderAvailability {
 
 export type RankedUserDropTarget =
   | { kind: 'insert'; index: number }
-  | { kind: 'swap'; userId: number }
   | { kind: 'unranked' };
 
 export interface RankedUserKeyboardDropPoint {
   target: RankedUserDropTarget;
   cardId: number | null;
-  position: 'before' | 'swap' | 'after' | 'unranked';
+  position: 'before' | 'after' | 'unranked';
 }
 
-/** 把已排名卡片的上四分之一、中间、下四分之一映射为前插、替换、后插。 */
+/** 已排名卡片只提供前插和后插，不再提供替换操作。 */
 export function rankedUserDropTargetForCard(
-  userId: number,
+  _userId: number,
   rankIndex: number | null,
   verticalRatio: number,
 ): RankedUserDropTarget {
-  if (rankIndex === null) return { kind: 'swap', userId };
-  if (verticalRatio < 0.25) return { kind: 'insert', index: rankIndex };
-  if (verticalRatio > 0.75) return { kind: 'insert', index: rankIndex + 1 };
-  return { kind: 'swap', userId };
+  if (rankIndex === null) return { kind: 'unranked' };
+  return verticalRatio < 0.5
+    ? { kind: 'insert', index: rankIndex }
+    : { kind: 'insert', index: rankIndex + 1 };
 }
 
-/**
- * 键盘排序在每个已排名选项上依次提供“前插、替换”两个落点，末尾再补一个后插落点。
- * 因此上下键每按两次会跨过一个完整选项，同时不会产生相邻卡片间的重复插入位置。
- */
+/** 键盘排序依次经过无排名、每一项之前和排名末尾。 */
 export function rankedUserKeyboardDropPoints(
   rankedIds: readonly number[],
-  unrankedIds: readonly number[],
+  _unrankedIds: readonly number[],
 ): RankedUserKeyboardDropPoint[] {
-  const points: RankedUserKeyboardDropPoint[] = [];
+  // 无排名只保留一个落点，并放在首尾循环的交界处。
+  const points: RankedUserKeyboardDropPoint[] = [
+    { target: { kind: 'unranked' }, cardId: null, position: 'unranked' },
+  ];
   rankedIds.forEach((userId, index) => {
     points.push({ target: { kind: 'insert', index }, cardId: userId, position: 'before' });
-    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
   });
   points.push({
     target: { kind: 'insert', index: rankedIds.length },
     cardId: rankedIds.at(-1) ?? null,
     position: rankedIds.length > 0 ? 'after' : 'before',
   });
-  unrankedIds.forEach((userId) => {
-    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
-  });
-  points.push({ target: { kind: 'unranked' }, cardId: null, position: 'unranked' });
   return points;
 }
 
@@ -138,6 +132,17 @@ export function insertLineupPreviewName(
   return updated;
 }
 
+/** 文本导入按首次出现保留名称，大小写不同也视为重复。 */
+export function uniqueLineupNames(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return names.filter((name) => {
+    const key = name.trim().toLocaleLowerCase('zh-CN');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';
@@ -155,12 +160,12 @@ export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]):
     throw new Error('排名名单中存在未识别选项');
   }
 
-  return [...people]
+  return uniqueLineupNames([...people]
     .sort((left, right) => (
       left.rank! - right.rank!
       || left.canonicalName!.localeCompare(right.canonicalName!, 'zh-CN')
     ))
-    .map((person) => person.canonicalName!);
+    .map((person) => person.canonicalName!));
 }
 
 export function recentLineupHistories(
