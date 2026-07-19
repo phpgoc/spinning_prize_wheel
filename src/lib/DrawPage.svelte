@@ -1386,18 +1386,21 @@
 
   function exportCurrentStatsJson() {
     if (records.length === 0) return;
-    downloadFormattedJson('转盘当前统计', {
-      exportedAt: new Date().toISOString(),
-      kind: 'current-draw-statistics',
-      mode,
-      summary: {
-        completed: validCompleted,
-        retries: retryTotal,
-        rewardTotal: totalRewardAmount,
-      },
-      statistics: currentStats,
-      records,
-    });
+    const statistics = currentStats.map(({ name, weight, count, rewardTotal }) => ({
+      name,
+      weight,
+      count,
+      rewardTotal,
+    }));
+    if (retryTotal > 0 || retryEnabled) {
+      statistics.push({
+        name: '重来一次',
+        weight: retryEnabled ? retryWeight : 0,
+        count: retryTotal,
+        rewardTotal: 0,
+      });
+    }
+    downloadFormattedJson('转盘当前统计', statistics);
   }
 
   function exportBatchExperiment() {
