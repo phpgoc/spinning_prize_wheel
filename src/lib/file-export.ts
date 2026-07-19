@@ -1,5 +1,23 @@
 export type CsvCell = string | number | boolean | null | undefined;
 
+export interface ExportCompletedNotice {
+  location: string;
+  desktop: boolean;
+}
+
+type ExportNoticeListener = (notice: ExportCompletedNotice) => void;
+
+const exportNoticeListeners = new Set<ExportNoticeListener>();
+
+export function subscribeExportCompleted(listener: ExportNoticeListener): () => void {
+  exportNoticeListeners.add(listener);
+  return () => exportNoticeListeners.delete(listener);
+}
+
+function publishExportCompleted(notice: ExportCompletedNotice) {
+  for (const listener of exportNoticeListeners) listener(notice);
+}
+
 /** 生成带 UTF-8 BOM 的 CSV，保证 Windows Excel 直接打开时中文不乱码。 */
 export function createCsv(rows: readonly (readonly CsvCell[])[]): string {
   const content = rows
@@ -34,7 +52,9 @@ async function downloadFile(
 ): Promise<string> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
     const { invoke } = await import('@tauri-apps/api/core');
-    return invoke<string>('export_text_file', { prefix, extension, content });
+    const location = await invoke<string>('export_text_file', { prefix, extension, content });
+    publishExportCompleted({ location, desktop: true });
+    return location;
   }
 
   const filename = `${prefix}-${new Date().toISOString().slice(0, 10)}.${extension}`;
@@ -46,5 +66,6 @@ async function downloadFile(
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  publishExportCompleted({ location: filename, desktop: false });
   return filename;
 }

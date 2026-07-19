@@ -195,6 +195,9 @@ fn app_database(app: &AppHandle) -> Result<Connection, String> {
 }
 
 fn log_sql_statement(sql: &str) {
+    if !should_log_sql_statement(sql) {
+        return;
+    }
     let Some(path) = SQL_LOG_PATH.get() else {
         return;
     };
@@ -203,6 +206,19 @@ fn log_sql_statement(sql: &str) {
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{line}");
     }
+}
+
+fn should_log_sql_statement(sql: &str) -> bool {
+    let operation = sql
+        .trim_start()
+        .split_ascii_whitespace()
+        .next()
+        .unwrap_or_default();
+    // CREATE 兼容建表记录，INSERT 对应业务里的新增；读取和事务语句不写日志。
+    operation.eq_ignore_ascii_case("CREATE")
+        || operation.eq_ignore_ascii_case("INSERT")
+        || operation.eq_ignore_ascii_case("UPDATE")
+        || operation.eq_ignore_ascii_case("DELETE")
 }
 
 fn format_sql_log_line(sql: &str, now: OffsetDateTime) -> String {
@@ -1331,6 +1347,26 @@ mod tests {
             format_sql_log_line("SELECT 1;\nUPDATE user SET rank = 2;", time),
             "1970-01-01 00:00:00 SELECT 1; UPDATE user SET rank = 2;"
         );
+    }
+
+    #[test]
+    fn sql_log_only_keeps_create_update_and_delete_operations() {
+        for sql in [
+            "CREATE TABLE user (id INTEGER)",
+            "INSERT INTO user (id) VALUES (1)",
+            "UPDATE user SET id = 2",
+            "DELETE FROM user WHERE id = 2",
+        ] {
+            assert!(should_log_sql_statement(sql), "应记录：{sql}");
+        }
+        for sql in [
+            "SELECT * FROM user",
+            "PRAGMA user_version",
+            "BEGIN",
+            "COMMIT",
+        ] {
+            assert!(!should_log_sql_statement(sql), "不应记录：{sql}");
+        }
     }
 
     #[test]

@@ -5,6 +5,7 @@
   import AppHeader from './lib/AppHeader.svelte';
   import CaimiBanner from './lib/CaimiBanner.svelte';
   import DrawPage from './lib/DrawPage.svelte';
+  import ExportNotice from './lib/ExportNotice.svelte';
   import RandomLineup from './lib/RandomLineup.svelte';
   import {
     BUILD_VARIANT,
@@ -85,6 +86,7 @@
 </svelte:head>
 
 <div class:caimi-variant={variant === 'caimi'} class="app-shell" style={`--font-scale: ${fontScale}`}>
+  <ExportNotice />
   <AppHeader
     {page}
     {variant}
