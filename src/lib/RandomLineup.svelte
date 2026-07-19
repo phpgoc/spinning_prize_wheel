@@ -843,6 +843,19 @@
     userAliasInput = null;
   }
 
+  async function focusRankedUserAddition() {
+    if (desktopPanel !== 'ranking') await openDesktopPanel('ranking');
+    cancelKeyboardRankMove();
+    resetUserForm();
+    rankingFocusActive = true;
+    selectedRankedUserId = null;
+    rankedUserActionIndex = -1;
+    await tick();
+    const input = document.querySelector<HTMLInputElement>('.rank-person-form input');
+    input?.focus({ preventScroll: true });
+    input?.select();
+  }
+
   async function selectRankedUser(userId: number) {
     selectedRankedUserId = userId;
     rankedUserActionIndex = -1;
@@ -1345,7 +1358,7 @@
     if (!desktopRuntime) return;
     if (key === 'a') {
       event.preventDefault();
-      toggleDesktopPanelShortcut('ranking');
+      void focusRankedUserAddition();
       return;
     }
     if (key === 'z') {
@@ -1400,7 +1413,7 @@
     } else if (event.key === 'Enter') {
       event.preventDefault();
       void editRankedUser(selected, 'name');
-    } else if (key === 'e') {
+    } else if (key === 's') {
       event.preventDefault();
       void editRankedUser(selected, 'aliases');
     } else if (key === 'd') {

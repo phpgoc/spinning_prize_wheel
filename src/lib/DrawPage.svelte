@@ -2447,7 +2447,7 @@
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
             {#if desktopRuntime}
-              <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
+              <div><span>打开排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>
               <div><span>预览序号选中 / 插入</span><kbd>空格</kbd></div>
               <div><span>预览选择插入位置</span><kbd>↑ / ↓</kbd></div>
@@ -2471,7 +2471,8 @@
             <div class="shortcut-list sidebar-shortcut-list">
               <div><span>上一项 / 下一项</span><kbd>↑ / ↓</kbd></div>
               <div><span>修改名称</span><kbd>Enter</kbd></div>
-              <div><span>添加新别名</span><kbd>E</kbd></div>
+              <div><span>添加排名</span><kbd>A</kbd></div>
+              <div><span>添加新别名</span><kbd>S</kbd></div>
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>
               <div><span>选中排序</span><kbd>空格</kbd></div>
