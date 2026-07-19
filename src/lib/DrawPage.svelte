@@ -2442,16 +2442,6 @@
           </div>
         </section>
 
-        {#if animationStyle === 'threeD' && mode !== 'roulette'}
-          <section class="shortcut-group">
-            <h3>3D 视角</h3>
-            <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>视角上 / 下</span><kbd>↑ / ↓</kbd></div>
-              <div><span>恢复正面</span><kbd>Home</kbd></div>
-            </div>
-          </section>
-        {/if}
-
         <section class="shortcut-group">
           <h3>分组</h3>
           <div class="shortcut-list sidebar-shortcut-list">
