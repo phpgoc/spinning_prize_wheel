@@ -90,6 +90,8 @@ button:not(:disabled):active { filter: brightness(0.94); }
 /* 抽奖页严格使用窗口剩余高度；横幅和字体变高时不再依赖固定偏移量。 */
 .app-shell.draw-active {
   display: flex;
+  width: 100%;
+  max-width: none;
   height: 100vh;
   min-height: 0;
   flex-direction: column;
@@ -2230,10 +2232,19 @@ kbd {
 }
 
 .draw-core {
+  --draw-wheel-size: min(100%, max(320px, calc(100vh - var(--draw-page-offset, 108px) - 130px)));
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+}
+
+/* 使用转盘实际容器高度计算尺寸，窗口很大时不再受固定像素上限限制。 */
+@supports (width: 1cqh) {
+  .draw-core {
+    --draw-wheel-size: min(100%, max(320px, calc(100cqh - 52px)));
+    container-type: size;
+  }
 }
 
 /* 只读运行状态独立放在转盘上方，避免与可点击按钮混淆。 */
