@@ -1,11 +1,22 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, process::Command, time::Duration};
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::OnceLock,
+    time::Duration,
+};
 use tauri::{AppHandle, Manager};
+use time::OffsetDateTime;
 
 const UNRANKED_RANK: i64 = 10_000;
 const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.wheel";
 const DATABASE_FILE_NAME: &str = "draw-history.sqlite3";
+const SQL_LOG_FILE_NAME: &str = "sql.log";
+
+static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -170,14 +181,42 @@ fn valid_selection_id(id: &str) -> bool {
 fn app_database(app: &AppHandle) -> Result<Connection, String> {
     let directory = app_database_dir(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建历史数据库目录：{error}"))?;
+    let _ = SQL_LOG_PATH.set(directory.join(SQL_LOG_FILE_NAME));
 
     let mut connection = Connection::open(directory.join(DATABASE_FILE_NAME))
         .map_err(|error| database_file_error(format!("无法打开本地数据库：{error}")))?;
+    #[allow(deprecated)]
+    connection.trace(Some(log_sql_statement));
     connection
         .busy_timeout(Duration::from_secs(2))
         .map_err(|error| database_file_error(format!("无法配置本地数据库：{error}")))?;
     migrate_database(&mut connection).map_err(database_file_error)?;
     Ok(connection)
+}
+
+fn log_sql_statement(sql: &str) {
+    let Some(path) = SQL_LOG_PATH.get() else {
+        return;
+    };
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let line = format_sql_log_line(sql, now);
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn format_sql_log_line(sql: &str, now: OffsetDateTime) -> String {
+    let sql = sql.replace(['\r', '\n'], " ");
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second(),
+        sql.trim()
+    )
 }
 
 fn database_file_error(detail: String) -> String {
@@ -242,6 +281,74 @@ fn open_database_folder(app: AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|error| format!("无法打开数据库文件夹：{error}"))?;
     Ok(())
+}
+
+#[tauri::command]
+fn export_text_file(
+    app: AppHandle,
+    prefix: String,
+    extension: String,
+    content: String,
+) -> Result<String, String> {
+    let extension = match extension.as_str() {
+        "csv" | "json" => extension,
+        _ => return Err("只支持导出 CSV 或 JSON 文件".to_string()),
+    };
+    let prefix = sanitize_export_prefix(&prefix);
+    let directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| format!("无法定位下载目录：{error}"))?;
+    fs::create_dir_all(&directory).map_err(|error| format!("无法创建下载目录：{error}"))?;
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let base_name = format!(
+        "{}-{:04}-{:02}-{:02}",
+        prefix,
+        now.year(),
+        u8::from(now.month()),
+        now.day()
+    );
+    let path = available_export_path(&directory, &base_name, &extension);
+    fs::write(&path, content).map_err(|error| format!("无法写入导出文件：{error}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn sanitize_export_prefix(prefix: &str) -> String {
+    let value = prefix
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .map(|character| {
+            if matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            ) {
+                '_'
+            } else {
+                character
+            }
+        })
+        .take(60)
+        .collect::<String>();
+    if value.is_empty() {
+        "转盘导出".to_string()
+    } else {
+        value
+    }
+}
+
+fn available_export_path(directory: &Path, base_name: &str, extension: &str) -> PathBuf {
+    let direct = directory.join(format!("{base_name}.{extension}"));
+    if !direct.exists() {
+        return direct;
+    }
+    for index in 2.. {
+        let candidate = directory.join(format!("{base_name}-{index}.{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!()
 }
 
 fn validate_variant(variant: &str) -> Result<&str, String> {
@@ -323,6 +430,27 @@ fn normalize_aliases(name: &str, aliases: Vec<String>) -> Result<Vec<String>, St
     Ok(normalized)
 }
 
+fn ensure_name_available(connection: &Connection, name: &str) -> Result<(), String> {
+    let owner = connection
+        .query_row(
+            "SELECT owner_name FROM (
+               SELECT name AS owner_name FROM user WHERE name = ?1 COLLATE NOCASE
+               UNION ALL
+               SELECT user.name AS owner_name
+               FROM alias JOIN user ON user.id = alias.user_id
+               WHERE alias.name = ?1 COLLATE NOCASE
+             ) LIMIT 1",
+            params![name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("无法检查名称和别名：{error}"))?;
+    if let Some(owner_name) = owner {
+        return Err(format!("“{name}”已经被“{owner_name}”作为名称或别名使用"));
+    }
+    Ok(())
+}
+
 fn load_ranked_user(connection: &Connection, id: i64) -> Result<RankedUser, String> {
     let (name, rank) = connection
         .query_row(
@@ -373,12 +501,18 @@ fn save_ranked_user_in(
             .optional()
             .map_err(|error| format!("无法读取排名选项：{error}"))?
             .ok_or_else(|| "找不到要更新的排名选项".to_string())?;
+        if !previous_name.eq_ignore_ascii_case(&name) {
+            ensure_name_available(&transaction, &name)?;
+        }
+        for alias in aliases.iter().skip(1) {
+            ensure_name_available(&transaction, alias)?;
+        }
         let changed = transaction
             .execute(
                 "UPDATE user SET name = ?1, rank = ?2 WHERE id = ?3",
                 params![name, rank, id],
             )
-            .map_err(|error| format!("无法更新排名选项：{error}"))?;
+            .map_err(|_| format!("名称或别名“{name}”已经被使用"))?;
         if changed == 0 {
             return Err("找不到要更新的排名选项".to_string());
         }
@@ -388,14 +522,14 @@ fn save_ranked_user_in(
                  WHERE user_id = ?2 AND name = ?3 COLLATE NOCASE",
                 params![name, id, previous_name],
             )
-            .map_err(|error| format!("名称或别名“{name}”已经被使用：{error}"))?;
+            .map_err(|_| format!("名称或别名“{name}”已经被使用"))?;
         if canonical_alias_changed == 0 {
             transaction
                 .execute(
                     "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
                     params![name, id],
                 )
-                .map_err(|error| format!("名称或别名“{name}”已经被使用：{error}"))?;
+                .map_err(|_| format!("名称或别名“{name}”已经被使用"))?;
         }
 
         for alias in aliases.into_iter().skip(1) {
@@ -404,16 +538,19 @@ fn save_ranked_user_in(
                     "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
                     params![alias, id],
                 )
-                .map_err(|error| format!("名称或别名“{alias}”已经被使用：{error}"))?;
+                .map_err(|_| format!("名称或别名“{alias}”已经被使用"))?;
         }
         id
     } else {
+        for alias in &aliases {
+            ensure_name_available(&transaction, alias)?;
+        }
         transaction
             .execute(
                 "INSERT INTO user (name, rank) VALUES (?1, ?2)",
                 params![name, rank],
             )
-            .map_err(|error| format!("无法添加排名选项：{error}"))?;
+            .map_err(|_| format!("名称或别名“{name}”已经被使用"))?;
         let id = transaction.last_insert_rowid();
         for alias in aliases {
             transaction
@@ -421,7 +558,7 @@ fn save_ranked_user_in(
                     "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
                     params![alias, id],
                 )
-                .map_err(|error| format!("名称或别名“{alias}”已经被使用：{error}"))?;
+                .map_err(|_| format!("名称或别名“{alias}”已经被使用"))?;
         }
         id
     };
@@ -472,7 +609,7 @@ fn add_ranked_user_alias_in(
             "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
             params![alias, user_id],
         )
-        .map_err(|error| format!("无法添加别名“{alias}”：{error}"))?;
+        .map_err(|_| format!("名称或别名“{alias}”已经被使用"))?;
     load_ranked_user(connection, user_id)
 }
 
@@ -1140,7 +1277,8 @@ pub fn run() {
             list_lineup_histories,
             import_lineup_histories,
             delete_lineup_history,
-            open_database_folder
+            open_database_folder,
+            export_text_file
         ])
         .run(tauri::generate_context!())
         .expect("无法启动转盘");
@@ -1184,6 +1322,15 @@ mod tests {
             &["draw_history", "user", "alias", "lineup_history"],
         );
         assert_eq!(versions, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn sql_log_uses_one_line_local_timestamp_format() {
+        let time = OffsetDateTime::from_unix_timestamp(0).expect("创建测试时间");
+        assert_eq!(
+            format_sql_log_line("SELECT 1;\nUPDATE user SET rank = 2;", time),
+            "1970-01-01 00:00:00 SELECT 1; UPDATE user SET rank = 2;"
+        );
     }
 
     #[test]
@@ -1243,10 +1390,42 @@ mod tests {
         .expect_err("重复别名应失败");
 
         assert!(error.contains("共享别名"));
+        assert!(!error.to_ascii_lowercase().contains("constraint"));
+        assert!(!error.to_ascii_lowercase().contains("unique"));
         assert_eq!(
             list_ranked_users_in(&connection).expect("读取排名").len(),
             1
         );
+    }
+
+    #[test]
+    fn duplicate_canonical_name_matching_an_alias_returns_chinese_error() {
+        let mut connection = test_database();
+        save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "甲".to_string(),
+                rank: Some(1),
+                aliases: vec!["共享名称".to_string()],
+            },
+        )
+        .expect("保存第一个选项");
+
+        let error = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "共享名称".to_string(),
+                rank: Some(2),
+                aliases: vec![],
+            },
+        )
+        .expect_err("名称不能和已有别名重复");
+
+        assert!(error.contains("已经被"));
+        assert!(!error.to_ascii_lowercase().contains("constraint"));
+        assert!(!error.to_ascii_lowercase().contains("unique"));
     }
 
     #[test]

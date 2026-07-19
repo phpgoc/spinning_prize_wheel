@@ -320,30 +320,40 @@
     await saveHistory(resultOrderedNames, result, resultOrderMode);
   }
 
-  function exportLineupJson() {
+  async function exportLineupJson() {
     if (!result) return;
-    downloadFormattedJson('分组结果', {
-      exportedAt: new Date().toISOString(),
-      kind: 'random-lineup',
-      input: {
-        sourceNames: resultSourceNames,
-        orderedNames: resultOrderedNames,
-        groupCount: result.groupCount,
-        orderMode: resultOrderMode,
-      },
-      result,
-    });
+    error = '';
+    try {
+      await downloadFormattedJson('分组结果', {
+        exportedAt: new Date().toISOString(),
+        kind: 'random-lineup',
+        input: {
+          sourceNames: resultSourceNames,
+          orderedNames: resultOrderedNames,
+          groupCount: result.groupCount,
+          orderMode: resultOrderMode,
+        },
+        result,
+      });
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出分组结果 JSON');
+    }
   }
 
-  function exportLineupCsv() {
+  async function exportLineupCsv() {
     if (!result) return;
-    downloadCsv('分组结果', [
-      ['档位', ...result.groupNames.map((group) => `${group}组`)],
-      ...result.tiers.map((tier, tierIndex) => [
-        `t${tierIndex + 1}`,
-        ...tier.map((entry) => entry?.name ?? ''),
-      ]),
-    ]);
+    error = '';
+    try {
+      await downloadCsv('分组结果', [
+        ['档位', ...result.groupNames.map((group) => `${group}组`)],
+        ...result.tiers.map((tier, tierIndex) => [
+          `t${tierIndex + 1}`,
+          ...tier.map((entry) => entry?.name ?? ''),
+        ]),
+      ]);
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出分组结果 CSV');
+    }
   }
 
   async function loadRankedUsers() {
@@ -362,8 +372,13 @@
     }
   }
 
-  function exportRanking() {
-    downloadFormattedJson('排名', createRankingTransfer(rankedUsers));
+  async function exportRanking() {
+    rankingError = '';
+    try {
+      await downloadFormattedJson('排名', createRankingTransfer(rankedUsers));
+    } catch (reason) {
+      rankingError = messageFrom(reason, '无法导出排名 JSON');
+    }
   }
 
   function openRankingImporter() {
@@ -567,12 +582,22 @@
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
-  function exportLineupHistoryCsv(history: SavedLineup) {
-    downloadCsv('分组历史', lineupHistoryCsvRows([history]));
+  async function exportLineupHistoryCsv(history: SavedLineup) {
+    historyError = '';
+    try {
+      await downloadCsv('分组历史', lineupHistoryCsvRows([history]));
+    } catch (reason) {
+      historyError = messageFrom(reason, '无法导出分组历史 CSV');
+    }
   }
 
-  function exportLineupHistoryJson(history: SavedLineup) {
-    downloadFormattedJson('分组历史', createLineupHistoryTransfer([history], variant));
+  async function exportLineupHistoryJson(history: SavedLineup) {
+    historyError = '';
+    try {
+      await downloadFormattedJson('分组历史', createLineupHistoryTransfer([history], variant));
+    } catch (reason) {
+      historyError = messageFrom(reason, '无法导出分组历史 JSON');
+    }
   }
 
   function openLineupHistoryImporter() {

@@ -617,30 +617,55 @@
     }, { completed: 0, retries: 0, rewardTotal: 0 });
   }
 
-  function exportDrawHistoriesCsv() {
+  async function exportDrawHistoriesCsv() {
     if (filteredDrawHistories.length === 0) return;
     const rows = aggregateDrawHistories(filteredDrawHistories);
-    downloadCsv('转盘历史查询', [
-      ['名字', '参与次数', '中奖次数', '中奖金额'],
-      ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
-    ]);
+    drawHistoryError = '';
+    try {
+      await downloadCsv('转盘历史查询', [
+        ['名字', '参与次数', '中奖次数', '中奖金额'],
+        ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
+      ]);
+    } catch (reason) {
+      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 CSV');
+    }
   }
 
-  function exportDrawHistoriesJson() {
+  async function exportDrawHistoriesJson() {
     if (filteredDrawHistories.length === 0) return;
-    downloadFormattedJson('转盘历史查询', aggregateDrawHistories(filteredDrawHistories));
+    drawHistoryError = '';
+    try {
+      await downloadFormattedJson('转盘历史查询', aggregateDrawHistories(filteredDrawHistories));
+    } catch (reason) {
+      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 JSON');
+    }
   }
 
-  function exportDrawHistoryCsv(draw: SavedDraw) {
+  async function exportDrawHistoryCsv(draw: SavedDraw) {
     const rows = singleDrawHistoryStats(draw);
-    downloadCsv('抽奖历史', [
-      ['名字', '权重', '中奖次数', '中奖金额'],
-      ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
-    ]);
+    drawHistoryError = '';
+    try {
+      await downloadCsv('抽奖历史', [
+        ['名字', '权重', '中奖次数', '中奖金额'],
+        ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
+      ]);
+    } catch (reason) {
+      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 CSV');
+    }
   }
 
-  function exportDrawHistoryJson(draw: SavedDraw) {
-    downloadFormattedJson('抽奖历史', singleDrawHistoryStats(draw));
+  async function exportDrawHistoryJson(draw: SavedDraw) {
+    drawHistoryError = '';
+    try {
+      await downloadFormattedJson('抽奖历史', singleDrawHistoryStats(draw));
+    } catch (reason) {
+      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 JSON');
+    }
+  }
+
+  function exportErrorMessage(reason: unknown, fallback: string): string {
+    const message = reason instanceof Error ? reason.message : String(reason ?? '');
+    return message && message !== '[object Object]' ? message : fallback;
   }
 
   async function openDrawDatabaseFolder() {
