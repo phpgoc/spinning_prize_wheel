@@ -29,6 +29,7 @@
     recentLineupHistories,
     unresolvedLineupNameCount,
     uniqueLineupNames,
+    uniqueResolvedLineupPeople,
     type RankedUserDropTarget,
     type RandomLineup,
   } from './random-lineup';
@@ -39,8 +40,6 @@
 
   type LineupOrderMode = 'rank' | 'input';
   type DesktopPanel = 'ranking' | 'history';
-
-  const sampleNames = Array.from({ length: 24 }, (_, index) => `选手${String(index + 1).padStart(2, '0')}`).join('\n');
 
   let sourceText = '';
   let groupCount = 6;
@@ -211,7 +210,15 @@
     resolvingNames = true;
     try {
       const resolved = await invoke<ResolvedLineupName[]>('resolve_lineup_names', { names });
-      if (request === resolutionRequest) resolvedNames = resolved;
+      if (request === resolutionRequest) {
+        const uniquePeople = uniqueResolvedLineupPeople(resolved);
+        resolvedNames = uniquePeople;
+        if (uniquePeople.length !== names.length) {
+          sourceText = uniquePeople.map((person) => person.inputName).join('\n');
+          historyStatus = 'idle';
+          await tick();
+        }
+      }
     } catch (reason) {
       if (request === resolutionRequest) {
         resolvedNames = [];
@@ -226,9 +233,7 @@
   function orderedNamesForLineup(orderMode: LineupOrderMode): string[] {
     if (!desktopRuntime) return names;
     if (orderMode === 'input') {
-      return uniqueLineupNames(
-        resolvedNames.map((person) => person.canonicalName ?? person.inputName),
-      );
+      return resolvedNames.map((person) => person.inputName);
     }
     return orderResolvedLineupNames(resolvedNames);
   }
@@ -237,9 +242,9 @@
     if (!desktopRuntime) return orderedNames.map((_, index) => index + 1);
     const rankByName = new Map(
       resolvedNames.flatMap((person) => (
-        person.canonicalName === null || person.rank === null
+        person.rank === null
           ? []
-          : [[person.canonicalName.toLocaleLowerCase('zh-CN'), person.rank] as const]
+          : [[person.inputName.toLocaleLowerCase('zh-CN'), person.rank] as const]
       )),
     );
     return orderedNames.map((name, index) => (
@@ -733,7 +738,7 @@
     return message.startsWith('数据库文件错误：');
   }
 
-  function viewHistory(history: SavedLineup) {
+  async function viewHistory(history: SavedLineup) {
     const historicalResult = history.result as Partial<RandomLineup>;
     if (!Array.isArray(historicalResult.groupNames) || !Array.isArray(historicalResult.tiers)) {
       historyError = '这条历史记录内容不完整';
@@ -756,6 +761,8 @@
     resultSignature = inputSignature;
     historyStatus = 'saved';
     resetLineupReveal();
+    await tick();
+    focusLineupResult();
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -1216,14 +1223,6 @@
     }
   }
 
-  function fillSample() {
-    cancelPreviewMove();
-    sourceText = sampleNames;
-    groupCount = 6;
-    error = '';
-    result = null;
-  }
-
   function clearAll() {
     cancelPreviewMove();
     sourceText = '';
@@ -1650,7 +1649,7 @@
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove}></textarea></label>
-      <div class="sample-actions"><button type="button" on:click={fillSample}>填入 24 项示例</button><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
+      <div class="list-actions"><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
     </aside>
   </div>
@@ -1815,8 +1814,8 @@
   textarea::placeholder { color: var(--lineup-dim-on-light); opacity: 1; }
   textarea:focus { border-color: #8a993e; box-shadow: 0 0 0 3px rgba(138, 153, 62, 0.12); }
 
-  .sample-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 7px; }
-  .sample-actions button {
+  .list-actions { display: flex; justify-content: flex-end; margin-top: 7px; }
+  .list-actions button {
     padding: 6px 9px;
     border: 1px solid rgba(36, 37, 31, 0.24);
     border-radius: 7px;
@@ -1827,10 +1826,8 @@
     font-weight: 700;
     transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
   }
-  .sample-actions button:hover:not(:disabled) { border-color: #7f923f; background: #eef4d8; color: #34420f; }
-  .sample-actions button:first-child { border-color: rgba(105, 119, 43, 0.42); background: #f1f5df; color: #526020; }
-  .sample-actions button:last-child { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
-  .sample-actions button:last-child:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
+  .list-actions button { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
+  .list-actions button:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
 
   .group-setting {
     align-items: stretch;

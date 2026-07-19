@@ -162,6 +162,25 @@ export function uniqueLineupNames(names: readonly string[]): string[] {
   });
 }
 
+/** 同一排名项即使使用多个别名也只保留首次出现的预览名称。 */
+export function uniqueResolvedLineupPeople(
+  people: readonly ResolvedLineupName[],
+): ResolvedLineupName[] {
+  const seenUsers = new Set<number>();
+  const seenUnknownNames = new Set<string>();
+  return people.filter((person) => {
+    if (person.known && person.userId !== null) {
+      if (seenUsers.has(person.userId)) return false;
+      seenUsers.add(person.userId);
+      return true;
+    }
+    const key = person.inputName.trim().toLocaleLowerCase('zh-CN');
+    if (!key || seenUnknownNames.has(key)) return false;
+    seenUnknownNames.add(key);
+    return true;
+  });
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';
@@ -179,12 +198,12 @@ export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]):
     throw new Error('排名名单中存在未识别选项');
   }
 
-  return uniqueLineupNames([...people]
+  return uniqueResolvedLineupPeople(people)
     .sort((left, right) => (
       left.rank! - right.rank!
       || left.canonicalName!.localeCompare(right.canonicalName!, 'zh-CN')
     ))
-    .map((person) => person.canonicalName!));
+    .map((person) => person.inputName);
 }
 
 export function recentLineupHistories(

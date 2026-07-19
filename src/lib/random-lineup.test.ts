@@ -14,6 +14,7 @@ import {
   recentLineupHistories,
   unresolvedLineupNameCount,
   uniqueLineupNames,
+  uniqueResolvedLineupPeople,
 } from './random-lineup';
 import type { ResolvedLineupName, SavedLineup } from './types';
 
@@ -77,7 +78,7 @@ describe('随机排阵', () => {
     expect(groupName(26)).toBe('AA');
   });
 
-  test('桌面排名不受粘贴顺序影响并把别名统一为本名', () => {
+  test('桌面排名使用数据库顺序但保留输入别名', () => {
     const people: ResolvedLineupName[] = [
       { inputName: '小B', known: true, userId: 2, canonicalName: 'B', rank: 2 },
       { inputName: '小A', known: true, userId: 1, canonicalName: 'A', rank: 1 },
@@ -85,8 +86,19 @@ describe('随机排阵', () => {
       { inputName: '另一个A', known: true, userId: 3, canonicalName: 'C', rank: 2 },
     ];
 
-    expect(orderResolvedLineupNames(people)).toEqual(['A', 'B', 'C']);
-    expect(orderResolvedLineupNames([...people].reverse())).toEqual(['A', 'B', 'C']);
+    expect(orderResolvedLineupNames(people)).toEqual(['小A', '小B', '另一个A']);
+    expect(orderResolvedLineupNames([...people].reverse())).toEqual(['另一个小A', '小B', '另一个A']);
+  });
+
+  test('同一排名项的不同别名在预览中只保留首次出现的一项', () => {
+    const people: ResolvedLineupName[] = [
+      { inputName: '小甲', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+      { inputName: '甲同学', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+      { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
+    ];
+
+    expect(uniqueResolvedLineupPeople(people).map((person) => person.inputName))
+      .toEqual(['小甲', '陌生']);
   });
 
   test('桌面排名拒绝未识别选项', () => {
