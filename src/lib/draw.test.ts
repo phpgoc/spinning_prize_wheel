@@ -68,6 +68,19 @@ describe('draw engine', () => {
     expect(result.events.at(-1)?.outcome).toBe('winner');
   });
 
+  test('俄罗斯批量模拟按权重逐次扣减生命', () => {
+    const weighted = [
+      { id: 'a', name: 'A', weight: 2, color: '#000000', enabled: true },
+      { id: 'b', name: 'B', weight: 1, color: '#ffffff', enabled: true },
+    ];
+    const result = simulateRouletteBatch(weighted, 1, false, 1, () => 0);
+
+    expect(result.attempts).toBe(2);
+    expect(result.prizeCounts).toEqual({ a: 0, b: 1 });
+    expect(result.events[0].detail).toContain('还剩 1 命');
+    expect(result.events.at(-1)?.outcome).toBe('winner');
+  });
+
   test('实验室次数只按模拟规模归一化', () => {
     expect(normalizeBatchCount(0)).toBe(1);
     expect(normalizeBatchCount(100.9)).toBe(100);

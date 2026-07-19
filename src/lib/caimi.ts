@@ -8,6 +8,11 @@ export function caimiNameWeightMultiplier(name: string): number {
   return 2 ** markedCharacterCount;
 }
 
+/** 猜蜜版俄罗斯轮盘中，每个“猜”或“本”都会让被命中的概率减半。 */
+export function caimiRouletteWeight(name: string, visibleWeight: number): number {
+  return visibleWeight / caimiNameWeightMultiplier(name);
+}
+
 /** 只生成抽取时使用的副本，不改动候选区和转盘上展示的权重。 */
 export function applyCaimiSelectedWeights(prizes: readonly Prize[]): Prize[] {
   return prizes.map((prize) => ({

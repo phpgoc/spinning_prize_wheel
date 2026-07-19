@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { applyCaimiSelectedWeights, caimiNameWeightMultiplier } from './caimi';
-import { buildWheelOptions, pickWeighted, simulateBatch } from './draw';
+import {
+  applyCaimiSelectedWeights,
+  caimiNameWeightMultiplier,
+  caimiRouletteWeight,
+} from './caimi';
+import { buildWheelOptions, pickWeighted, simulateBatch, simulateRouletteBatch } from './draw';
 
 describe('猜蜜版隐藏权重', () => {
   test('每个猜或本都会让概率翻倍', () => {
@@ -35,5 +39,26 @@ describe('猜蜜版隐藏权重', () => {
     const simulation = simulateBatch('selected', prizes, 3, false, 1, () => 0.5);
 
     expect(simulation.prizeCounts).toEqual({ normal: 0, caimi: 3 });
+  });
+
+  test('俄罗斯轮盘按名字隐藏降低被命中概率', () => {
+    expect(caimiRouletteWeight('猜猜猜本', 16)).toBe(1);
+
+    const prizes = [
+      { id: 'normal', name: '普通项', weight: 1, color: '#000', enabled: true },
+      { id: 'caimi', name: '猜本', weight: 1, color: '#fff', enabled: true },
+    ];
+    const normal = simulateRouletteBatch(prizes, 1, false, 1, () => 0.6);
+    const hidden = simulateRouletteBatch(
+      prizes,
+      1,
+      false,
+      1,
+      () => 0.6,
+      (prize) => caimiRouletteWeight(prize.name, prize.weight),
+    );
+
+    expect(normal.prizeCounts).toEqual({ normal: 1, caimi: 0 });
+    expect(hidden.prizeCounts).toEqual({ normal: 0, caimi: 1 });
   });
 });

@@ -7,7 +7,7 @@
   import Wheel from './Wheel.svelte';
   import type { AppVariant } from './app-variant';
   import { changeAutoSaveHistory } from './auto-save';
-  import { applyCaimiSelectedWeights } from './caimi';
+  import { applyCaimiSelectedWeights, caimiRouletteWeight } from './caimi';
   import {
     RETRY_ID,
     buildWheelOptions,
@@ -854,6 +854,13 @@
   }
 
   function currentDrawOptions(): WheelOption[] {
+    if (variant === 'caimi' && mode === 'roulette') {
+      return activeDrawOptions.map((option) => (
+        option.isRetry
+          ? option
+          : { ...option, weight: caimiRouletteWeight(option.label, option.weight) }
+      ));
+    }
     return activeDrawOptions;
   }
 
@@ -1184,6 +1191,10 @@
         safeCount,
         retryEnabled,
         retryWeight,
+        undefined,
+        variant === 'caimi' && simulationMode === 'roulette'
+          ? (prize) => caimiRouletteWeight(prize.name, prize.weight)
+          : undefined,
       );
       batchResult = simulation;
       batchRunAt = Date.now();

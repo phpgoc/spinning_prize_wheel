@@ -147,6 +147,7 @@ export function simulateRouletteBatch(
   retryEnabled: boolean,
   retryWeight: number,
   random: () => number = secureRandom,
+  selectionWeight: (prize: Prize) => number = (prize) => prize.weight,
 ): BatchSimulation {
   const enabledPrizes = prizes.filter((prize) => prize.enabled);
   if (enabledPrizes.length < 2) {
@@ -163,7 +164,11 @@ export function simulateRouletteBatch(
     let active = [...enabledPrizes];
 
     while (active.length > 1) {
-      const options = buildWheelOptions(active, retryEnabled, retryWeight);
+      const options = buildWheelOptions(
+        active.map((prize) => ({ ...prize, weight: selectionWeight(prize) })),
+        retryEnabled,
+        retryWeight,
+      );
       const picked = pickWeighted(options, random);
       attempts += 1;
 
@@ -180,8 +185,12 @@ export function simulateRouletteBatch(
         continue;
       }
 
-      const eliminated = active.find((prize) => prize.id === picked.id)!;
-      active = active.filter((prize) => prize.id !== picked.id);
+      const hit = active.find((prize) => prize.id === picked.id)!;
+      const livesLeft = Math.max(0, hit.weight - 1);
+      const fullyEliminated = livesLeft <= 0;
+      active = fullyEliminated
+        ? active.filter((prize) => prize.id !== hit.id)
+        : active.map((prize) => (prize.id === hit.id ? { ...prize, weight: livesLeft } : prize));
 
       if (active.length === 1) {
         const winner = active[0];
@@ -192,16 +201,18 @@ export function simulateRouletteBatch(
           optionId: winner.id,
           label: winner.name,
           outcome: 'winner',
-          detail: `${eliminated.name} 淘汰，${winner.name} 成为第 ${round} 局赢家`,
+          detail: `${hit.name} 淘汰，${winner.name} 成为第 ${round} 局赢家`,
         });
       } else {
         events.push({
           round,
           attempt: attempts,
-          optionId: eliminated.id,
-          label: eliminated.name,
+          optionId: hit.id,
+          label: hit.name,
           outcome: 'eliminated',
-          detail: `${eliminated.name} 淘汰，剩余 ${active.length} 项`,
+          detail: fullyEliminated
+            ? `${hit.name} 淘汰，剩余 ${active.length} 项`
+            : `${hit.name} 命中，还剩 ${livesLeft} 命`,
         });
       }
     }
@@ -225,8 +236,16 @@ export function simulateBatch(
   retryEnabled: boolean,
   retryWeight: number,
   random: () => number = secureRandom,
+  rouletteSelectionWeight?: (prize: Prize) => number,
 ): BatchSimulation {
   return mode === 'selected'
     ? simulateSelectedBatch(prizes, requested, retryEnabled, retryWeight, random)
-    : simulateRouletteBatch(prizes, requested, retryEnabled, retryWeight, random);
+    : simulateRouletteBatch(
+        prizes,
+        requested,
+        retryEnabled,
+        retryWeight,
+        random,
+        rouletteSelectionWeight,
+      );
 }
