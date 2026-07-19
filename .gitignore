@@ -11,6 +11,8 @@ build/
 dist/
 .vite/
 coverage/
+/test-results/
+/playwright-report/
 *.tsbuildinfo
 bun.lockb
 /src-tauri/binaries/*.exe

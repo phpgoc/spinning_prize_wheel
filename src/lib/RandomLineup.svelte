@@ -85,6 +85,7 @@
   let rankDragStartY = 0;
   let rankDragX = 0;
   let rankDragY = 0;
+  let suppressRankNameClickUserId: number | null = null;
   let rankingReordering = false;
   let keyboardMovingUserId: number | null = null;
   let keyboardDropPointIndex = -1;
@@ -1017,7 +1018,11 @@
     resetRankSelectionShortcut();
     selectRankedUserFromPointer(userId);
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
-    if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
+    // 名称占据卡片的大部分区域，也应当可以作为拖拽起点；右侧操作按钮仍只执行自身操作。
+    if ((event.target as HTMLElement).closest('[data-rank-action], input, textarea, select, form')) return;
+    // 避免按下时焦点让顶部操作区突然出现，导致整列卡片在拖拽开始后向下跳动。
+    event.preventDefault();
+    suppressRankNameClickUserId = null;
     pendingRankDragUserId = userId;
     rankDragPointerId = event.pointerId;
     rankDragStartX = event.clientX;
@@ -1025,7 +1030,6 @@
     rankDragX = event.clientX;
     rankDragY = event.clientY;
     activeRankDropTarget = null;
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
 
   function rankDropTargetAt(x: number, y: number): RankedUserDropTarget | null {
@@ -1067,6 +1071,7 @@
     ) return;
 
     draggingUserId = pendingRankDragUserId;
+    suppressRankNameClickUserId = pendingRankDragUserId;
     activeRankDropTarget = rankDropTargetAt(event.clientX, event.clientY);
     event.preventDefault();
   }
@@ -1074,17 +1079,21 @@
   function finishRankPointerDrag(event: PointerEvent) {
     if (event.pointerId !== rankDragPointerId) return;
     const userId = draggingUserId;
-    const target = activeRankDropTarget ?? rankDropTargetAt(event.clientX, event.clientY);
-    const element = event.currentTarget as HTMLElement;
-    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+    // pointermove 可能被浏览器合并，松手坐标才是最终落点；旧落点只在移出列表时兜底。
+    const target = rankDropTargetAt(event.clientX, event.clientY) ?? activeRankDropTarget;
     clearRankDragState();
-    if (userId !== null && target !== null) void moveRankedUser(userId, target);
+    if (userId !== null) {
+      // pointerup 之后浏览器仍可能派发名称按钮的 click，需要跳过这一次，不能误入编辑。
+      event.preventDefault();
+      window.setTimeout(() => {
+        if (suppressRankNameClickUserId === userId) suppressRankNameClickUserId = null;
+      }, 0);
+      if (target !== null) void moveRankedUser(userId, target);
+    }
   }
 
   function cancelRankPointerDrag(event: PointerEvent) {
     if (event.pointerId !== rankDragPointerId) return;
-    const element = event.currentTarget as HTMLElement;
-    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
     clearRankDragState();
   }
 
@@ -1095,6 +1104,14 @@
     activeRankDropCardId = null;
     activeRankDropPosition = null;
     rankDragPointerId = null;
+  }
+
+  function handleRankNameClick(user: RankedUser) {
+    if (suppressRankNameClickUserId === user.id) {
+      suppressRankNameClickUserId = null;
+      return;
+    }
+    void editRankedUser(user, 'name');
   }
 
   async function moveRankedUser(userId: number, target: RankedUserDropTarget) {
@@ -1467,7 +1484,12 @@
   }
 </script>
 
-<svelte:window on:keydown={handleLineupKeydown} />
+<svelte:window
+  on:keydown={handleLineupKeydown}
+  on:pointermove={moveRankPointerDrag}
+  on:pointerup={finishRankPointerDrag}
+  on:pointercancel={cancelRankPointerDrag}
+/>
 
 <main class="lineup-page" id="lineup">
   <div class:desktop={desktopRuntime} class="lineup-workbench">
@@ -1531,9 +1553,6 @@
                         data-rank-index={index}
                         on:focus={() => selectRankedUserFromPointer(user.id)}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
-                        on:pointermove={moveRankPointerDrag}
-                        on:pointerup={finishRankPointerDrag}
-                        on:pointercancel={cancelRankPointerDrag}
                       >
                         <span class="rank-number">{user.rank}</span>
                         <div class="ranked-user-content">
@@ -1558,7 +1577,7 @@
                               class="ranked-user-heading"
                               class:actions-active={selectedRankedUserId === user.id && rankedUserActionIndex >= 0}
                             >
-                              <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                              <button type="button" class="user-name" on:click={() => handleRankNameClick(user)}>{user.name}</button>
                               <div class="ranked-user-actions">
                                 <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                                 <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
@@ -1595,9 +1614,6 @@
                         data-rank-user-id={user.id}
                         on:focus={() => selectRankedUserFromPointer(user.id)}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
-                        on:pointermove={moveRankPointerDrag}
-                        on:pointerup={finishRankPointerDrag}
-                        on:pointercancel={cancelRankPointerDrag}
                       >
                         <span class="rank-number">—</span>
                         <div class="ranked-user-content">
@@ -1622,7 +1638,7 @@
                               class="ranked-user-heading"
                               class:actions-active={selectedRankedUserId === user.id && rankedUserActionIndex >= 0}
                             >
-                              <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
+                              <button type="button" class="user-name" on:click={() => handleRankNameClick(user)}>{user.name}</button>
                               <div class="ranked-user-actions">
                                 <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                                 <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>

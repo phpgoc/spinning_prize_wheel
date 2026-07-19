@@ -64,14 +64,7 @@
   const LEGACY_COMMON_SELECTION_STORAGE_KEY = ['for', 'tuna-wheel-common-selections-v1'].join('');
   const MAX_ROULETTE_ROUNDS = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
-  const defaultPrizes: Prize[] = [
-    { id: 'candidate-a', name: '林小满', weight: 1, color: '#ff7557', enabled: true },
-    { id: 'candidate-b', name: '陈知行', weight: 1, color: '#e9b949', enabled: true },
-    { id: 'candidate-c', name: '周予安', weight: 1, color: '#8ac86d', enabled: true },
-    { id: 'candidate-d', name: '苏念', weight: 1, color: '#4ea59b', enabled: true },
-    { id: 'candidate-e', name: '许星河', weight: 1, color: '#6574c4', enabled: true },
-    { id: 'candidate-f', name: '唐可', weight: 1, color: '#b76a9d', enabled: true },
-  ];
+  const defaultPrizes: Prize[] = [];
 
   interface ResultCard {
     eyebrow: string;
