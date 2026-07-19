@@ -658,6 +658,8 @@
       showRewardAmountLocked();
       return;
     }
+    commonKeyboardActive = false;
+    selectedCommonId = null;
     candidateKeyboardActive = true;
     selectedPrizeId = null;
     drawSidePanel = 'statistics';
@@ -1474,11 +1476,6 @@
           toggleSelectedPrize();
           return;
         }
-        if (key === 'm') {
-          event.preventDefault();
-          void selectRewardInput();
-          return;
-        }
         if (event.key === 'Enter') {
           event.preventDefault();
           void editSelectedPrizeName();
@@ -1523,7 +1520,7 @@
     const globalShortcut = !editing && !modifier && !event.altKey && !event.shiftKey;
     if (!globalShortcut) return;
 
-    if (!['w', 'e', 'r', 'a', 'z', 'x', 's', 'space'].includes(shortcutKey)) return;
+    if (!['w', 'e', 'r', 'a', 'z', 'x', 'm', 's', 'space'].includes(shortcutKey)) return;
     if (!desktopRuntime && shortcutKey === 's') return;
     event.preventDefault();
 
@@ -1543,6 +1540,8 @@
       void toggleAutoSaveHistory();
     } else if (shortcutKey === 'x') {
       void enterCandidateKeyboard();
+    } else if (shortcutKey === 'm') {
+      void selectRewardInput();
     }
   }
 </script>
@@ -2270,6 +2269,7 @@
             <div><span>打开常用选择</span><kbd>A</kbd></div>
             <div><span>打开快捷键</span><kbd>Z</kbd></div>
             <div><span>开始抽奖</span><kbd>空格</kbd></div>
+            <div><span>修改奖励金额</span><kbd>M</kbd></div>
             {#if desktopRuntime}
               <div><span>切换自动保存历史</span><kbd>S</kbd></div>
             {/if}
@@ -2289,7 +2289,6 @@
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>添加选项</span><kbd>A</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
-            <div><span>选择奖励金额</span><kbd>M</kbd></div>
             <div><span>编辑 / 确认文字</span><kbd>Enter</kbd></div>
             <div><span>导入框直接添加</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
           </div>
