@@ -7,6 +7,7 @@ import {
   isResolvedLineupName,
   lineupOrderAvailability,
   lineupPreviewTierStarts,
+  moveLineupPreviewName,
   orderResolvedLineupNames,
   rankedUserDropTargetForCard,
   rankedUserKeyboardDropPoints,
@@ -131,6 +132,12 @@ describe('随机排阵', () => {
 
   test('预览名单可在指定位置插入姓名', () => {
     expect(insertLineupPreviewName(['甲', '丙'], 1, ' 乙 ')).toEqual(['甲', '乙', '丙']);
+  });
+
+  test('预览名单移动时只做插入并顺延其他项目', () => {
+    expect(moveLineupPreviewName(['甲', '乙', '丙', '丁'], 0, 3)).toEqual(['乙', '丙', '甲', '丁']);
+    expect(moveLineupPreviewName(['甲', '乙', '丙', '丁'], 3, 1)).toEqual(['甲', '丁', '乙', '丙']);
+    expect(moveLineupPreviewName(['甲', '乙', '丙'], 1, 3)).toEqual(['甲', '丙', '乙']);
   });
 
   test('分组文本导入按首次出现自动去重', () => {

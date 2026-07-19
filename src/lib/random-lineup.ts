@@ -132,6 +132,25 @@ export function insertLineupPreviewName(
   return updated;
 }
 
+/** 把预览项移动到指定插入点，其余项目保持顺序并向后补位。 */
+export function moveLineupPreviewName(
+  names: readonly string[],
+  sourceIndex: number,
+  insertIndex: number,
+): string[] {
+  const source = Math.floor(Number(sourceIndex));
+  const target = Math.min(names.length, Math.max(0, Math.floor(Number(insertIndex))));
+  if (!Number.isInteger(source) || source < 0 || source >= names.length) {
+    throw new Error('找不到要移动的名单项');
+  }
+
+  const updated = [...names];
+  const [moved] = updated.splice(source, 1);
+  const adjustedTarget = source < target ? target - 1 : target;
+  updated.splice(adjustedTarget, 0, moved);
+  return updated;
+}
+
 /** 文本导入按首次出现保留名称，大小写不同也视为重复。 */
 export function uniqueLineupNames(names: readonly string[]): string[] {
   const seen = new Set<string>();
