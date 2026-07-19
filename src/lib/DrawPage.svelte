@@ -873,6 +873,11 @@
     (event.currentTarget as HTMLInputElement).select();
   }
 
+  function updateRetryWeight(event: Event) {
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    if (Number.isFinite(value) && value > 0) retryWeight = value;
+  }
+
   function finishRetryWeightEdit(event: FocusEvent) {
     const input = event.currentTarget as HTMLInputElement;
     retryWeight = positiveNumberOrFallback(input.value, retryWeightBeforeEdit);
@@ -1634,6 +1639,7 @@
               value={retryWeight}
               disabled={isSpinning}
               on:focus={beginRetryWeightEdit}
+              on:input={updateRetryWeight}
               on:blur={finishRetryWeightEdit}
             />
           </label>
