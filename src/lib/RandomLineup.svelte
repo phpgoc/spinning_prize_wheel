@@ -2587,9 +2587,13 @@
   .lineup-sidebar {
     display: grid;
     height: 100%;
+    min-height: 0;
     min-width: 0;
     align-content: start;
+    align-self: stretch;
     gap: 9px;
+    /* 排名只跟随右侧两排的高度，自身条目数量不能反向撑开页面。 */
+    contain: size;
   }
 
   .lineup-sidebar.ranking-open { grid-template-rows: minmax(0, 1fr) auto; }
@@ -3404,9 +3408,27 @@
     }
     .lineup-workbench.desktop .lineup-center { display: contents; }
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
-    .lineup-workbench.desktop .preview-panel { grid-column: 2; grid-row: 1; }
-    .lineup-workbench.desktop .lineup-config { grid-column: 3; grid-row: 1; }
+    .lineup-workbench.desktop .preview-panel {
+      min-height: 560px;
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .lineup-workbench.desktop .lineup-config {
+      display: flex;
+      min-height: 560px;
+      grid-column: 3;
+      grid-row: 1;
+      align-self: stretch;
+      flex-direction: column;
+    }
+    .lineup-workbench.desktop .names-field {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+    }
+    .lineup-workbench.desktop .names-field textarea { flex: 1; }
     .lineup-workbench.desktop .lineup-result {
+      min-height: 300px;
       grid-column: 2 / 4;
       grid-row: 2;
       margin-top: clamp(18px, 2.5vw, 34px);
@@ -3433,7 +3455,7 @@
     .lineup-config { width: 100%; }
     .lineup-sidebar,
     .lineup-sidebar.ranking-open,
-    .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; }
+    .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; contain: none; }
     .ranked-user-list { height: min(540px, 56vh); flex: none; }
     textarea { min-height: 220px; }
   }
