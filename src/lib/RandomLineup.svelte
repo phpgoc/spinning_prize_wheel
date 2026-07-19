@@ -1501,13 +1501,18 @@
                               {/if}
                             </form>
                           {:else}
-                            <div class="ranked-user-heading">
+                            <div
+                              class="ranked-user-heading"
+                              class:actions-active={selectedRankedUserId === user.id && rankedUserActionIndex >= 0}
+                            >
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                              <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                              <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                              {#if hasOtherAliases(user)}
-                                <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
-                              {/if}
+                              <div class="ranked-user-actions">
+                                <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                                <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                                {#if hasOtherAliases(user)}
+                                  <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                                {/if}
+                              </div>
                             </div>
                             <div class="ranked-user-aliases">
                               <small>{otherAliasSummary(user)}</small>
@@ -1560,13 +1565,18 @@
                               {/if}
                             </form>
                           {:else}
-                            <div class="ranked-user-heading">
+                            <div
+                              class="ranked-user-heading"
+                              class:actions-active={selectedRankedUserId === user.id && rankedUserActionIndex >= 0}
+                            >
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                              <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                              <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
-                              {#if hasOtherAliases(user)}
-                                <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
-                              {/if}
+                              <div class="ranked-user-actions">
+                                <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                                <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                                {#if hasOtherAliases(user)}
+                                  <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                                {/if}
+                              </div>
                             </div>
                             <div class="ranked-user-aliases">
                               <small>{otherAliasSummary(user)}</small>
@@ -2928,10 +2938,10 @@
   .ranked-user-content { min-width: 0; }
 
   .ranked-user-heading {
-    display: flex;
+    position: relative;
+    display: block;
     min-width: 0;
-    align-items: center;
-    gap: 4px;
+    min-height: calc(26px * var(--font-scale, 1));
   }
 
   .ranked-user-heading button {
@@ -2943,15 +2953,32 @@
   }
 
   .ranked-user-heading .user-name {
-    min-width: 0;
-    flex: 1;
     display: block;
-    overflow: hidden;
+    width: 66.666%;
+    min-width: 0;
+    overflow: visible;
     color: #172018;
     font-size: calc(18px * var(--font-scale, 1));
     font-weight: 950;
-    text-align: left;
-    text-overflow: ellipsis;
+    line-height: calc(26px * var(--font-scale, 1));
+    text-align: center;
+  }
+
+  .ranked-user-actions {
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0 4px 14px;
+    background: linear-gradient(90deg, rgba(255, 254, 247, 0.97), #f3f2d8 14px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-50%);
+    transition: opacity 100ms ease, visibility 0s linear 100ms;
   }
 
   .alias-action,
@@ -2963,21 +2990,14 @@
     background: #edf3ce !important;
     color: #4f5f19;
     font-size: calc(11px * var(--font-scale, 1));
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 100ms ease;
   }
 
-  .ranked-user-list article:hover .alias-action,
-  .ranked-user-list article:hover .delete-user,
-  .ranked-user-list article:hover .clear-aliases,
-  .ranked-user-list article:focus-within .alias-action,
-  .ranked-user-list article:focus-within .delete-user,
-  .ranked-user-list article:focus-within .clear-aliases {
+  .ranked-user-heading:hover .ranked-user-actions,
+  .ranked-user-heading.actions-active .ranked-user-actions {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
+    transition-delay: 0s;
   }
 
   .ranked-user-heading button:focus-visible,
@@ -3010,7 +3030,8 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 4px;
-    color: #4b5142;
+    color: #9c4f91;
+    font-weight: 750;
     font-size: calc(14px * var(--font-scale, 1));
     line-height: 1.45;
     overflow-wrap: anywhere;
