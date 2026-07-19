@@ -18,6 +18,7 @@
   import {
     applyCaimiLineupSwap,
     createRandomLineup,
+    hasPendingLineupNameInput,
     insertLineupPreviewName,
     isResolvedLineupName,
     lineupOrderAvailability,
@@ -68,8 +69,10 @@
   let userAliasInput: HTMLInputElement | null = null;
   let pendingDeleteUser: RankedUser | null = null;
   let pendingAliasClearUser: RankedUser | null = null;
+  let clearAllRankingsConfirmation: 0 | 1 | 2 = 0;
   let deletingUserId: number | null = null;
   let clearingAliasesUserId: number | null = null;
+  let clearingAllRankings = false;
   let pendingRankDragUserId: number | null = null;
   let draggingUserId: number | null = null;
   let activeRankDropTarget: RankedUserDropTarget | null = null;
@@ -204,7 +207,7 @@
     }, 220);
   }
 
-  async function resolveNames() {
+  async function resolveNames(finalizeSourceText = false) {
     if (!desktopRuntime || names.length === 0) {
       resolvedNames = [];
       return;
@@ -215,6 +218,15 @@
       const resolved = await invoke<ResolvedLineupName[]>('resolve_lineup_names', { names });
       if (request === resolutionRequest) {
         const uniquePeople = uniqueResolvedLineupPeople(resolved);
+        if (
+          !finalizeSourceText
+          && uniquePeople.length !== names.length
+          && hasPendingLineupNameInput(sourceText)
+        ) {
+          // 保留正在输入的最后一项，避免输入“12”时先输入的“1”被别名去重弹走。
+          resolvedNames = resolved;
+          return;
+        }
         resolvedNames = uniquePeople;
         if (uniquePeople.length !== names.length) {
           sourceText = uniquePeople.map((person) => person.inputName).join('\n');
@@ -261,7 +273,7 @@
     try {
       if (desktopRuntime) {
         if (resolveTimer) clearTimeout(resolveTimer);
-        await resolveNames();
+        await resolveNames(true);
         if (
           orderMode === 'rank'
           && unresolvedLineupNameCount(names, resolvedNames) > 0
@@ -1067,6 +1079,42 @@
     rankingError = '';
   }
 
+  function requestClearAllRankings() {
+    if (rankedUsers.length === 0 || clearingAllRankings) return;
+    cancelKeyboardRankMove();
+    clearAllRankingsConfirmation = 1;
+    rankingError = '';
+  }
+
+  function continueClearAllRankings() {
+    if (clearAllRankingsConfirmation === 1) clearAllRankingsConfirmation = 2;
+  }
+
+  function cancelClearAllRankings() {
+    if (clearingAllRankings) return;
+    clearAllRankingsConfirmation = 0;
+  }
+
+  async function confirmClearAllRankings() {
+    if (clearAllRankingsConfirmation !== 2 || clearingAllRankings) return;
+    clearingAllRankings = true;
+    rankingError = '';
+    try {
+      rankedUsers = await invoke<RankedUser[]>('replace_ranked_users', { users: [] });
+      clearAllRankingsConfirmation = 0;
+      selectedRankedUserId = null;
+      resetUserForm();
+      cancelKeyboardRankMove();
+      await resolveNames();
+    } catch (reason) {
+      clearAllRankingsConfirmation = 0;
+      rankingError = messageFrom(reason, '无法删除全部排名');
+      await loadRankedUsers();
+    } finally {
+      clearingAllRankings = false;
+    }
+  }
+
   async function confirmDeleteRankedUser() {
     const user = pendingDeleteUser;
     if (!user || deletingUserId !== null) return;
@@ -1122,6 +1170,18 @@
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
         void confirmRankingImport();
+      }
+      return;
+    }
+
+    if (desktopRuntime && clearAllRankingsConfirmation !== 0) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        cancelClearAllRankings();
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        if (clearAllRankingsConfirmation === 1) continueClearAllRankings();
+        else void confirmClearAllRankings();
       }
       return;
     }
@@ -1246,6 +1306,14 @@
     historyStatus = 'idle';
   }
 
+  function finalizeSourceNames() {
+    if (resolveTimer) {
+      clearTimeout(resolveTimer);
+      resolveTimer = undefined;
+    }
+    void resolveNames(true);
+  }
+
   function focusLineupResult() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     lineupResultElement?.focus({ preventScroll: true });
@@ -1284,6 +1352,7 @@
               <div class="ranking-transfer-actions">
                 <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
                 <button type="button" on:click={openRankingImporter}>导入 JSON</button>
+                <button type="button" class="delete-all-rankings" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</button>
               </div>
               {#if aliasLinkName !== null}
                 <div class="rank-keyboard-order active alias-link-order">
@@ -1663,7 +1732,7 @@
 
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove}></textarea></label>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:value={sourceText} placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove} on:blur={finalizeSourceNames}></textarea></label>
       <div class="list-actions"><button type="button" disabled={!sourceText} on:click={clearAll}>清空</button></div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
     </aside>
@@ -1699,6 +1768,24 @@
       <div>
         <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
         <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认删除' : '删除中…'}</span><kbd>Y / Enter</kbd></button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if clearAllRankingsConfirmation !== 0}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-all-rankings-title" aria-describedby="clear-all-rankings-detail" tabindex="-1">
+      <span class="delete-confirm-icon">×</span>
+      <h2 id="clear-all-rankings-title">{clearAllRankingsConfirmation === 1 ? '删除全部排名？' : '真的删除全部排名？'}</h2>
+      <p id="clear-all-rankings-detail">{clearAllRankingsConfirmation === 1 ? '全部名称、别名和排名都会删除。' : '此操作无法撤销。'}</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAllRankings} on:click={cancelClearAllRankings}><span>取消</span><kbd>N / Esc</kbd></button>
+        {#if clearAllRankingsConfirmation === 1}
+          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={continueClearAllRankings}><span>继续</span><kbd>Y / Enter</kbd></button>
+        {:else}
+          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAllRankings} on:click={confirmClearAllRankings}><span>{clearingAllRankings ? '删除中…' : '确认删除'}</span><kbd>Y / Enter</kbd></button>
+        {/if}
       </div>
     </div>
   </div>
@@ -2514,6 +2601,11 @@
     cursor: pointer;
     font-size: calc(10px * var(--font-scale, 1));
     font-weight: 750;
+  }
+
+  .ranking-transfer-actions button.delete-all-rankings {
+    border-color: rgba(159, 65, 47, 0.28);
+    color: #8a3e32;
   }
 
   .rank-keyboard-order {

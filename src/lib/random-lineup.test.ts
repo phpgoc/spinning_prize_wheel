@@ -3,6 +3,7 @@ import {
   applyCaimiLineupSwap,
   createRandomLineup,
   groupName,
+  hasPendingLineupNameInput,
   insertLineupPreviewName,
   isResolvedLineupName,
   lineupOrderAvailability,
@@ -101,6 +102,12 @@ describe('随机排阵', () => {
 
     expect(uniqueResolvedLineupPeople(people).map((person) => person.inputName))
       .toEqual(['小甲', '陌生']);
+  });
+
+  test('名单最后一项输入完成前不立即按别名回写去重', () => {
+    expect(hasPendingLineupNameInput('101\n1')).toBeTrue();
+    expect(hasPendingLineupNameInput('101\n12')).toBeTrue();
+    expect(hasPendingLineupNameInput('101\n1\n')).toBeFalse();
   });
 
   test('关联数字只在排名完全存在时跳转并支持退格', () => {
