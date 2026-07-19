@@ -1159,7 +1159,7 @@
     };
   }
 
-  function runBatch() {
+  function runBatch(simulationMode: DrawMode) {
     if (isSpinning) return;
     if (enabledPrizes.length < 2) {
       result = {
@@ -1175,11 +1175,11 @@
       const safeCount = normalizeBatchCount(batchCount);
       batchCount = safeCount;
       // 点击运行时从最新候选项计算隐藏权重，避免实验室复用旧的派生数组。
-      const simulationPrizes = variant === 'caimi' && mode === 'selected'
+      const simulationPrizes = variant === 'caimi' && simulationMode === 'selected'
         ? applyCaimiSelectedWeights(prizes)
         : prizes;
       const simulation = simulateBatch(
-        mode,
+        simulationMode,
         simulationPrizes,
         safeCount,
         retryEnabled,
@@ -2079,19 +2079,12 @@
         </div>
         <span class="flask">⌁</span>
       </div>
-      <p class="section-note">
-        {mode === 'selected'
-          ? '批量模拟有效结果；重来会自动补抽并单独统计。'
-          : '每次模拟一整局淘汰赛，统计最终赢家。'}
-        仅用于验证概率，不计入当前统计和抽奖历史。
-      </p>
-
       <div class="batch-runner">
         <label>
-          <span>{mode === 'selected' ? '模拟结果数' : '模拟局数'}</span>
+          <span>模拟次数</span>
           <div class="number-field">
             <input type="number" min="1" max="1000" bind:value={batchCount} disabled={isSpinning} />
-            <small>{mode === 'selected' ? '次' : '局'}</small>
+            <small>次</small>
           </div>
         </label>
         <div class="quick-counts">
@@ -2099,15 +2092,16 @@
             <button type="button" class:active={batchCount === amount} on:click={() => (batchCount = amount)}>{amount}</button>
           {/each}
         </div>
-        <button type="button" class="run-button" disabled={isSpinning || enabledPrizes.length < 2} on:click={runBatch}>
-          <span>▶</span> 运行概率模拟
-        </button>
+        <div class="batch-run-buttons">
+          <button type="button" class="run-button" disabled={isSpinning || enabledPrizes.length < 2} on:click={() => runBatch('selected')}>运行选中模拟</button>
+          <button type="button" class="run-button roulette" disabled={isSpinning || enabledPrizes.length < 2} on:click={() => runBatch('roulette')}>运行俄罗斯模拟</button>
+        </div>
       </div>
 
       {#if batchResult}
         <div class="batch-metrics">
           <div>
-            <span>有效结果</span>
+            <span>{batchResult.mode === 'selected' ? '有效结果' : '完成局数'}</span>
             <strong>{batchResult.completed}</strong>
           </div>
           <div>
@@ -2162,15 +2156,6 @@
         <div class="history-actions">
           <button type="button" on:click={exportBatchExperiment}>导出模拟记录</button>
           <button type="button" on:click={clearBatchExperiment}>清空实验结果</button>
-        </div>
-      {:else}
-        <div class="batch-empty">
-          <div class="empty-visual">
-            <span>10</span><span>100</span><span>500</span>
-            <i>↗</i>
-          </div>
-          <strong>让概率说话</strong>
-          <p>选择次数并运行，统计分布和每一次结果会同时保留。</p>
         </div>
       {/if}
       </div>

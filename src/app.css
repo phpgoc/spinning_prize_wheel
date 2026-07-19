@@ -985,7 +985,7 @@ kbd {
 
 .run-button {
   width: 100%;
-  margin-top: 9px;
+  margin-top: 0;
   padding: 10px;
   border: 0;
   border-radius: 8px;
@@ -996,6 +996,17 @@ kbd {
   font-weight: 750;
   box-shadow: 0 5px 14px rgba(22, 23, 18, 0.16);
   transition: transform 160ms ease, background 160ms ease;
+}
+
+.batch-run-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.run-button.roulette {
+  background: #432d29;
 }
 
 .run-button:hover:not(:disabled) {
@@ -1439,7 +1450,7 @@ kbd {
   }
 
   .batch-runner .quick-counts,
-  .batch-runner .run-button { margin-top: 0; }
+  .batch-runner .batch-run-buttons { margin-top: 0; }
   .stats-list, .history-list { max-height: 260px; }
 }
 
@@ -1459,7 +1470,7 @@ kbd {
   .batch-panel { order: 3; }
   .wheel-wrap { min-height: 410px; }
   .batch-panel .batch-runner { display: block; }
-  .batch-runner .quick-counts, .batch-runner .run-button { margin-top: 9px; }
+  .batch-runner .quick-counts, .batch-runner .batch-run-buttons { margin-top: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
