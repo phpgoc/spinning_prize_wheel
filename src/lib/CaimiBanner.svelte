@@ -8,7 +8,7 @@
   <div class="caimi-banner-main">
     <i>正义正在偏航</i>
     <strong>猜蜜版已接管</strong>
-    <p>请保持自然 · 当作什么都没发生</p>
+    <p>节目照常 · 主播帮忙打个码</p>
   </div>
   <div class="caimi-banner-track reverse" aria-hidden="true">
     <span>镜头照常</span><span>表情自然</span><span>懂的都懂</span><span>不懂最好</span><span>内部照顾</span><span>结果很合理</span>
