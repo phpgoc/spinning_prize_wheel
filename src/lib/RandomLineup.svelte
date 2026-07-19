@@ -845,6 +845,8 @@
   function leaveRankedUserActions(event: FocusEvent) {
     const manager = event.currentTarget as HTMLElement;
     const next = event.relatedTarget;
+    // 保存按钮禁用时浏览器可能临时清空焦点，此时不能把连续添加表单收起。
+    if (rankingSaving) return;
     if (next instanceof HTMLElement && next.closest('.desktop-accordion-toggle')) return;
     if (next instanceof Node && manager.contains(next)) return;
     rankingFocusActive = false;
@@ -1127,8 +1129,8 @@
       if (continueAdding) {
         rankingFocusActive = true;
         await tick();
-        const input = userNameInput
-          ?? document.querySelector<HTMLInputElement>('.rank-person-form input');
+        // 只取重新渲染后仍在页面里的输入框，避免旧 bind:this 引用吞掉 focus。
+        const input = document.querySelector<HTMLInputElement>('.rank-person-form input');
         input?.focus({ preventScroll: true });
         input?.select();
       }
@@ -1958,7 +1960,7 @@
   }
 
   .lineup-workbench.desktop {
-    grid-template-columns: minmax(350px, 410px) minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
     gap: clamp(14px, 1.7vw, 25px);
   }
 
@@ -3385,7 +3387,7 @@
 
   @media (max-width: 1250px) {
     .lineup-workbench.desktop {
-      grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+      grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
     }
 
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
