@@ -1618,8 +1618,8 @@ kbd {
 .workspace {
   grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
   grid-template-rows: repeat(5, 58px) 1fr;
-  height: calc(100vh - 130px);
-  min-height: 790px;
+  height: 660px;
+  min-height: 660px;
   align-content: stretch;
 }
 
@@ -2073,7 +2073,7 @@ kbd {
   grid-template-columns: minmax(430px, 1fr) minmax(330px, 390px);
   min-height: 0;
   flex: 1;
-  align-items: stretch;
+  align-items: start;
   gap: clamp(18px, 2.2vw, 32px);
   width: calc(100% + var(--stage-gutter));
   margin: 14px calc(-1 * var(--stage-gutter)) -19px 0;
@@ -2135,6 +2135,7 @@ kbd {
 
 .candidate-board {
   min-width: 0;
+  max-height: 590px;
   padding: 21px 22px;
   overflow-x: hidden;
   overflow-y: auto;

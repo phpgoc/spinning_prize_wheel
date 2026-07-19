@@ -1187,7 +1187,7 @@
     --lineup-dim-on-dark: #9da096;
     --lineup-muted-on-light: #52554c;
     --lineup-dim-on-light: #65685e;
-    min-height: calc(100vh - 130px);
+    min-height: 0;
     padding: clamp(24px, 4vw, 58px);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 25px;
@@ -1454,7 +1454,7 @@
 
   .empty-result {
     display: grid;
-    min-height: 430px;
+    min-height: 180px;
     align-content: center;
     justify-items: center;
     color: var(--lineup-dim-on-dark);
@@ -1673,7 +1673,7 @@
 
   .preview-empty {
     display: grid;
-    min-height: 170px;
+    min-height: 80px;
     margin-top: 16px;
     border: 1px dashed rgba(255, 255, 255, 0.08);
     border-radius: 12px;
@@ -2339,7 +2339,7 @@
   }
 
   @media (max-width: 900px) {
-    .lineup-page { min-height: calc(100vh - 110px); border-radius: 19px 19px 0 0; }
+    .lineup-page { min-height: 0; border-radius: 19px 19px 0 0; }
     .lineup-workbench,
     .lineup-workbench.desktop { grid-template-columns: minmax(0, 1fr); }
     .lineup-workbench.desktop .lineup-sidebar,
