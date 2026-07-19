@@ -1266,9 +1266,12 @@
                     {/each}
                   </section>
 
-                  <section class="rank-zone unranked-zone" data-rank-zone="unranked">
+                  <section
+                    class:drop-active={activeRankDropTarget?.kind === 'unranked'}
+                    class="rank-zone unranked-zone"
+                    data-rank-zone="unranked"
+                  >
                     <div class="rank-zone-heading"><strong>无排名</strong><span>{unrankedPeople.length}</span></div>
-                    <div class:active={activeRankDropTarget?.kind === 'unranked'} class="unranked-drop-zone">拖入无排名</div>
                     {#if unrankedPeople.length === 0}
                       <p class="empty-rank-zone">暂无无排名选项</p>
                     {/if}
@@ -2400,10 +2403,10 @@
     display: grid;
     height: min(540px, 56vh);
     min-height: 240px;
-    grid-template-rows: minmax(112px, 2fr) minmax(112px, 1fr);
-    gap: 10px;
+    align-content: start;
     margin-top: 4px;
-    overflow: hidden;
+    padding-right: 3px;
+    overflow-y: auto;
   }
 
   .rank-manager.reordering .ranked-user-list {
@@ -2420,16 +2423,20 @@
 
   .rank-zone {
     display: grid;
-    min-height: 0;
     align-content: start;
     gap: 8px;
-    padding-right: 3px;
-    overflow-y: auto;
   }
 
   .rank-zone.unranked-zone {
+    margin-top: 13px;
     padding-top: 9px;
     border-top: 1px solid rgba(36, 37, 31, 0.1);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+
+  .rank-zone.unranked-zone.drop-active {
+    border-top-color: #7a842f;
+    background: rgba(122, 132, 47, 0.08);
   }
 
   .rank-zone-heading {
@@ -2468,27 +2475,6 @@
   .empty-ranked-drop.active {
     border-color: #7a842f;
     background: rgba(122, 132, 47, 0.13);
-  }
-
-  .unranked-drop-zone {
-    padding: 7px;
-    border: 1px dashed rgba(36, 37, 31, 0.16);
-    border-radius: 7px;
-    background: rgba(36, 37, 31, 0.025);
-    color: var(--lineup-dim-on-light);
-    font-size: calc(10px * var(--font-scale, 1));
-  }
-
-  .rank-manager.dragging .unranked-drop-zone,
-  .rank-manager.keyboard-moving .unranked-drop-zone {
-    border-color: rgba(122, 132, 47, 0.46);
-    color: #626c26;
-  }
-
-  .unranked-drop-zone.active {
-    border-color: #7a842f;
-    background: rgba(122, 132, 47, 0.12);
-    color: #535b1f;
   }
 
   .empty-rank-zone {
