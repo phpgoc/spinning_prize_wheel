@@ -182,20 +182,27 @@ button:disabled {
 }
 
 .caimi-floaters span:nth-child(1) {
-  top: 36%;
+  top: 30%;
   animation: caimi-float-across 17s -4s linear infinite;
 }
 
 .caimi-floaters span:nth-child(2) {
-  top: 53%;
+  top: 47%;
   color: #35151e;
   background: rgba(255, 202, 83, 0.93);
   animation: caimi-float-back 21s -13s linear infinite;
 }
 
 .caimi-floaters span:nth-child(3) {
-  top: 69%;
+  top: 64%;
   animation: caimi-float-across 25s -18s linear infinite;
+}
+
+.caimi-floaters span:nth-child(4) {
+  top: 81%;
+  color: #35151e;
+  background: rgba(255, 202, 83, 0.93);
+  animation: caimi-float-back 23s -8s linear infinite;
 }
 
 @keyframes caimi-float-across {
