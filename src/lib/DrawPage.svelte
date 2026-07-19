@@ -2426,7 +2426,16 @@
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
         <section class="shortcut-group">
-          <h3>全局</h3>
+          <h3>通用操作逻辑</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>单行确认</span><kbd>Enter</kbd></div>
+            <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
+            <div><span>取消编辑</span><kbd>Esc</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group">
+          <h3>抽奖</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
@@ -2444,16 +2453,16 @@
           </div>
         </section>
 
-        <section class="shortcut-group context-shortcuts">
-          <h3>文本编辑</h3>
+        <section class="shortcut-group">
+          <h3>常用选择</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>单行确认</span><kbd>Enter</kbd></div>
-            <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
-            <div><span>取消编辑</span><kbd>Esc</kbd></div>
+            <div><span>上一条</span><kbd>↑</kbd></div>
+            <div><span>下一条</span><kbd>↓</kbd></div>
+            <div><span>引入候选项</span><kbd>F</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group context-shortcuts">
+        <section class="shortcut-group">
           <h3>候选项</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>添加一项并编辑</span><kbd>N</kbd></div>
@@ -2469,7 +2478,7 @@
         </section>
 
         <section class="shortcut-group">
-          <h3>分组</h3>
+          <h3>分组页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
             {#if desktopRuntime}
@@ -2479,15 +2488,6 @@
               <div><span>预览选择插入位置</span><kbd>↑ / ↓</kbd></div>
               <div><span>取消预览移动</span><kbd>Esc</kbd></div>
             {/if}
-          </div>
-        </section>
-
-        <section class="shortcut-group context-shortcuts">
-          <h3>常用选择</h3>
-          <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>上一条</span><kbd>↑</kbd></div>
-            <div><span>下一条</span><kbd>↓</kbd></div>
-            <div><span>引入候选项</span><kbd>F</kbd></div>
           </div>
         </section>
 
@@ -2502,23 +2502,20 @@
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>
               <div><span>选中排序</span><kbd>空格</kbd></div>
-              <div><span>选择插入 / 替换位置</span><kbd>↑ / ↓</kbd></div>
               <div><span>插入 / 替换</span><kbd>空格</kbd></div>
-              <div><span>取消排序</span><kbd>Esc</kbd></div>
               <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
               <div><span>执行当前项操作</span><kbd>空格</kbd></div>
-              <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
               <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
               <div><span>确认 / 取消关联</span><kbd>空格 / Esc</kbd></div>
             </div>
           </section>
         {/if}
 
-        <section class="shortcut-group confirm-shortcuts">
+        <section class="shortcut-group">
           <h3>确认框</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>同意</span><kbd>Y</kbd><b>/</b><kbd>Enter</kbd></div>
-            <div><span>拒绝</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
+            <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>Enter</kbd></div>
+            <div><span>取消</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
           </div>
         </section>
       </div>
@@ -2533,8 +2530,8 @@
         <h2 id="draw-confirm-title">{pendingDrawHistoryDeletion.kind === 'all' ? '清空全部抽奖历史？' : '删除这条抽奖历史？'}</h2>
         <p id="draw-confirm-detail">删除后无法恢复。</p>
         <div>
-          <button type="button" disabled={drawHistoryDeleting} on:click={() => (pendingDrawHistoryDeletion = null)}><span>取消</span><kbd>N / Esc</kbd></button>
-          <button type="button" class="confirm-delete" disabled={drawHistoryDeleting} on:click={confirmDrawHistoryDeletion}><span>{drawHistoryDeleting ? '删除中…' : '删除'}</span><kbd>Y / Enter</kbd></button>
+          <button type="button" disabled={drawHistoryDeleting} on:click={() => (pendingDrawHistoryDeletion = null)}><span>取消</span></button>
+          <button type="button" class="confirm-delete" disabled={drawHistoryDeleting} on:click={confirmDrawHistoryDeletion}><span>{drawHistoryDeleting ? '删除中…' : '确认'}</span></button>
         </div>
       </div>
     </div>

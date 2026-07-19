@@ -1542,25 +1542,6 @@ kbd {
   font-size: calc(14px * var(--font-scale, 1));
 }
 
-.context-shortcuts h3 {
-  color: #71812f;
-}
-
-.confirm-shortcuts h3 {
-  color: #8b4336;
-}
-
-.confirm-shortcuts .shortcut-list > div {
-  border-color: rgba(164, 76, 58, 0.24);
-  background: rgba(255, 244, 240, 0.72);
-}
-
-.confirm-shortcuts .shortcut-list kbd {
-  border-color: #c9a79f;
-  background: #fff8f5;
-  color: #74382e;
-}
-
 .shortcut-list > div {
   display: flex;
   min-height: 42px;
@@ -2101,14 +2082,6 @@ kbd {
   background: #9c4637;
   color: #fff8f5;
 }
-.draw-confirm-dialog kbd {
-  padding: 2px 4px;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  font-size: calc(9px * var(--font-scale, 1));
-  opacity: 0.72;
-}
-
 .sidebar-empty-state {
   display: flex;
   min-height: 210px;

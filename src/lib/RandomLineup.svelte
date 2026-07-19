@@ -1903,8 +1903,8 @@
       <h2 id="delete-ranked-title">删除“{pendingDeleteUser.name}”？</h2>
       <p id="delete-ranked-detail">当前名称、全部别名和排名都会一起删除，此操作无法撤销。</p>
       <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}><span>{deletingUserId === null ? '确认删除' : '删除中…'}</span><kbd>Y / Enter</kbd></button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}><span>{deletingUserId === null ? '确认' : '删除中…'}</span></button>
       </div>
     </div>
   </div>
@@ -1917,8 +1917,8 @@
       <h2 id="clear-alias-title">删除“{pendingAliasClearUser.name}”的全部别名？</h2>
       <p id="clear-alias-detail">当前名称会保留，其他别名会全部删除。</p>
       <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认删除' : '删除中…'}</span><kbd>Y / Enter</kbd></button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认' : '删除中…'}</span></button>
       </div>
     </div>
   </div>
@@ -1931,11 +1931,11 @@
       <h2 id="clear-all-rankings-title">{clearAllRankingsConfirmation === 1 ? '删除全部排名？' : '真的删除全部排名？'}</h2>
       <p id="clear-all-rankings-detail">{clearAllRankingsConfirmation === 1 ? '全部名称、别名和排名都会删除。' : '此操作无法撤销。'}</p>
       <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAllRankings} on:click={cancelClearAllRankings}><span>取消</span><kbd>N / Esc</kbd></button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAllRankings} on:click={cancelClearAllRankings}><span>取消</span></button>
         {#if clearAllRankingsConfirmation === 1}
-          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={continueClearAllRankings}><span>继续</span><kbd>Y / Enter</kbd></button>
+          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={continueClearAllRankings}><span>确认</span></button>
         {:else}
-          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAllRankings} on:click={confirmClearAllRankings}><span>{clearingAllRankings ? '删除中…' : '确认删除'}</span><kbd>Y / Enter</kbd></button>
+          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAllRankings} on:click={confirmClearAllRankings}><span>{clearingAllRankings ? '删除中…' : '确认'}</span></button>
         {/if}
       </div>
     </div>
@@ -1949,8 +1949,8 @@
       <h2 id="ranking-import-title">导入 {pendingRankingImport.length} 项排名？</h2>
       <p id="ranking-import-detail">当前排名和别名会被文件内容完整替换。</p>
       <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={rankingImporting} on:click={() => (pendingRankingImport = null)}><span>取消</span><kbd>N / Esc</kbd></button>
-        <button type="button" class="confirm-import" aria-keyshortcuts="Y Enter" disabled={rankingImporting} on:click={confirmRankingImport}><span>{rankingImporting ? '导入中…' : '确认导入'}</span><kbd>Y / Enter</kbd></button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={rankingImporting} on:click={() => (pendingRankingImport = null)}><span>取消</span></button>
+        <button type="button" class="confirm-import" aria-keyshortcuts="Y Enter" disabled={rankingImporting} on:click={confirmRankingImport}><span>{rankingImporting ? '导入中…' : '确认'}</span></button>
       </div>
     </div>
   </div>
@@ -3279,17 +3279,6 @@
     font-weight: 750;
     gap: 2px;
     place-items: center;
-  }
-
-  .delete-confirm-dialog button kbd {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-family: var(--font-mono);
-    font-size: calc(9px * var(--font-scale, 1));
-    opacity: 0.72;
   }
 
   .delete-confirm-dialog button.confirm-delete {
