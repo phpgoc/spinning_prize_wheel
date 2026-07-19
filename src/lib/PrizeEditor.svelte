@@ -39,7 +39,7 @@
       class="prize-row"
       data-prize-id={prize.id}
       role="group"
-      aria-label={`候选项 ${index + 1}：${prize.name}`}
+      aria-label={`候选 ${index + 1}：${prize.name}`}
       on:pointerdown={() => onSelect(prize.id)}
       on:focusin={() => onSelect(prize.id)}
     >

@@ -911,6 +911,7 @@ p {
   display: flex;
   flex: none;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 7px;
 }
@@ -930,12 +931,6 @@ p {
 .draw-session-actions > button:hover:not(:disabled) {
   border-color: rgba(231, 255, 114, 0.58);
   background: rgba(231, 255, 114, 0.12);
-  color: var(--accent);
-}
-
-.draw-session-actions > .save-draw-button {
-  border-color: rgba(231, 255, 114, 0.42);
-  background: rgba(231, 255, 114, 0.15);
   color: var(--accent);
 }
 

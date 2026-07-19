@@ -390,7 +390,7 @@
       commonSelectionSaveOpen = false;
       commonSelectionName = '';
       result = {
-        eyebrow: '常用选择已保存',
+        eyebrow: '常用候选已保存',
         title: selection.name,
         detail: `${selection.prizes.length} 个候选项已保存到${desktopRuntime ? '本地文件' : '浏览器存储'}。`,
         tone: 'success',
@@ -411,7 +411,7 @@
     commonKeyboardActive = false;
     selectedCommonId = null;
     result = {
-      eyebrow: '常用选择已导入',
+      eyebrow: '常用候选已导入',
       title: selection.name,
       detail: `${selection.prizes.length} 个候选项已放入当前轮盘，其他设置保持不变。`,
       tone: 'success',
@@ -455,7 +455,7 @@
     }
   }
 
-  async function saveCurrentDrawHistory(announce = true): Promise<boolean> {
+  async function archiveCurrentDrawHistory(): Promise<boolean> {
     if (!desktopRuntime || validCompleted === 0 || drawHistorySaving) return false;
     const draw: SavedDraw = {
       version: 1,
@@ -472,14 +472,6 @@
     try {
       await invoke('save_draw_history', { draw, variant });
       drawHistories = [draw, ...drawHistories.filter((history) => history.id !== draw.id)];
-      if (announce) {
-        result = {
-          eyebrow: '当前抽奖已保存',
-          title: `${validCompleted} 个有效结果`,
-          detail: '可以在左侧历史中查看。',
-          tone: 'success',
-        };
-      }
       return true;
     } catch (error) {
       drawHistoryError = error instanceof Error ? error.message : String(error);
@@ -500,7 +492,7 @@
     stopContinuousDraw();
     let archived = false;
     if (desktopRuntime && autoSaveHistory && validCompleted > 0) {
-      const saved = await saveCurrentDrawHistory(false);
+      const saved = await archiveCurrentDrawHistory();
       if (!saved) return;
       archived = true;
     }
@@ -540,7 +532,7 @@
     const change = await changeAutoSaveHistory(
       autoSaveHistory,
       validCompleted,
-      () => saveCurrentDrawHistory(false),
+      () => archiveCurrentDrawHistory(),
       () => resetCurrentDraw(false, true),
     );
     if (!change.applied) return;
@@ -549,8 +541,8 @@
     if (!change.enabled) {
       result = {
         eyebrow: '自动保存已关闭',
-        title: '当前统计不会自动入库',
-        detail: '仍可使用“保存当前抽奖”手动保存。',
+        title: '统计不会自动入库',
+        detail: '关闭后不会写入历史。',
         tone: 'idle',
       };
       return;
@@ -558,7 +550,7 @@
 
     result = {
       eyebrow: '自动保存已开启',
-      title: change.archived ? '当前统计已入库并清空' : '后续抽奖会自动归档',
+      title: change.archived ? '统计已入库并清空' : '后续抽奖会自动归档',
       detail: change.archived
         ? `已保存 ${completedBeforeArchive} 个有效结果，现在可以开始新一轮。`
         : '开始新抽奖时，上一轮统计会自动保存到本地历史。',
@@ -830,7 +822,7 @@
     if (shouldArchive) {
       let archived = false;
       if (validCompleted > 0) {
-        if (!await saveCurrentDrawHistory(false)) return;
+        if (!await archiveCurrentDrawHistory()) return;
         archived = true;
       }
       resetCurrentDraw(false, archived);
@@ -1122,7 +1114,7 @@
         result = {
           eyebrow: '连续抽奖完成',
           title: `${completed} 个有效结果`,
-          detail: '当前统计已更新。',
+          detail: '统计已更新。',
           tone: 'success',
         };
       }, delay);
@@ -1498,7 +1490,7 @@
     if (retryTotal > 0 || retryEnabled) {
       rows.push(['重来一次', retryEnabled ? retryWeight : '', retryTotal, 0]);
     }
-    downloadCsv('转盘当前统计', rows);
+    downloadCsv('转盘统计', rows);
   }
 
   function exportCurrentStatsJson() {
@@ -1517,7 +1509,7 @@
         rewardTotal: 0,
       });
     }
-    downloadFormattedJson('转盘当前统计', statistics);
+    downloadFormattedJson('转盘统计', statistics);
   }
 
   function exportBatchExperiment() {
@@ -1684,7 +1676,7 @@
     const globalShortcut = !editing && !modifier && !event.altKey && !event.shiftKey;
     if (!globalShortcut) return;
 
-    if (!['w', 'e', 'r', 'a', 'z', 'x', 'm', 's', 'space'].includes(shortcutKey)) return;
+    if (!['w', 'e', 'r', 't', 'a', 'z', 'x', 'm', 's', 'space'].includes(shortcutKey)) return;
     if (!desktopRuntime && shortcutKey === 's') return;
     event.preventDefault();
 
@@ -1694,6 +1686,8 @@
       exportCurrentStatsJson();
     } else if (shortcutKey === 'r') {
       void startNewDraw(true);
+    } else if (shortcutKey === 't') {
+      void startNewDraw(false);
     } else if (shortcutKey === 'a') {
       toggleCommonKeyboard();
     } else if (shortcutKey === 'z') {
@@ -1882,7 +1876,7 @@
         on:click={() => togglePanel('common')}
       >
         <span class="accordion-icon">▤</span>
-        <span><strong>常用选择</strong></span>
+        <span><strong>常用候选</strong></span>
         <i>{activePanel === 'common' ? '−' : '+'}</i>
       </button>
 
@@ -1890,7 +1884,7 @@
         <div class="accordion-content common-content">
           <div class="panel-heading">
             <div>
-              <h2>常用选择</h2>
+              <h2>常用候选</h2>
             </div>
             <span class="count-badge">{commonSelections.length}</span>
           </div>
@@ -1900,12 +1894,12 @@
           {/if}
 
           {#if commonSelectionLoading}
-            <div class="sidebar-empty-state"><i>···</i><strong>正在读取常用选择</strong></div>
+            <div class="sidebar-empty-state"><i>···</i><strong>正在读取常用候选</strong></div>
           {:else if commonSelections.length === 0}
             <div class="sidebar-empty-state">
               <i>▤</i>
-              <strong>还没有常用选择</strong>
-              <span>在右侧候选项面板中保存当前名单。</span>
+              <strong>还没有常用候选</strong>
+              <span>在右侧候选面板中保存当前名单。</span>
             </div>
           {:else}
             <div class="common-list">
@@ -1915,7 +1909,7 @@
                   class="common-card"
                   data-common-id={selection.id}
                   role="group"
-                  aria-label={`常用选择：${selection.name}`}
+                  aria-label={`常用候选：${selection.name}`}
                   on:pointerdown={() => {
                     commonKeyboardActive = true;
                     selectedCommonId = selection.id;
@@ -1929,7 +1923,7 @@
                     <button
                       type="button"
                       class="common-delete"
-                      aria-label={`删除常用选择 ${selection.name}`}
+                      aria-label={`删除常用候选 ${selection.name}`}
                       title="删除"
                       on:click={() => deleteCommonSelection(selection)}
                     >×</button>
@@ -1950,14 +1944,8 @@
     <section class="stage-panel">
       <div class="stage-heading">
         <div class="draw-session-actions">
-          <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新的抽奖</button>
-          <button
-            type="button"
-            class="save-draw-button"
-            title={desktopRuntime ? '保存到本地历史数据库' : '桌面版可保存历史'}
-            disabled={!desktopRuntime || validCompleted === 0 || drawHistorySaving}
-            on:click={() => void saveCurrentDrawHistory()}
-          >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
+          <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新抽奖（清空候选）</button>
+          <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(false)}>新抽奖（保留候选）</button>
         </div>
       </div>
 
@@ -2031,24 +2019,24 @@
       </div>
         </div>
 
-        <aside class="candidate-board" aria-label="当前候选项">
+        <aside class="candidate-board" aria-label="当前候选">
           <div class="draw-side-tabs" aria-label="右侧面板">
             <button
               type="button"
               class:active={drawSidePanel === 'candidates'}
               on:click={() => (drawSidePanel = 'candidates')}
-            >候选项</button>
+            >候选</button>
             <button
               type="button"
               class:active={drawSidePanel === 'statistics'}
               on:click={() => (drawSidePanel = 'statistics')}
-            >当前统计 <span>{validCompleted}</span></button>
+            >统计 <span>{validCompleted}</span></button>
           </div>
 
           {#if drawSidePanel === 'candidates'}
           <div class="candidate-board-heading">
             <div>
-              <h2>候选项</h2>
+              <h2>候选</h2>
             </div>
             <span class="count-badge">{enabledPrizes.length}/{prizes.length}</span>
           </div>
@@ -2064,12 +2052,12 @@
             on:click={openCommonSelectionSaver}
           >
             <span>＋</span>
-            <strong>保存当前选择</strong>
+            <strong>保存为常用候选</strong>
           </button>
 
           {#if commonSelectionSaveOpen}
             <form class="save-selection-form" on:submit|preventDefault={saveCurrentSelection}>
-              <label for="common-selection-name">给这组候选项起个名字</label>
+              <label for="common-selection-name">给这组候选起个名字</label>
               <div>
                 <input
                   id="common-selection-name"
@@ -2223,7 +2211,7 @@
             <div class="side-stats-actions">
               <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsCsv}>CSV</button>
               <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsJson}>JSON</button>
-              <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空当前统计</button>
+              <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空统计</button>
             </div>
           {/if}
         </aside>
@@ -2434,7 +2422,7 @@
             <div><span>取消区域选择</span><kbd>Esc</kbd></div>
             <div><span>列表上一项</span><kbd>↑</kbd></div>
             <div><span>列表下一项</span><kbd>↓</kbd></div>
-            <div><span>候选项 / 排名编辑</span><kbd>回车</kbd></div>
+            <div><span>候选 / 排名编辑</span><kbd>回车</kbd></div>
             <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
             <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
@@ -2445,27 +2433,28 @@
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
-            <div><span>新的抽奖并清空候选项</span><kbd>R</kbd></div>
-            <div><span>打开 / 关闭常用选择</span><kbd>A</kbd></div>
+            <div><span>新抽奖并清空候选</span><kbd>R</kbd></div>
+            <div><span>新抽奖并保留候选</span><kbd>T</kbd></div>
+            <div><span>打开 / 关闭常用候选</span><kbd>A</kbd></div>
             <div><span>打开 / 关闭快捷键</span><kbd>Z</kbd></div>
             <div><span>开始抽奖</span><kbd>空格</kbd></div>
             <div><span>修改奖励金额</span><kbd>M</kbd></div>
             {#if desktopRuntime}
               <div><span>切换自动保存历史</span><kbd>S</kbd></div>
             {/if}
-            <div><span>进入候选项</span><kbd>X</kbd></div>
+            <div><span>进入候选</span><kbd>X</kbd></div>
           </div>
         </section>
 
         <section class="shortcut-group shortcut-common">
-          <h3>常用选择</h3>
+          <h3>常用候选</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>引入候选项</span><kbd>F</kbd></div>
+            <div><span>引入候选</span><kbd>F</kbd></div>
           </div>
         </section>
 
         <section class="shortcut-group shortcut-candidates">
-          <h3>候选项</h3>
+          <h3>候选</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>添加一项并编辑</span><kbd>N</kbd></div>
             <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
