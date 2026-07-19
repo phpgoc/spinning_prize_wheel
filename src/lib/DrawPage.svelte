@@ -2475,9 +2475,11 @@
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>
               <div><span>选中排序</span><kbd>空格</kbd></div>
-              <div><span>选择插入位置</span><kbd>↑ / ↓</kbd></div>
-              <div><span>插入</span><kbd>空格 / Enter</kbd></div>
+              <div><span>选择插入 / 替换位置</span><kbd>↑ / ↓</kbd></div>
+              <div><span>插入 / 替换</span><kbd>空格 / Enter</kbd></div>
               <div><span>取消排序</span><kbd>Esc</kbd></div>
+              <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
+              <div><span>执行当前项操作</span><kbd>空格</kbd></div>
               <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
               <div><span>关联时输入排名</span><kbd>数字 / 退格</kbd></div>
               <div><span>确认 / 取消关联</span><kbd>Enter / Esc</kbd></div>

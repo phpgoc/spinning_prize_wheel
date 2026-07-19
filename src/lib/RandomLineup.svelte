@@ -45,7 +45,7 @@
   type DesktopPanel = 'ranking' | 'history';
 
   let sourceText = '';
-  let groupCount = 6;
+  let groupCount = 4;
   let result: RandomLineup | null = null;
   let resultSignature = '';
   let error = '';
@@ -77,7 +77,7 @@
   let draggingUserId: number | null = null;
   let activeRankDropTarget: RankedUserDropTarget | null = null;
   let activeRankDropCardId: number | null = null;
-  let activeRankDropPosition: 'before' | 'after' | null = null;
+  let activeRankDropPosition: 'before' | 'swap' | 'after' | null = null;
   let rankDragPointerId: number | null = null;
   let rankDragStartX = 0;
   let rankDragStartY = 0;
@@ -86,6 +86,8 @@
   let rankingReordering = false;
   let keyboardMovingUserId: number | null = null;
   let keyboardDropPointIndex = -1;
+  let rankedUserActionIndex = -1;
+  let rankingFocusActive = false;
   let keyboardRankLabel = '选择一项';
   let aliasLinkName: string | null = null;
   let aliasLinkRankInput = '';
@@ -112,7 +114,7 @@
   let historyImporting = false;
   let importErrorDialog: { title: string; detail: string } | null = null;
   let lineupResultElement: HTMLElement | null = null;
-  let slowRevealEnabled = false;
+  let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
   let hiddenLineupCellKeys = new Set<string>();
@@ -683,8 +685,21 @@
   }
 
   function toggleDesktopPanel(panel: DesktopPanel) {
-    if (panel !== 'ranking' || desktopPanel === panel) cancelKeyboardRankMove();
-    desktopPanel = desktopPanel === panel ? null : panel;
+    if (desktopPanel === panel) {
+      if (panel === 'ranking' && !rankingFocusActive) {
+        void openDesktopPanel('ranking');
+        return;
+      }
+      cancelKeyboardRankMove();
+      if (panel === 'ranking') {
+        rankingFocusActive = false;
+        selectedRankedUserId = null;
+        rankedUserActionIndex = -1;
+      }
+      desktopPanel = null;
+      return;
+    }
+    void openDesktopPanel(panel);
   }
 
   function historySummary(history: SavedLineup): string {
@@ -809,9 +824,46 @@
 
   async function selectRankedUser(userId: number) {
     selectedRankedUserId = userId;
+    rankedUserActionIndex = -1;
     await tick();
-    document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    const card = document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`);
+    card?.focus({ preventScroll: true });
+    card?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function selectRankedUserFromPointer(userId: number) {
+    selectedRankedUserId = userId;
+    rankedUserActionIndex = -1;
+  }
+
+  function setRankedUserActionFocus(userId: number, index: number) {
+    selectedRankedUserId = userId;
+    rankedUserActionIndex = index;
+  }
+
+  function leaveRankedUserActions(event: FocusEvent) {
+    const manager = event.currentTarget as HTMLElement;
+    const next = event.relatedTarget;
+    if (next instanceof HTMLElement && next.closest('.desktop-accordion-toggle')) return;
+    if (next instanceof Node && manager.contains(next)) return;
+    rankingFocusActive = false;
+    selectedRankedUserId = null;
+    rankedUserActionIndex = -1;
+    cancelKeyboardRankMove();
+  }
+
+  async function moveRankedUserActionFocus(delta: -1 | 1) {
+    const userId = selectedRankedUserId;
+    if (userId === null) return;
+    const card = document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`);
+    if (!card) return;
+    const actions = [...card.querySelectorAll<HTMLElement>('[data-rank-action]')]
+      .filter((action) => !action.matches(':disabled'));
+    const nextIndex = Math.max(-1, Math.min(actions.length - 1, rankedUserActionIndex + delta));
+    rankedUserActionIndex = nextIndex;
+    await tick();
+    if (nextIndex < 0) card.focus({ preventScroll: true });
+    else actions[nextIndex]?.focus({ preventScroll: true });
   }
 
   function moveRankedUserSelection(delta: -1 | 1) {
@@ -852,7 +904,7 @@
     const sourcePoint = selected?.rank === 10_000
       ? points.findIndex((point) => point.target.kind === 'unranked')
       : points.findIndex(
-        (point) => point.target.kind === 'insert' && point.target.index === (selected?.rank ?? 1) - 1,
+        (point) => point.target.kind === 'swap' && point.target.userId === selectedRankedUserId,
       );
     if (sourcePoint < 0) return;
     clearRankDragState();
@@ -898,30 +950,32 @@
       const target = rankedUsers.find((user) => user.id === point.cardId);
       return `插入 ${target?.name ?? `第 ${point.target.index + 1} 位`} 前`;
     }
+    if (point.target.kind === 'swap') {
+      const targetUserId = point.target.userId;
+      const target = rankedUsers.find((user) => user.id === targetUserId);
+      return `替换 ${target?.name ?? '当前项'}`;
+    }
     return '选择落点';
   }
 
   async function openDesktopPanel(panel: DesktopPanel) {
     if (panel !== 'ranking') cancelKeyboardRankMove();
     desktopPanel = panel;
+    rankingFocusActive = panel === 'ranking';
     if (panel === 'ranking' && rankedUsers.length > 0) {
       await selectRankedUser(selectedRankedUserId ?? rankedUsers[0].id);
     }
   }
 
   function toggleDesktopPanelShortcut(panel: DesktopPanel) {
-    if (desktopPanel === panel) {
-      toggleDesktopPanel(panel);
-      return;
-    }
-    void openDesktopPanel(panel);
+    toggleDesktopPanel(panel);
   }
 
   function otherAliasSummary(user: RankedUser): string {
     const aliases = user.aliases
       .filter((alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'))
       .map((alias) => alias.name);
-    return aliases.length > 0 ? aliases.join('、') : '暂无其他别名';
+    return aliases.join('、');
   }
 
   function hasOtherAliases(user: RankedUser): boolean {
@@ -931,7 +985,7 @@
   }
 
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
-    selectedRankedUserId = userId;
+    selectRankedUserFromPointer(userId);
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
     pendingRankDragUserId = userId;
@@ -960,7 +1014,7 @@
         const target = rankedUserDropTargetForCard(userId, rankIndex, verticalRatio);
         activeRankDropPosition = target.kind === 'insert'
           ? target.index === rankIndex ? 'before' : 'after'
-          : null;
+          : target.kind === 'swap' ? 'swap' : null;
         return target;
       }
       activeRankDropCardId = null;
@@ -1033,6 +1087,7 @@
   async function saveRankedUser() {
     if (!userName.trim()) return;
     if (editingUserId !== null && editingRankField === 'aliases' && !userAliases.trim()) return;
+    const keepAdding = editingUserId === null;
     rankingSaving = true;
     rankingError = '';
     try {
@@ -1054,9 +1109,19 @@
           },
         });
       }
-      resetUserForm();
+      if (keepAdding) {
+        userName = '';
+        userAliases = '';
+      } else {
+        resetUserForm();
+      }
       await loadRankedUsers();
       await resolveNames();
+      if (keepAdding) {
+        rankingFocusActive = true;
+        await tick();
+        document.querySelector<HTMLInputElement>('.rank-person-form input')?.focus();
+      }
     } catch (reason) {
       rankingError = messageFrom(reason, '无法保存排名选项');
     } finally {
@@ -1224,6 +1289,7 @@
       }
       const hadLocalOperation = editingUserId !== null
         || selectedRankedUserId !== null
+        || rankingFocusActive
         || insertIndex !== null
         || pendingRankDragUserId !== null
         || draggingUserId !== null;
@@ -1231,6 +1297,7 @@
       cancelPreviewInsertion();
       resetUserForm();
       selectedRankedUserId = null;
+      rankedUserActionIndex = -1;
       clearRankDragState();
       if (!hadLocalOperation && desktopRuntime) desktopPanel = null;
       return;
@@ -1270,6 +1337,16 @@
         event.preventDefault();
         confirmKeyboardRankMove();
       }
+      return;
+    }
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      void moveRankedUserActionFocus(event.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
+    if (rankedUserActionIndex >= 0) {
+      // 操作按钮保留原生空格/回车点击；上下键不会再误改排名。
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
       return;
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -1335,13 +1412,13 @@
 <main class="lineup-page" id="lineup">
   <div class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
-      <aside class="lineup-sidebar">
+      <aside class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
-            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
+            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager" on:focusin={() => (rankingFocusActive = true)} on:focusout={leaveRankedUserActions}>
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}
@@ -1349,33 +1426,34 @@
                 {/if}
               {/if}
               <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
-              <div class="ranking-transfer-actions">
-                <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
-                <button type="button" on:click={openRankingImporter}>导入 JSON</button>
-                <button type="button" class="delete-all-rankings" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</button>
-              </div>
-              {#if aliasLinkName !== null}
-                <div class="rank-keyboard-order active alias-link-order">
-                  <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}{aliasLinkRankInput ? ` · 排名 ${aliasLinkRankInput}` : ''}</small></span>
-                  <button type="button" aria-keyshortcuts="Enter" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
-                  <button type="button" class="cancel-rank-move" aria-keyshortcuts="Escape" on:click={cancelAliasLink}>取消</button>
+              {#if rankingFocusActive}
+                <div class="ranking-transfer-actions">
+                  <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
+                  <button type="button" on:click={openRankingImporter}>导入 JSON</button>
+                  <button type="button" class="delete-all-rankings" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</button>
                 </div>
-              {:else}
-                <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">
-                  <span>
-                    <strong>{keyboardMovingUserId === null ? '键盘排序' : rankedUsers.find((user) => user.id === keyboardMovingUserId)?.name}</strong>
-                    <small>{keyboardRankLabel}</small>
-                  </span>
-                  <button type="button" disabled={selectedRankedUserId === null || rankingReordering} on:click={toggleKeyboardRankMove}>{keyboardMovingUserId === null ? '选中' : '放下'}</button>
-                  {#if keyboardMovingUserId !== null}<button type="button" class="cancel-rank-move" on:click={cancelKeyboardRankMove}>取消</button>{/if}
-                </div>
+                {#if aliasLinkName !== null}
+                  <div class="rank-keyboard-order active alias-link-order">
+                    <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}{aliasLinkRankInput ? ` · 排名 ${aliasLinkRankInput}` : ''}</small></span>
+                    <button type="button" aria-keyshortcuts="Enter" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
+                    <button type="button" class="cancel-rank-move" aria-keyshortcuts="Escape" on:click={cancelAliasLink}>取消</button>
+                  </div>
+                {:else}
+                  <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">
+                    <span>
+                      <strong>{keyboardMovingUserId === null ? '键盘排序' : rankedUsers.find((user) => user.id === keyboardMovingUserId)?.name}</strong>
+                      <small>{keyboardRankLabel}</small>
+                    </span>
+                    <button type="button" disabled={selectedRankedUserId === null || rankingReordering} on:click={toggleKeyboardRankMove}>{keyboardMovingUserId === null ? '选中' : '放下'}</button>
+                    {#if keyboardMovingUserId !== null}<button type="button" class="cancel-rank-move" on:click={cancelKeyboardRankMove}>取消</button>{/if}
+                  </div>
+                {/if}
               {/if}
               <div class="ranked-user-list">
                 {#if rankingLoading}
                   <p>正在读取排名表…</p>
                 {:else}
                   <section class="rank-zone" data-rank-zone="ranked">
-                    <div class="rank-zone-heading"><strong>已排名</strong><span>{rankedPeople.length}</span></div>
                     {#if rankedPeople.length === 0}
                       <div class:active={activeRankDropTarget?.kind === 'insert'} class="empty-ranked-drop">拖入排名</div>
                     {/if}
@@ -1383,12 +1461,15 @@
                       <!-- 卡片上下两区分别表示前插和后插。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
+                        tabindex="-1"
                         class:keyboard-selected={selectedRankedUserId === user.id}
                         class:insert-before={activeRankDropCardId === user.id && activeRankDropPosition === 'before'}
+                        class:replace-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:insert-after={activeRankDropCardId === user.id && activeRankDropPosition === 'after'}
                         class:drag-source={rankMoveSourceId === user.id}
                         data-rank-user-id={user.id}
                         data-rank-index={index}
+                        on:focus={() => selectRankedUserFromPointer(user.id)}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
                         on:pointermove={moveRankPointerDrag}
                         on:pointerup={finishRankPointerDrag}
@@ -1415,20 +1496,19 @@
                           {:else}
                             <div class="ranked-user-heading">
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                              <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                              <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                              <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                              <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
                             </div>
                             <div class="ranked-user-aliases">
                               <small>{otherAliasSummary(user)}</small>
                               {#if hasOtherAliases(user)}
-                                <button type="button" class="clear-aliases" on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                                <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
                               {/if}
                             </div>
                           {/if}
                         </div>
-                        <span class="drag-handle" title="拖动调整排名">⠿</span>
                         {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}
-                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i></div>
+                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i><i></i></div>
                         {/if}
                       </article>
                     {/each}
@@ -1440,16 +1520,15 @@
                     data-rank-zone="unranked"
                   >
                     <div class="rank-zone-heading"><strong>无排名</strong><span>{unrankedPeople.length}</span></div>
-                    {#if unrankedPeople.length === 0}
-                      <p class="empty-rank-zone">暂无无排名选项</p>
-                    {/if}
                     {#each unrankedPeople as user (user.id)}
                       <!-- 卡片整体提供桌面拖拽，内部按钮保留独立操作。 -->
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <article
+                        tabindex="-1"
                         class:keyboard-selected={selectedRankedUserId === user.id}
                         class:drag-source={rankMoveSourceId === user.id}
                         data-rank-user-id={user.id}
+                        on:focus={() => selectRankedUserFromPointer(user.id)}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
                         on:pointermove={moveRankPointerDrag}
                         on:pointerup={finishRankPointerDrag}
@@ -1476,30 +1555,29 @@
                           {:else}
                             <div class="ranked-user-heading">
                               <button type="button" class="user-name" on:click={() => editRankedUser(user, 'name')}>{user.name}</button>
-                              <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
-                              <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
+                              <button type="button" class="alias-action" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 0)} on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
+                              <button type="button" class="delete-user" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 1)} on:click={() => requestDeleteRankedUser(user)}>删除</button>
                             </div>
                             <div class="ranked-user-aliases">
                               <small>{otherAliasSummary(user)}</small>
                               {#if hasOtherAliases(user)}
-                                <button type="button" class="clear-aliases" on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                                <button type="button" class="clear-aliases" data-rank-action on:focus={() => setRankedUserActionFocus(user.id, 2)} on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
                               {/if}
                             </div>
                           {/if}
                         </div>
-                        <span class="drag-handle" title="拖动调整排名">⠿</span>
                       </article>
                     {/each}
                   </section>
                 {/if}
               </div>
-              {#if editingUserId === null}
+              {#if rankingFocusActive && editingUserId === null}
               <form class="rank-person-form" on:submit|preventDefault={saveRankedUser}>
                 <div class="rank-form-heading">
                   <strong>添加</strong>
                 </div>
                 <label><span>名称</span><input bind:this={userNameInput} maxlength="80" required bind:value={userName} placeholder="名称" /></label>
-                <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
+                <button type="submit" class="save-user" aria-keyshortcuts="Enter" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
               </form>
               {/if}
             </div>
@@ -1664,7 +1742,7 @@
         {/if}
         <div class="lineup-actions">
           {#if desktopRuntime}
-            <button type="button" class="generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>
+            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略数据库排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序分组</button>
           {:else}
             <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
@@ -1725,7 +1803,7 @@
             </table>
           </div>
         {:else}
-          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div><strong>分组表会显示在这里</strong><p>例如 24 项、6 组，将得到 A–F 六组与 t1–t4 四档。</p></div>
+          <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div></div>
         {/if}
       </div>
     </section>
@@ -1741,7 +1819,7 @@
 
 {#if draggingUserId !== null}
   <div class="rank-drag-ghost" style={`left: ${rankDragX}px; top: ${rankDragY}px;`} aria-hidden="true">
-    <span>⠿</span>{rankedUsers.find((user) => user.id === draggingUserId)?.name ?? '选项'}
+    {rankedUsers.find((user) => user.id === draggingUserId)?.name ?? '选项'}
   </div>
 {/if}
 
@@ -2133,8 +2211,6 @@
   }
   .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
   .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.2); border-radius: 9px; background: rgba(231, 255, 114, 0.055); color: #cbd877; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
-  .empty-result strong { color: #dedfd8; font-size: calc(16px * var(--font-scale, 1)); }
-  .empty-result p { max-width: 340px; margin-top: 7px; font-size: calc(12px * var(--font-scale, 1)); line-height: 1.6; }
 
   .preview-status {
     color: #dde2c2;
@@ -2438,6 +2514,18 @@
     margin-top: 0;
   }
 
+  .lineup-actions .rank-generate-button {
+    width: auto;
+    flex: 0 1 auto;
+    padding: 9px 12px;
+    font-size: calc(13px * var(--font-scale, 1));
+  }
+
+  .lineup-actions .rank-generate-button i {
+    margin-left: 14px;
+    font-size: calc(16px * var(--font-scale, 1));
+  }
+
   .input-order-button {
     padding: 10px 13px;
     border: 1px solid rgba(231, 255, 114, 0.17);
@@ -2451,10 +2539,14 @@
 
   .lineup-sidebar {
     display: grid;
+    height: 100%;
     min-width: 0;
     align-content: start;
     gap: 9px;
   }
+
+  .lineup-sidebar.ranking-open { grid-template-rows: minmax(0, 1fr) auto; }
+  .lineup-sidebar.history-open { grid-template-rows: auto minmax(0, 1fr); }
 
   .desktop-accordion {
     overflow: hidden;
@@ -2497,10 +2589,22 @@
     border-bottom: 1px solid rgba(36, 37, 31, 0.08);
   }
 
+  .desktop-accordion.open {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+
   .desktop-accordion-content { padding: 12px; }
 
   .rank-manager {
-    background: #efede6;
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 180px),
+      #dfe4ce;
   }
 
   .rank-manager form {
@@ -2510,8 +2614,10 @@
 
   .rank-person-form {
     margin-top: 14px;
-    padding-top: 13px;
-    border-top: 1px solid rgba(36, 37, 31, 0.1);
+    padding: 12px;
+    border: 1px solid rgba(100, 112, 46, 0.16);
+    border-radius: 10px;
+    background: #f9faef;
   }
 
   .rank-form-heading {
@@ -2521,7 +2627,7 @@
   }
 
   .rank-form-heading strong {
-    font-size: calc(13px * var(--font-scale, 1));
+    font-size: calc(15px * var(--font-scale, 1));
   }
 
   .rank-manager form > label {
@@ -2533,20 +2639,20 @@
 
   .rank-manager label > span {
     color: var(--lineup-muted-on-light);
-    font-size: calc(11px * var(--font-scale, 1));
+    font-size: calc(12px * var(--font-scale, 1));
   }
 
   .rank-manager input {
     width: 100%;
     min-width: 0;
-    padding: 7px 8px;
+    padding: 9px 10px;
     border: 1px solid rgba(36, 37, 31, 0.12);
     border-radius: 7px;
     outline: 0;
     background: #fffdf8;
     color: #24251f;
     font-family: var(--font-sans);
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(14px * var(--font-scale, 1));
   }
 
   .rank-manager input:focus {
@@ -2554,13 +2660,13 @@
   }
 
   .save-user {
-    padding: 8px;
+    padding: 9px;
     border: 0;
     border-radius: 7px;
     background: #292a23;
     color: #f7f5ed;
     cursor: pointer;
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(13px * var(--font-scale, 1));
     font-weight: 750;
   }
 
@@ -2593,13 +2699,13 @@
   }
 
   .ranking-transfer-actions button {
-    padding: 5px 7px;
+    padding: 6px 8px;
     border: 1px solid rgba(84, 96, 36, 0.25);
     border-radius: 6px;
     background: #f8f7f0;
     color: #4f5b20;
     cursor: pointer;
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(11px * var(--font-scale, 1));
     font-weight: 750;
   }
 
@@ -2615,7 +2721,7 @@
     align-items: center;
     gap: 5px;
     margin: 2px 0 7px;
-    padding: 4px 5px;
+    padding: 7px 8px;
     border: 1px solid rgba(36, 37, 31, 0.13);
     border-radius: 8px;
     background: #e5e2d8;
@@ -2629,24 +2735,25 @@
   .rank-keyboard-order > span { min-width: 0; }
   .rank-keyboard-order strong,
   .rank-keyboard-order small { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-keyboard-order strong { color: #292b24; font-size: calc(10px * var(--font-scale, 1)); }
-  .rank-keyboard-order small { margin-left: 5px; color: #4b4e45; font-size: calc(9px * var(--font-scale, 1)); }
+  .rank-keyboard-order strong { color: #292b24; font-size: calc(12px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { margin-left: 6px; color: #4b4e45; font-size: calc(11px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
-    padding: 3px 6px;
+    padding: 5px 7px;
     border: 1px solid rgba(86, 101, 30, 0.32);
     border-radius: 6px;
     background: #f7f8ed;
     color: #4d5a1e;
     cursor: pointer;
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(11px * var(--font-scale, 1));
     font-weight: 800;
   }
   .rank-keyboard-order .cancel-rank-move { border-color: rgba(137, 66, 51, 0.24); color: #833f33; }
 
   .ranked-user-list {
     display: grid;
-    height: min(540px, 56vh);
+    height: auto;
     min-height: 240px;
+    flex: 1;
     align-content: start;
     margin-top: 4px;
     padding-right: 3px;
@@ -2693,12 +2800,12 @@
 
   .rank-zone-heading strong {
     color: #303229;
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(14px * var(--font-scale, 1));
   }
 
   .rank-zone-heading span {
     color: var(--lineup-dim-on-light);
-    font-size: calc(9px * var(--font-scale, 1));
+    font-size: calc(11px * var(--font-scale, 1));
     text-align: right;
   }
 
@@ -2721,35 +2828,37 @@
     background: rgba(122, 132, 47, 0.13);
   }
 
-  .empty-rank-zone {
-    padding: 4px 3px 1px !important;
-    text-align: left !important;
-  }
-
   .ranked-user-list article {
     position: relative;
     display: grid;
     min-width: 0;
-    min-height: 78px;
-    grid-template-columns: 36px minmax(0, 1fr) 20px;
+    min-height: 86px;
+    grid-template-columns: 40px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    padding: 11px 9px;
-    border: 1px solid rgba(36, 37, 31, 0.08);
-    border-radius: 10px;
+    padding: 12px 11px;
+    border: 1px solid rgba(92, 105, 43, 0.24);
+    border-radius: 12px;
     overflow: hidden;
-    background: #fffdf8;
+    background: linear-gradient(135deg, #fffefa, #faf8ef);
     cursor: grab;
     touch-action: none;
     user-select: none;
-    transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+    box-shadow: 0 4px 12px rgba(54, 56, 42, 0.045);
+    transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease;
   }
 
   .ranked-user-list article:active { cursor: grabbing; }
 
+  .ranked-user-list article:hover {
+    border-color: rgba(113, 126, 48, 0.3);
+    box-shadow: 0 7px 18px rgba(54, 56, 42, 0.09);
+  }
+
   .ranked-user-list article.keyboard-selected {
     outline: 2px solid rgba(56, 111, 171, 0.48);
     outline-offset: 1px;
+    background: linear-gradient(135deg, #fffffb, #f1f5dd);
   }
 
   .ranked-user-list article.insert-before {
@@ -2762,12 +2871,17 @@
     box-shadow: inset 0 -5px rgba(122, 132, 47, 0.3);
   }
 
+  .ranked-user-list article.replace-target {
+    border-color: rgba(182, 106, 53, 0.72);
+    box-shadow: inset 0 0 0 4px rgba(205, 128, 66, 0.24);
+  }
+
   .ranked-user-list article.drag-source { opacity: 0.44; }
 
   .rank-number {
     color: #7a842f;
     font-family: var(--font-mono);
-    font-size: calc(16px * var(--font-scale, 1));
+    font-size: calc(18px * var(--font-scale, 1));
     font-weight: 800;
     text-align: center;
   }
@@ -2795,7 +2909,7 @@
     display: block;
     overflow: hidden;
     color: #24251f;
-    font-size: calc(14px * var(--font-scale, 1));
+    font-size: calc(16px * var(--font-scale, 1));
     font-weight: 800;
     text-align: left;
     text-overflow: ellipsis;
@@ -2805,7 +2919,29 @@
   .delete-user,
   .clear-aliases {
     color: #72782e;
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(11px * var(--font-scale, 1));
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 100ms ease;
+  }
+
+  .ranked-user-list article:hover .alias-action,
+  .ranked-user-list article:hover .delete-user,
+  .ranked-user-list article:hover .clear-aliases,
+  .ranked-user-list article:focus-within .alias-action,
+  .ranked-user-list article:focus-within .delete-user,
+  .ranked-user-list article:focus-within .clear-aliases {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .ranked-user-heading button:focus-visible,
+  .clear-aliases:focus-visible {
+    border-radius: 4px;
+    outline: 2px solid rgba(56, 111, 171, 0.55);
+    outline-offset: 2px;
   }
 
   .delete-user,
@@ -2831,7 +2967,7 @@
     overflow-y: auto;
     padding-right: 4px;
     color: var(--lineup-dim-on-light);
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(13px * var(--font-scale, 1));
     line-height: 1.45;
     overflow-wrap: anywhere;
     scrollbar-color: #888b7c #e7e4da;
@@ -2904,19 +3040,12 @@
     white-space: nowrap;
   }
 
-  .drag-handle {
-    color: var(--lineup-dim-on-light);
-    font-size: calc(18px * var(--font-scale, 1));
-    line-height: 1;
-    text-align: center;
-  }
-
   .rank-drop-guides {
     position: absolute;
     inset: 0;
     z-index: 3;
     display: grid;
-    grid-template-rows: repeat(2, 1fr);
+    grid-template-rows: 1fr 2fr 1fr;
     background: rgba(255, 253, 248, 0.76);
     pointer-events: none;
   }
@@ -2931,6 +3060,11 @@
   .insert-before .rank-drop-guides i:first-child,
   .insert-after .rank-drop-guides i:last-child {
     background: rgba(48, 119, 194, 0.42);
+    opacity: 1;
+  }
+
+  .replace-target .rank-drop-guides i:nth-child(2) {
+    background: rgba(205, 128, 66, 0.46);
     opacity: 1;
   }
 
@@ -2955,8 +3089,6 @@
     transform: translate(14px, 14px);
     white-space: nowrap;
   }
-
-  .rank-drag-ghost span { color: #ddec75; }
 
   .delete-confirm-backdrop {
     position: fixed;
@@ -3204,6 +3336,10 @@
     .lineup-workbench.desktop .lineup-center,
     .lineup-workbench.desktop .lineup-config { grid-column: 1; grid-row: auto; width: 100%; }
     .lineup-config { width: 100%; }
+    .lineup-sidebar,
+    .lineup-sidebar.ranking-open,
+    .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; }
+    .ranked-user-list { height: min(540px, 56vh); flex: none; }
     textarea { min-height: 220px; }
   }
 

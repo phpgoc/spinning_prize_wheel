@@ -179,21 +179,25 @@ describe('随机排阵', () => {
     expect(uniqueLineupNames(['甲', '乙', '甲', ' 乙 ', '丙'])).toEqual(['甲', '乙', '丙']);
   });
 
-  test('排名卡片只按上下区域执行前插和后插', () => {
+  test('排名卡片上下插入且中间替换', () => {
     expect([
       rankedUserDropTargetForCard(7, 2, 0.1),
+      rankedUserDropTargetForCard(7, 2, 0.5),
       rankedUserDropTargetForCard(7, 2, 0.9),
     ]).toEqual([
       { kind: 'insert', index: 2 },
+      { kind: 'swap', userId: 7 },
       { kind: 'insert', index: 3 },
     ]);
   });
 
-  test('键盘排序把无排名作为唯一落点并和首尾排名相连', () => {
+  test('键盘排序依次包含无排名、插入和替换落点', () => {
     expect(rankedUserKeyboardDropPoints([11, 22], [33])).toEqual([
       { target: { kind: 'unranked' }, cardId: null, position: 'unranked' },
       { target: { kind: 'insert', index: 0 }, cardId: 11, position: 'before' },
+      { target: { kind: 'swap', userId: 11 }, cardId: 11, position: 'swap' },
       { target: { kind: 'insert', index: 1 }, cardId: 22, position: 'before' },
+      { target: { kind: 'swap', userId: 22 }, cardId: 22, position: 'swap' },
       { target: { kind: 'insert', index: 2 }, cardId: 22, position: 'after' },
     ]);
   });

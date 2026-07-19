@@ -56,6 +56,20 @@ button:disabled {
   opacity: 0.55;
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button:not(:disabled):hover {
+    outline: 1px solid rgba(210, 232, 103, 0.48);
+    outline-offset: 1px;
+    filter: brightness(1.08) contrast(1.03);
+  }
+}
+
+button:not(:disabled):active { filter: brightness(0.94); }
+
 ::selection {
   background: #d9f25f;
   color: #171813;

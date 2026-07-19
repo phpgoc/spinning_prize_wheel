@@ -29,27 +29,28 @@ export interface LineupOrderAvailability {
 
 export type RankedUserDropTarget =
   | { kind: 'insert'; index: number }
+  | { kind: 'swap'; userId: number }
   | { kind: 'unranked' };
 
 export interface RankedUserKeyboardDropPoint {
   target: RankedUserDropTarget;
   cardId: number | null;
-  position: 'before' | 'after' | 'unranked';
+  position: 'before' | 'swap' | 'after' | 'unranked';
 }
 
-/** 已排名卡片只提供前插和后插，不再提供替换操作。 */
+/** 排名卡片上、下四分之一用于插入，中间二分之一用于替换。 */
 export function rankedUserDropTargetForCard(
-  _userId: number,
+  userId: number,
   rankIndex: number | null,
   verticalRatio: number,
 ): RankedUserDropTarget {
   if (rankIndex === null) return { kind: 'unranked' };
-  return verticalRatio < 0.5
-    ? { kind: 'insert', index: rankIndex }
-    : { kind: 'insert', index: rankIndex + 1 };
+  if (verticalRatio < 0.25) return { kind: 'insert', index: rankIndex };
+  if (verticalRatio > 0.75) return { kind: 'insert', index: rankIndex + 1 };
+  return { kind: 'swap', userId };
 }
 
-/** 键盘排序依次经过无排名、每一项之前和排名末尾。 */
+/** 键盘排序依次经过无排名、每一项前插、替换和排名末尾。 */
 export function rankedUserKeyboardDropPoints(
   rankedIds: readonly number[],
   _unrankedIds: readonly number[],
@@ -60,6 +61,7 @@ export function rankedUserKeyboardDropPoints(
   ];
   rankedIds.forEach((userId, index) => {
     points.push({ target: { kind: 'insert', index }, cardId: userId, position: 'before' });
+    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
   });
   points.push({
     target: { kind: 'insert', index: rankedIds.length },
