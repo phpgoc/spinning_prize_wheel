@@ -489,6 +489,8 @@
       if (!saved) return;
       archived = true;
     }
+    continuousTarget = 0;
+    rewardAmount = 0;
     resetCurrentDraw(clearCandidates, archived);
   }
 

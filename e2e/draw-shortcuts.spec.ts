@@ -84,12 +84,27 @@ test('文本区只用 Alt+回车确认，Esc 取消且单键不会越过输入�
 
 test('R 清空候选，T 保留候选并开始新抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '统计 0' }).click();
+  await page.getByLabel('有效结果上限').fill('8');
+  await page.getByLabel('奖励金额').fill('88');
+  await page.keyboard.press('Escape');
+
   await page.keyboard.press('t');
   await expect(page.locator('[data-prize-id]')).toHaveCount(2);
   await expect(page.locator('.wheel-status')).toContainText('等待开始');
+  await page.getByRole('button', { name: '统计 0' }).click();
+  await expect(page.getByLabel('有效结果上限')).toHaveValue('0');
+  await expect(page.getByLabel('奖励金额')).toHaveValue('0');
+
+  await page.getByLabel('有效结果上限').fill('6');
+  await page.getByLabel('奖励金额').fill('66');
+  await page.keyboard.press('Escape');
 
   await page.keyboard.press('r');
   await expect(page.locator('[data-prize-id]')).toHaveCount(0);
+  await page.getByRole('button', { name: '统计 0' }).click();
+  await expect(page.getByLabel('有效结果上限')).toHaveValue('0');
+  await expect(page.getByLabel('奖励金额')).toHaveValue('0');
 });
 
 test('X 进入候选后覆盖方向、权重、编辑、新增、停用、删除和 Esc 退出', async ({ page }) => {
