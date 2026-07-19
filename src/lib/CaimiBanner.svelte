@@ -6,9 +6,9 @@
     <span>一切符合预期</span><span>概率很懂事</span><span>纯属巧合</span><span>节目效果</span><span>心照不宣</span><span>公平正在维护</span>
   </div>
   <div class="caimi-banner-main">
-    <i>正义正在偏航</i>
+    <i>结果经过正义校准</i>
     <strong>猜蜜版已接管</strong>
-    <p>节目照常 · 主播帮忙打个码</p>
+    <p>不要被发现了 · 主播帮忙打个码</p>
   </div>
   <div class="caimi-banner-track reverse" aria-hidden="true">
     <span>镜头照常</span><span>表情自然</span><span>懂的都懂</span><span>不懂最好</span><span>内部照顾</span><span>结果很合理</span>
