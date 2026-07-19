@@ -92,6 +92,8 @@
   let keyboardRankLabel = '选择一项';
   let aliasLinkName: string | null = null;
   let aliasLinkRankInput = '';
+  let rankSelectionShortcutInput = '';
+  let rankSelectionShortcutAt = 0;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
   let resultSourceNames: string[] = [];
@@ -511,6 +513,24 @@
     if (userId !== null) void selectRankedUser(userId);
   }
 
+  function resetRankSelectionShortcut() {
+    rankSelectionShortcutInput = '';
+    rankSelectionShortcutAt = 0;
+  }
+
+  function updateRankSelectionShortcut(key: string) {
+    const now = Date.now();
+    const current = now - rankSelectionShortcutAt <= 900 ? rankSelectionShortcutInput : '';
+    let next = updateRankShortcutInput(current, key);
+    if (/^\d$/u.test(key) && !rankedUsers.some((user) => user.rank < 10_000 && String(user.rank).startsWith(next))) {
+      next = key;
+    }
+    rankSelectionShortcutInput = next;
+    rankSelectionShortcutAt = now;
+    const userId = rankedUserIdAtShortcut(rankedUsers, next);
+    if (userId !== null) void selectRankedUser(userId);
+  }
+
   async function confirmAliasLink() {
     const alias = aliasLinkName;
     const userId = selectedRankedUserId;
@@ -856,6 +876,7 @@
   }
 
   async function moveRankedUserActionFocus(direction: 'left' | 'right') {
+    resetRankSelectionShortcut();
     const userId = selectedRankedUserId;
     if (userId === null) return;
     const card = document.querySelector<HTMLElement>(`[data-rank-user-id="${userId}"]`);
@@ -870,6 +891,7 @@
   }
 
   function moveRankedUserSelection(delta: -1 | 1) {
+    resetRankSelectionShortcut();
     if (rankedUsers.length === 0) return;
     const currentIndex = rankedUsers.findIndex((user) => user.id === selectedRankedUserId);
     const nextIndex = currentIndex < 0
@@ -988,6 +1010,7 @@
   }
 
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
+    resetRankSelectionShortcut();
     selectRankedUserFromPointer(userId);
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
@@ -1306,6 +1329,7 @@
       resetUserForm();
       selectedRankedUserId = null;
       rankedUserActionIndex = -1;
+      resetRankSelectionShortcut();
       clearRankDragState();
       if (!hadLocalOperation && desktopRuntime) desktopPanel = null;
       return;
@@ -1353,14 +1377,18 @@
       void moveRankedUserActionFocus(direction);
       return;
     }
-    if (rankedUserActionIndex >= 0) {
-      // 操作按钮保留原生空格/回车点击，其他单键不触发排名排序。
-      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
+    if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
+      event.preventDefault();
+      updateRankSelectionShortcut(event.key);
       return;
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       moveRankedUserSelection(event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+    if (rankedUserActionIndex >= 0) {
+      // 操作按钮保留原生空格/回车点击，上下切换后由整条接管焦点。
       return;
     }
 

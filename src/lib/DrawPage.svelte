@@ -2481,7 +2481,7 @@
               <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
               <div><span>执行当前项操作</span><kbd>空格</kbd></div>
               <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
-              <div><span>关联时输入排名</span><kbd>数字 / 退格</kbd></div>
+              <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
               <div><span>确认 / 取消关联</span><kbd>Enter / Esc</kbd></div>
             </div>
           </section>
