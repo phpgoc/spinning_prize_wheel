@@ -61,6 +61,28 @@ test('Web 不占用桌面 S 快捷键，全局方向键滚动当前折叠页', a
   expect(await page.evaluate(() => (window as any).__WEB_S_DEFAULT_PREVENTED__)).toBe(false);
 });
 
+test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ page }) => {
+  const shell = page.locator('.app-shell');
+  await page.keyboard.press('Control+ArrowUp');
+  await expect.poll(() => shell.evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--font-scale').trim()
+  ))).toBe('1.1');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
+
+  await page.goto('/#/lineup');
+  await page.keyboard.press('Control+ArrowUp');
+  await expect.poll(() => shell.evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--font-scale').trim()
+  ))).toBe('1.2');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.2);
+
+  await page.keyboard.press('Control+ArrowDown');
+  await expect.poll(() => shell.evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--font-scale').trim()
+  ))).toBe('1.1');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
+});
+
 test('文本区只用 Alt+回车确认，Esc 取消且单键不会越过输入作用域', async ({ page }) => {
   await page.keyboard.press('w');
   const textarea = page.locator('.import-box textarea');

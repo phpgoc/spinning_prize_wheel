@@ -2419,6 +2419,7 @@
             <div><span>列表下一项</span><kbd>↓</kbd></div>
             <div><span>候选 / 排名编辑</span><kbd>回车</kbd></div>
             <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
+            <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
             <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
         </section>

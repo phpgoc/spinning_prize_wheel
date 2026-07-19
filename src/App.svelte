@@ -74,7 +74,34 @@
   function resetDraw() {
     drawPage?.resetSettings();
   }
+
+  function saveFontScale() {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
+      ) as Record<string, unknown>;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
+    } catch {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontScale }));
+    }
+  }
+
+  function handleGlobalFontScaleShortcut(event: KeyboardEvent) {
+    if (
+      !event.ctrlKey
+      || event.metaKey
+      || event.altKey
+      || event.shiftKey
+      || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
+    ) return;
+
+    event.preventDefault();
+    fontScale = normalizeFontScale(fontScale + (event.key === 'ArrowUp' ? 0.1 : -0.1));
+    saveFontScale();
+  }
 </script>
+
+<svelte:window on:keydown={handleGlobalFontScaleShortcut} />
 
 <svelte:head>
   <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '分组'} · 转盘</title>
