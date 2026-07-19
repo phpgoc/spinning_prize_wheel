@@ -1537,10 +1537,19 @@ kbd {
 }
 
 .shortcut-group h3 {
+  --shortcut-heading-color: var(--text-muted);
   margin-bottom: 8px;
-  color: var(--text-muted);
+  color: var(--shortcut-heading-color);
   font-size: calc(14px * var(--font-scale, 1));
 }
+
+.shortcut-general h3 { --shortcut-heading-color: #7051a3; }
+.shortcut-draw h3 { --shortcut-heading-color: #5f741d; }
+.shortcut-common h3 { --shortcut-heading-color: #2f6f89; }
+.shortcut-candidates h3 { --shortcut-heading-color: #9a5a1c; }
+.shortcut-lineup h3 { --shortcut-heading-color: #287568; }
+.shortcut-ranking h3 { --shortcut-heading-color: #8a476f; }
+.shortcut-confirm h3 { --shortcut-heading-color: #9a4939; }
 
 .shortcut-list > div {
   display: flex;

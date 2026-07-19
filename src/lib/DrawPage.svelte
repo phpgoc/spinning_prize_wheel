@@ -2425,16 +2425,22 @@
 
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-general">
           <h3>通用操作逻辑</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>单行确认</span><kbd>Enter</kbd></div>
-            <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>Enter</kbd></div>
+            <div><span>单行文本确认</span><kbd>回车</kbd></div>
+            <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
             <div><span>取消编辑</span><kbd>Esc</kbd></div>
+            <div><span>取消区域选择</span><kbd>Esc</kbd></div>
+            <div><span>列表上一项</span><kbd>↑</kbd></div>
+            <div><span>列表下一项</span><kbd>↓</kbd></div>
+            <div><span>候选项 / 排名编辑</span><kbd>回车</kbd></div>
+            <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
+            <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-draw">
           <h3>抽奖</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本导入</span><kbd>W</kbd></div>
@@ -2448,55 +2454,42 @@
               <div><span>切换自动保存历史</span><kbd>S</kbd></div>
             {/if}
             <div><span>进入候选项</span><kbd>X</kbd></div>
-            <div><span>退出局部操作</span><kbd>Esc</kbd></div>
-            <div><span>滚屏</span><kbd>↑ / ↓</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-common">
           <h3>常用选择</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>上一条</span><kbd>↑</kbd></div>
-            <div><span>下一条</span><kbd>↓</kbd></div>
             <div><span>引入候选项</span><kbd>F</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-candidates">
           <h3>候选项</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>添加一项并编辑</span><kbd>N</kbd></div>
-            <div><span>上一候选项</span><kbd>↑</kbd></div>
-            <div><span>下一候选项</span><kbd>↓</kbd></div>
             <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
             <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
-            <div><span>退出候选项</span><kbd>Esc</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
-            <div><span>编辑当前项</span><kbd>Enter</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-lineup">
           <h3>分组页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
+            <div><span>预览序号选中 / 插入</span><kbd>空格</kbd></div>
             {#if desktopRuntime}
-              <div><span>打开排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>
-              <div><span>预览序号选中 / 插入</span><kbd>空格</kbd></div>
-              <div><span>预览选择插入位置</span><kbd>↑ / ↓</kbd></div>
-              <div><span>取消预览移动</span><kbd>Esc</kbd></div>
             {/if}
           </div>
         </section>
 
         {#if desktopRuntime}
-          <section class="shortcut-group">
+          <section class="shortcut-group shortcut-ranking">
             <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>上一项 / 下一项</span><kbd>↑ / ↓</kbd></div>
-              <div><span>编辑名称</span><kbd>Enter</kbd></div>
               <div><span>添加排名</span><kbd>A</kbd></div>
               <div><span>添加新别名</span><kbd>S</kbd></div>
               <div><span>删除当前项</span><kbd>D</kbd></div>
@@ -2506,15 +2499,15 @@
               <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
               <div><span>执行当前项操作</span><kbd>空格</kbd></div>
               <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
-              <div><span>确认 / 取消关联</span><kbd>空格 / Esc</kbd></div>
+              <div><span>确认关联</span><kbd>空格</kbd></div>
             </div>
           </section>
         {/if}
 
-        <section class="shortcut-group">
+        <section class="shortcut-group shortcut-confirm">
           <h3>确认框</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>Enter</kbd></div>
+            <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>回车</kbd></div>
             <div><span>取消</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
           </div>
         </section>
