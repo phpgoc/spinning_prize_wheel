@@ -24,12 +24,14 @@
     lineupPreviewTierStarts,
     moveLineupPreviewName,
     orderResolvedLineupNames,
+    rankedUserIdAtShortcut,
     rankedUserDropTargetForCard,
     rankedUserKeyboardDropPoints,
     recentLineupHistories,
     unresolvedLineupNameCount,
     uniqueLineupNames,
     uniqueResolvedLineupPeople,
+    updateRankShortcutInput,
     type RankedUserDropTarget,
     type RandomLineup,
   } from './random-lineup';
@@ -83,6 +85,7 @@
   let keyboardDropPointIndex = -1;
   let keyboardRankLabel = '选择一项';
   let aliasLinkName: string | null = null;
+  let aliasLinkRankInput = '';
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
   let resultSourceNames: string[] = [];
@@ -471,6 +474,7 @@
     cancelKeyboardRankMove();
     resetUserForm();
     aliasLinkName = name;
+    aliasLinkRankInput = '';
     await openDesktopPanel('ranking');
     if (rankedUsers.length > 0) {
       await selectRankedUser(
@@ -483,6 +487,13 @@
 
   function cancelAliasLink() {
     aliasLinkName = null;
+    aliasLinkRankInput = '';
+  }
+
+  function updateAliasLinkRankShortcut(key: string) {
+    aliasLinkRankInput = updateRankShortcutInput(aliasLinkRankInput, key);
+    const userId = rankedUserIdAtShortcut(rankedUsers, aliasLinkRankInput);
+    if (userId !== null) void selectRankedUser(userId);
   }
 
   async function confirmAliasLink() {
@@ -495,6 +506,7 @@
       const updated = await invoke<RankedUser>('add_ranked_user_alias', { userId, alias });
       rankedUsers = rankedUsers.map((user) => user.id === updated.id ? updated : user);
       aliasLinkName = null;
+      aliasLinkRankInput = '';
       await resolveNames();
     } catch (reason) {
       rankingError = messageFrom(reason, '无法关联名称');
@@ -1137,6 +1149,9 @@
       } else if (event.key === 'Enter') {
         event.preventDefault();
         void confirmAliasLink();
+      } else if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
+        event.preventDefault();
+        updateAliasLinkRankShortcut(event.key);
       }
       return;
     }
@@ -1272,9 +1287,9 @@
               </div>
               {#if aliasLinkName !== null}
                 <div class="rank-keyboard-order active alias-link-order">
-                  <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}</small></span>
-                  <button type="button" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
-                  <button type="button" class="cancel-rank-move" on:click={cancelAliasLink}>取消</button>
+                  <span><strong>关联 {aliasLinkName}</strong><small>{rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项'}{aliasLinkRankInput ? ` · 排名 ${aliasLinkRankInput}` : ''}</small></span>
+                  <button type="button" aria-keyshortcuts="Enter" disabled={selectedRankedUserId === null || rankingSaving} on:click={confirmAliasLink}>确认</button>
+                  <button type="button" class="cancel-rank-move" aria-keyshortcuts="Escape" on:click={cancelAliasLink}>取消</button>
                 </div>
               {:else}
                 <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">

@@ -181,6 +181,23 @@ export function uniqueResolvedLineupPeople(
   });
 }
 
+/** 关联排名时只接受连续数字，退格逐位撤销。 */
+export function updateRankShortcutInput(current: string, key: string): string {
+  if (key === 'Backspace') return current.slice(0, -1);
+  if (!/^\d$/u.test(key) || current.length >= 5) return current;
+  return `${current}${key}`;
+}
+
+/** 仅精确匹配有排名项；10000 代表无排名，不能作为数字跳转目标。 */
+export function rankedUserIdAtShortcut(
+  users: readonly { id: number; rank: number }[],
+  input: string,
+): number | null {
+  if (!/^[1-9]\d{0,3}$/u.test(input)) return null;
+  const rank = Number(input);
+  return users.find((user) => user.rank === rank && user.rank < 10_000)?.id ?? null;
+}
+
 export function groupName(index: number): string {
   let value = Math.max(0, Math.floor(index));
   let name = '';

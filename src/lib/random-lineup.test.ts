@@ -9,12 +9,14 @@ import {
   lineupPreviewTierStarts,
   moveLineupPreviewName,
   orderResolvedLineupNames,
+  rankedUserIdAtShortcut,
   rankedUserDropTargetForCard,
   rankedUserKeyboardDropPoints,
   recentLineupHistories,
   unresolvedLineupNameCount,
   uniqueLineupNames,
   uniqueResolvedLineupPeople,
+  updateRankShortcutInput,
 } from './random-lineup';
 import type { ResolvedLineupName, SavedLineup } from './types';
 
@@ -99,6 +101,20 @@ describe('随机排阵', () => {
 
     expect(uniqueResolvedLineupPeople(people).map((person) => person.inputName))
       .toEqual(['小甲', '陌生']);
+  });
+
+  test('关联数字只在排名完全存在时跳转并支持退格', () => {
+    const users = [{ id: 1, rank: 1 }, { id: 12, rank: 12 }, { id: 99, rank: 10_000 }];
+    let input = updateRankShortcutInput('', '1');
+    expect(rankedUserIdAtShortcut(users, input)).toBe(1);
+    input = updateRankShortcutInput(input, '2');
+    expect(rankedUserIdAtShortcut(users, input)).toBe(12);
+    input = updateRankShortcutInput(input, '3');
+    expect(rankedUserIdAtShortcut(users, input)).toBeNull();
+    input = updateRankShortcutInput(input, 'Backspace');
+    expect(input).toBe('12');
+    expect(rankedUserIdAtShortcut(users, input)).toBe(12);
+    expect(rankedUserIdAtShortcut(users, '10000')).toBeNull();
   });
 
   test('桌面排名拒绝未识别选项', () => {

@@ -2479,6 +2479,7 @@
               <div><span>插入</span><kbd>空格 / Enter</kbd></div>
               <div><span>取消排序</span><kbd>Esc</kbd></div>
               <div><span>关联时选择目标</span><kbd>↑ / ↓</kbd></div>
+              <div><span>关联时输入排名</span><kbd>数字 / 退格</kbd></div>
               <div><span>确认 / 取消关联</span><kbd>Enter / Esc</kbd></div>
             </div>
           </section>
