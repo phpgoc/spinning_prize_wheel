@@ -1169,8 +1169,8 @@
       <h2 id="delete-ranked-title">删除“{pendingDeleteUser.name}”？</h2>
       <p id="delete-ranked-detail">当前名称、全部别名和排名都会一起删除，此操作无法撤销。</p>
       <div>
-        <button type="button" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}>取消</button>
-        <button type="button" class="confirm-delete" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}>{deletingUserId === null ? '确认删除' : '删除中…'}</button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}><span>{deletingUserId === null ? '确认删除' : '删除中…'}</span><kbd>Y / Enter</kbd></button>
       </div>
     </div>
   </div>
@@ -1183,8 +1183,8 @@
       <h2 id="clear-alias-title">清空“{pendingAliasClearUser.name}”的别名？</h2>
       <p id="clear-alias-detail">当前名称会保留，其他别名会全部清空。</p>
       <div>
-        <button type="button" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}>取消</button>
-        <button type="button" class="confirm-delete" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}>{clearingAliasesUserId === null ? '确认清空' : '清空中…'}</button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认清空' : '清空中…'}</span><kbd>Y / Enter</kbd></button>
       </div>
     </div>
   </div>
@@ -2282,6 +2282,7 @@
   }
 
   .delete-confirm-dialog button {
+    display: grid;
     padding: 10px;
     border: 1px solid rgba(36, 37, 31, 0.12);
     border-radius: 9px;
@@ -2290,6 +2291,19 @@
     cursor: pointer;
     font-size: calc(12px * var(--font-scale, 1));
     font-weight: 750;
+    gap: 2px;
+    place-items: center;
+  }
+
+  .delete-confirm-dialog button kbd {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: var(--font-mono);
+    font-size: calc(9px * var(--font-scale, 1));
+    opacity: 0.72;
   }
 
   .delete-confirm-dialog button.confirm-delete {

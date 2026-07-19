@@ -114,6 +114,7 @@
   let commonKeyboardActive = false;
   let rewardInput: HTMLInputElement;
   let commonSelectionInput: HTMLInputElement;
+  let workspaceRoot: HTMLElement | null = null;
   let commonSelections: CommonSelection[] = [];
   let commonSelectionName = '';
   let commonSelectionSaveOpen = false;
@@ -648,10 +649,15 @@
     }
   }
 
-  function exitCandidateKeyboard() {
+  function focusGlobalShortcuts() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    workspaceRoot?.focus({ preventScroll: true });
+  }
+
+  function exitCandidateKeyboard() {
     candidateKeyboardActive = false;
     selectedPrizeId = null;
+    focusGlobalShortcuts();
   }
 
   async function selectRewardInput() {
@@ -681,6 +687,7 @@
   function exitCommonKeyboard() {
     commonKeyboardActive = false;
     selectedCommonId = null;
+    focusGlobalShortcuts();
   }
 
   async function moveCommonSelection(direction: -1 | 1) {
@@ -1466,9 +1473,11 @@
         exitCommonKeyboard();
         return;
       }
+      event.preventDefault();
       activePanel = null;
       if (importOpen && !importText) importOpen = false;
       commonSelectionSaveOpen = false;
+      focusGlobalShortcuts();
       return;
     }
 
@@ -1484,6 +1493,11 @@
         return;
       }
       if (!editing && !modifier && !event.altKey && !event.shiftKey) {
+        if (key === 'n') {
+          event.preventDefault();
+          void addPrize();
+          return;
+        }
         if (key === 'd') {
           event.preventDefault();
           deleteSelectedPrize();
@@ -1503,11 +1517,6 @@
     }
 
     if (commonKeyboardActive) {
-      if (key === 'q' && !editing) {
-        event.preventDefault();
-        exitCommonKeyboard();
-        return;
-      }
       if (!editing && !modifier && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         event.preventDefault();
         void moveCommonSelection(event.key === 'ArrowUp' ? -1 : 1);
@@ -1569,6 +1578,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <main
+    bind:this={workspaceRoot}
     class:settings-open={activePanel === 'settings'}
     class:common-open={activePanel === 'common'}
     class:batch-open={activePanel === 'batch'}
@@ -1576,6 +1586,7 @@
     class:shortcuts-open={activePanel === 'shortcuts'}
     class="workspace"
     id="top"
+    tabindex="-1"
   >
     <aside class:open={activePanel === 'settings'} class="accordion-item config-panel">
       <button
@@ -2282,13 +2293,15 @@
               <div><span>切换自动保存历史</span><kbd>S</kbd></div>
             {/if}
             <div><span>进入候选项</span><kbd>X</kbd></div>
+            <div><span>退出局部操作</span><kbd>Esc</kbd></div>
             <div><span>滚屏</span><kbd>↑ / ↓</kbd></div>
           </div>
         </section>
 
-        <section class="shortcut-group selected-shortcuts">
-          <h3>候选项内</h3>
+        <section class="shortcut-group context-shortcuts">
+          <h3>候选项</h3>
           <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>添加一项并编辑</span><kbd>N</kbd></div>
             <div><span>上一候选项</span><kbd>↑</kbd></div>
             <div><span>下一候选项</span><kbd>↓</kbd></div>
             <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
@@ -2301,13 +2314,12 @@
           </div>
         </section>
 
-        <section class="shortcut-group">
-          <h3>常用选择内</h3>
+        <section class="shortcut-group context-shortcuts">
+          <h3>常用选择</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>上一条</span><kbd>↑</kbd></div>
             <div><span>下一条</span><kbd>↓</kbd></div>
             <div><span>引入候选项</span><kbd>F</kbd></div>
-            <div><span>退出常用选择</span><kbd>Q</kbd></div>
           </div>
         </section>
 
@@ -2319,7 +2331,7 @@
               <div><span>选择</span><kbd>↑ / ↓</kbd></div>
               <div><span>名称 / 别名</span><kbd>Enter / E</kbd></div>
               <div><span>删除 / 清空别名</span><kbd>D / F</kbd></div>
-              <div><span>确认 / 取消</span><kbd>Enter/Y · Esc/N</kbd></div>
+              <div><span>确认 / 取消</span><kbd>Y / Enter · N / Esc</kbd></div>
             </div>
           </section>
         {/if}
