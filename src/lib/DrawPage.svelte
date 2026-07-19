@@ -434,7 +434,7 @@
   }
 
   async function saveCurrentDrawHistory(announce = true): Promise<boolean> {
-    if (!desktopRuntime || records.length === 0 || drawHistorySaving) return false;
+    if (!desktopRuntime || validCompleted === 0 || drawHistorySaving) return false;
     const draw: SavedDraw = {
       version: 1,
       id: currentDrawId,
@@ -477,7 +477,7 @@
     if (isSpinning || drawHistorySaving) return;
     stopContinuousDraw();
     let archived = false;
-    if (desktopRuntime && autoSaveHistory && records.length > 0) {
+    if (desktopRuntime && autoSaveHistory && validCompleted > 0) {
       const saved = await saveCurrentDrawHistory(false);
       if (!saved) return;
       archived = true;
@@ -517,7 +517,7 @@
     const completedBeforeArchive = validCompleted;
     const change = await changeAutoSaveHistory(
       autoSaveHistory,
-      records.length,
+      validCompleted,
       () => saveCurrentDrawHistory(false),
       () => resetCurrentDraw(false, true),
     );
@@ -744,13 +744,33 @@
     void selectPrize(prizes[nextIndex].id);
   }
 
+  async function togglePrizeParticipation(id: string) {
+    if (drawHistorySaving || isSpinning) return;
+    const shouldArchive = desktopRuntime && autoSaveHistory && records.length > 0;
+    if (!shouldArchive && guardCandidateChanges()) return;
+    const selected = prizes.find((prize) => prize.id === id);
+    if (!selected) return;
+    const keepKeyboardSelection = candidateKeyboardActive;
+    const next = prizes.map((prize) => (
+      prize.id === id ? { ...prize, enabled: !prize.enabled } : prize
+    ));
+
+    if (shouldArchive) {
+      let archived = false;
+      if (validCompleted > 0) {
+        if (!await saveCurrentDrawHistory(false)) return;
+        archived = true;
+      }
+      resetCurrentDraw(false, archived);
+    }
+
+    if (!updatePrizes(next)) return;
+    if (keepKeyboardSelection) await selectPrize(id);
+  }
+
   function toggleSelectedPrize() {
     if (!selectedPrizeId) return;
-    const selected = prizes.find((prize) => prize.id === selectedPrizeId);
-    if (!selected) return;
-    updatePrizes(prizes.map((prize) => (
-      prize.id === selected.id ? { ...prize, enabled: !prize.enabled } : prize
-    )));
+    void togglePrizeParticipation(selectedPrizeId);
   }
 
   function adjustSelectedPrizeWeight(delta: -1 | 1) {
@@ -837,6 +857,7 @@
   }
 
   function updatePrizes(next: Prize[]): boolean {
+    if (drawHistorySaving) return false;
     if (guardCandidateChanges()) return false;
     prizes = normalizePrizes(next);
     if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
@@ -1835,7 +1856,7 @@
             type="button"
             class="save-draw-button"
             title={desktopRuntime ? '保存到本地历史数据库' : '桌面版可保存历史'}
-            disabled={!desktopRuntime || records.length === 0 || drawHistorySaving}
+            disabled={!desktopRuntime || validCompleted === 0 || drawHistorySaving}
             on:click={() => void saveCurrentDrawHistory()}
           >{drawHistorySaving ? '保存中' : '保存当前抽奖'}</button>
         </div>
@@ -1975,13 +1996,15 @@
           <PrizeEditor
             {prizes}
             selectedId={selectedPrizeId}
-            disabled={candidateChangesLocked}
+            disabled={candidateChangesLocked || drawHistorySaving}
+            participationDisabled={drawHistorySaving || isSpinning || (candidateChangesLocked && !autoSaveHistory)}
             onChange={updatePrizes}
             onSelect={(id) => void selectPrize(id)}
             onAdd={addPrize}
+            onToggleParticipation={(id) => void togglePrizeParticipation(id)}
           />
 
-          <button type="button" class="import-trigger" disabled={candidateChangesLocked} on:click={openImporter}>
+          <button type="button" class="import-trigger" disabled={candidateChangesLocked || drawHistorySaving} on:click={openImporter}>
             <span>⌘</span> 从文本批量导入
             <small>空格 / 逗号 / 表格</small>
           </button>

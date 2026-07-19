@@ -15,7 +15,7 @@ describe('自动保存历史开关', () => {
     expect(reset).not.toHaveBeenCalled();
   });
 
-  test('空统计开启时直接生效', async () => {
+  test('没有有效结果时开启但不保存', async () => {
     const save = mock(async () => true);
     const reset = mock(() => {});
 

@@ -3,10 +3,12 @@
 
   export let prizes: Prize[];
   export let disabled = false;
+  export let participationDisabled = disabled;
   export let selectedId: string | null = null;
   export let onChange: (next: Prize[]) => void;
   export let onSelect: (id: string) => void;
   export let onAdd: () => void;
+  export let onToggleParticipation: (id: string) => void;
 
   function updatePrize(id: string, patch: Partial<Prize>) {
     onChange(prizes.map((prize) => (prize.id === id ? { ...prize, ...patch } : prize)));
@@ -84,8 +86,8 @@
         class="visibility-button"
         aria-label={prize.enabled ? `停用${prize.name}` : `启用${prize.name}`}
         title={prize.enabled ? '已启用' : '已停用'}
-        {disabled}
-        on:click={() => updatePrize(prize.id, { enabled: !prize.enabled })}
+        disabled={participationDisabled}
+        on:click={() => onToggleParticipation(prize.id)}
       >
         <span></span>
       </button>

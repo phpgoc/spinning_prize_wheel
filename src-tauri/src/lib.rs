@@ -430,6 +430,17 @@ fn save_draw_history_in(
     if !draw.prizes.is_array() || !draw.records.is_array() {
         return Err("抽奖记录内容不合法".to_string());
     }
+    let has_effective_result = draw.records.as_array().is_some_and(|records| {
+        records.iter().any(|record| {
+            matches!(
+                record.get("outcome").and_then(serde_json::Value::as_str),
+                Some("selected" | "winner")
+            )
+        })
+    });
+    if !has_effective_result {
+        return Err("没有有效结果，抽奖记录不会入库".to_string());
+    }
 
     let created_at = i64::try_from(draw.created_at).map_err(|_| "抽奖时间不合法".to_string())?;
     let payload =
@@ -1051,7 +1062,7 @@ mod tests {
                 {"id": "prize-1", "name": "一等奖", "weight": 2}
             ]),
             records: serde_json::json!([
-                {"id": "record-1", "prizeId": "prize-1", "name": "一等奖"}
+                {"id": "record-1", "prizeId": "prize-1", "name": "一等奖", "outcome": "selected"}
             ]),
         };
 
@@ -1080,6 +1091,32 @@ mod tests {
         assert_eq!(histories[0].records, draw.records);
         assert_eq!(caimi_histories.len(), 1);
         assert_eq!(caimi_histories[0].id, caimi_draw.id);
+    }
+
+    #[test]
+    fn draw_history_rejects_retry_only_records() {
+        let connection = test_database();
+        let draw = SavedDraw {
+            version: 1,
+            id: "draw-retry-only".to_string(),
+            created_at: 1_700_000_000_000,
+            mode: "selected".to_string(),
+            reward_amount: 0.0,
+            prizes: serde_json::json!([
+                {"id": "prize-1", "name": "一等奖", "weight": 1}
+            ]),
+            records: serde_json::json!([
+                {"id": "record-1", "optionId": "__retry__", "outcome": "retry"}
+            ]),
+        };
+
+        assert_eq!(
+            save_draw_history_in(&connection, "standard", &draw),
+            Err("没有有效结果，抽奖记录不会入库".to_string())
+        );
+        assert!(list_draw_histories_in(&connection, "standard")
+            .expect("读取抽奖历史")
+            .is_empty());
     }
 
     fn expect_tables(connection: &Connection, expected: &[&str]) {

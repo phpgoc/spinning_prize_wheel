@@ -9,7 +9,7 @@ export interface AutoSaveChange {
  */
 export async function changeAutoSaveHistory(
   currentlyEnabled: boolean,
-  recordCount: number,
+  effectiveResultCount: number,
   saveCurrent: () => Promise<boolean>,
   resetCurrent: () => void,
 ): Promise<AutoSaveChange> {
@@ -17,7 +17,7 @@ export async function changeAutoSaveHistory(
     return { enabled: false, archived: false, applied: true };
   }
 
-  if (Math.max(0, Math.floor(Number(recordCount) || 0)) === 0) {
+  if (Math.max(0, Math.floor(Number(effectiveResultCount) || 0)) === 0) {
     return { enabled: true, archived: false, applied: true };
   }
 
