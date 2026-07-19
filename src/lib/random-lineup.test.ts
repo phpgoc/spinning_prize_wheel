@@ -9,6 +9,7 @@ import {
   lineupPreviewTierStarts,
   orderResolvedLineupNames,
   rankedUserDropTargetForCard,
+  rankedUserKeyboardDropPoints,
   recentLineupHistories,
   unresolvedLineupNameCount,
 } from './random-lineup';
@@ -139,6 +140,18 @@ describe('随机排阵', () => {
       { kind: 'insert', index: 2 },
       { kind: 'swap', userId: 7 },
       { kind: 'insert', index: 3 },
+    ]);
+  });
+
+  test('键盘排序每人提供前插和替换两个落点', () => {
+    expect(rankedUserKeyboardDropPoints([11, 22], [33])).toEqual([
+      { target: { kind: 'insert', index: 0 }, cardId: 11, position: 'before' },
+      { target: { kind: 'swap', userId: 11 }, cardId: 11, position: 'swap' },
+      { target: { kind: 'insert', index: 1 }, cardId: 22, position: 'before' },
+      { target: { kind: 'swap', userId: 22 }, cardId: 22, position: 'swap' },
+      { target: { kind: 'insert', index: 2 }, cardId: 22, position: 'after' },
+      { target: { kind: 'swap', userId: 33 }, cardId: 33, position: 'swap' },
+      { target: { kind: 'unranked' }, cardId: null, position: 'unranked' },
     ]);
   });
 

@@ -277,9 +277,6 @@ fn normalize_aliases(name: &str, aliases: Vec<String>) -> Result<Vec<String>, St
             normalized.push(alias);
         }
     }
-    if normalized.len() > 30 {
-        return Err("每个选项最多可以保存 30 个别名".to_string());
-    }
     Ok(normalized)
 }
 
@@ -326,6 +323,13 @@ fn save_ranked_user_in(
         .map_err(|error| format!("无法开始保存排名选项：{error}"))?;
 
     let id = if let Some(id) = input.id {
+        let previous_name = transaction
+            .query_row("SELECT name FROM user WHERE id = ?1", params![id], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()
+            .map_err(|error| format!("无法读取排名选项：{error}"))?
+            .ok_or_else(|| "找不到要更新的排名选项".to_string())?;
         let changed = transaction
             .execute(
                 "UPDATE user SET name = ?1, rank = ?2 WHERE id = ?3",
@@ -335,9 +339,30 @@ fn save_ranked_user_in(
         if changed == 0 {
             return Err("找不到要更新的排名选项".to_string());
         }
-        transaction
-            .execute("DELETE FROM alias WHERE user_id = ?1", params![id])
-            .map_err(|error| format!("无法更新选项别名：{error}"))?;
+        let canonical_alias_changed = transaction
+            .execute(
+                "UPDATE alias SET name = ?1
+                 WHERE user_id = ?2 AND name = ?3 COLLATE NOCASE",
+                params![name, id, previous_name],
+            )
+            .map_err(|error| format!("名称或别名“{name}”已经被使用：{error}"))?;
+        if canonical_alias_changed == 0 {
+            transaction
+                .execute(
+                    "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
+                    params![name, id],
+                )
+                .map_err(|error| format!("名称或别名“{name}”已经被使用：{error}"))?;
+        }
+
+        for alias in aliases.into_iter().skip(1) {
+            transaction
+                .execute(
+                    "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
+                    params![alias, id],
+                )
+                .map_err(|error| format!("名称或别名“{alias}”已经被使用：{error}"))?;
+        }
         id
     } else {
         transaction
@@ -346,21 +371,89 @@ fn save_ranked_user_in(
                 params![name, rank],
             )
             .map_err(|error| format!("无法添加排名选项：{error}"))?;
-        transaction.last_insert_rowid()
+        let id = transaction.last_insert_rowid();
+        for alias in aliases {
+            transaction
+                .execute(
+                    "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
+                    params![alias, id],
+                )
+                .map_err(|error| format!("名称或别名“{alias}”已经被使用：{error}"))?;
+        }
+        id
     };
-
-    for alias in aliases {
-        transaction
-            .execute(
-                "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
-                params![alias, id],
-            )
-            .map_err(|error| format!("无法保存选项别名“{alias}”：{error}"))?;
-    }
     transaction
         .commit()
         .map_err(|error| format!("无法提交排名选项：{error}"))?;
     load_ranked_user(connection, id)
+}
+
+fn add_ranked_user_alias_in(
+    connection: &Connection,
+    user_id: i64,
+    alias: String,
+) -> Result<RankedUser, String> {
+    let alias = normalize_person_name(&alias)?;
+    let owner = connection
+        .query_row(
+            "SELECT user.id, user.name
+             FROM user
+             WHERE user.name = ?1 COLLATE NOCASE
+             UNION ALL
+             SELECT user.id, user.name
+             FROM alias JOIN user ON user.id = alias.user_id
+             WHERE alias.name = ?1 COLLATE NOCASE
+             LIMIT 1",
+            params![alias],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|error| format!("无法检查名称和别名：{error}"))?;
+    if let Some((_, owner_name)) = owner {
+        return Err(format!("“{alias}”已经被“{owner_name}”使用"));
+    }
+
+    let user_exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM user WHERE id = ?1)",
+            params![user_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("无法读取排名选项：{error}"))?;
+    if !user_exists {
+        return Err("找不到要添加别名的排名选项".to_string());
+    }
+
+    connection
+        .execute(
+            "INSERT INTO alias (name, user_id) VALUES (?1, ?2)",
+            params![alias, user_id],
+        )
+        .map_err(|error| format!("无法添加别名“{alias}”：{error}"))?;
+    load_ranked_user(connection, user_id)
+}
+
+fn clear_ranked_user_aliases_in(
+    connection: &Connection,
+    user_id: i64,
+) -> Result<RankedUser, String> {
+    let name = connection
+        .query_row(
+            "SELECT name FROM user WHERE id = ?1",
+            params![user_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("无法读取排名选项：{error}"))?
+        .ok_or_else(|| "找不到要清空别名的排名选项".to_string())?;
+    connection
+        .execute(
+            "DELETE FROM alias
+             WHERE user_id = ?1 AND name <> ?2 COLLATE NOCASE",
+            params![user_id, name],
+        )
+        .map_err(|error| format!("无法清空选项别名：{error}"))?;
+    load_ranked_user(connection, user_id)
 }
 
 #[tauri::command]
@@ -652,6 +745,22 @@ fn save_ranked_user(app: AppHandle, user: RankedUserInput) -> Result<RankedUser,
 }
 
 #[tauri::command]
+fn add_ranked_user_alias(
+    app: AppHandle,
+    user_id: i64,
+    alias: String,
+) -> Result<RankedUser, String> {
+    let connection = app_database(&app)?;
+    add_ranked_user_alias_in(&connection, user_id, alias)
+}
+
+#[tauri::command]
+fn clear_ranked_user_aliases(app: AppHandle, user_id: i64) -> Result<RankedUser, String> {
+    let connection = app_database(&app)?;
+    clear_ranked_user_aliases_in(&connection, user_id)
+}
+
+#[tauri::command]
 fn list_ranked_users(app: AppHandle) -> Result<Vec<RankedUser>, String> {
     let connection = app_database(&app)?;
     list_ranked_users_in(&connection)
@@ -861,6 +970,8 @@ pub fn run() {
             delete_draw_history,
             clear_draw_histories,
             save_ranked_user,
+            add_ranked_user_alias,
+            clear_ranked_user_aliases,
             list_ranked_users,
             move_ranked_user,
             delete_ranked_user,
@@ -974,6 +1085,74 @@ mod tests {
         assert_eq!(
             list_ranked_users_in(&connection).expect("读取排名").len(),
             1
+        );
+    }
+
+    #[test]
+    fn aliases_append_without_limit_and_clear_keeps_canonical_name() {
+        let mut connection = test_database();
+        let user = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "甲".to_string(),
+                rank: Some(1),
+                aliases: vec![],
+            },
+        )
+        .expect("添加排名选项");
+
+        for index in 1..=35 {
+            add_ranked_user_alias_in(&connection, user.id, format!("别名{index}"))
+                .expect("追加别名");
+        }
+        let duplicate = add_ranked_user_alias_in(&connection, user.id, "别名1".to_string())
+            .expect_err("同一选项也不能重复使用别名");
+        assert!(duplicate.contains("已经被"));
+
+        let other = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "乙".to_string(),
+                rank: Some(2),
+                aliases: vec![],
+            },
+        )
+        .expect("添加另一个排名选项");
+        assert!(
+            add_ranked_user_alias_in(&connection, user.id, "乙".to_string())
+                .expect_err("别名不能和其他名称重复")
+                .contains("已经被")
+        );
+        assert!(
+            add_ranked_user_alias_in(&connection, other.id, "别名1".to_string())
+                .expect_err("不同选项不能共用别名")
+                .contains("已经被")
+        );
+
+        let renamed = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: Some(user.id),
+                name: "新甲".to_string(),
+                rank: Some(1),
+                aliases: vec![],
+            },
+        )
+        .expect("修改名称");
+        assert_eq!(renamed.aliases.len(), 36);
+        assert_eq!(renamed.aliases[0].name, "新甲");
+        assert!(renamed.aliases.iter().any(|alias| alias.name == "别名35"));
+
+        let cleared = clear_ranked_user_aliases_in(&connection, user.id).expect("清空别名");
+        assert_eq!(
+            cleared
+                .aliases
+                .iter()
+                .map(|alias| alias.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["新甲"]
         );
     }
 

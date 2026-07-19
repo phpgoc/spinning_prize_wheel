@@ -14,6 +14,7 @@
     lineupPreviewTierStarts,
     orderResolvedLineupNames,
     rankedUserDropTargetForCard,
+    rankedUserKeyboardDropPoints,
     recentLineupHistories,
     unresolvedLineupNameCount,
     type RankedUserDropTarget,
@@ -67,6 +68,9 @@
   let rankDragX = 0;
   let rankDragY = 0;
   let rankingReordering = false;
+  let keyboardMovingUserId: number | null = null;
+  let keyboardDropPointIndex = -1;
+  let keyboardRankLabel = '选择一项';
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
   let resultSourceNames: string[] = [];
@@ -101,6 +105,16 @@
   $: previewTierStarts = new Set(lineupPreviewTierStarts(names.length, Number(groupCount)));
   $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
   $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
+  $: rankMoveSourceId = draggingUserId ?? keyboardMovingUserId;
+  $: {
+    rankedUsers;
+    rankedPeople;
+    unrankedPeople;
+    selectedRankedUserId;
+    keyboardMovingUserId;
+    keyboardDropPointIndex;
+    keyboardRankLabel = keyboardRankDropLabel();
+  }
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
   $: orderAvailability = lineupOrderAvailability(
     names.length,
@@ -129,7 +143,7 @@
 
   function isTextEditingTarget(target: EventTarget | null): boolean {
     return target instanceof HTMLElement
-      && target.matches('input, textarea, select, button, [contenteditable="true"]');
+      && target.matches('input, textarea, select, [contenteditable="true"]');
   }
 
   async function initializeDesktop() {
@@ -325,15 +339,13 @@
   }
 
   async function editRankedUser(user: RankedUser, focus: 'name' | 'aliases') {
+    cancelKeyboardRankMove();
     desktopPanel = 'ranking';
     selectedRankedUserId = user.id;
     editingUserId = user.id;
     editingRankField = focus;
     userName = user.name;
-    userAliases = user.aliases
-      .filter((alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'))
-      .map((alias) => alias.name)
-      .join(' ');
+    userAliases = '';
     await tick();
     if (editingRankField === 'name') {
       userNameInput?.focus();
@@ -398,6 +410,7 @@
   }
 
   function toggleDesktopPanel(panel: DesktopPanel) {
+    if (panel !== 'ranking' || desktopPanel === panel) cancelKeyboardRankMove();
     desktopPanel = desktopPanel === panel ? null : panel;
   }
 
@@ -506,7 +519,84 @@
     void selectRankedUser(rankedUsers[nextIndex].id);
   }
 
+  function keyboardRankDropPoints() {
+    return rankedUserKeyboardDropPoints(
+      rankedPeople.map((user) => user.id),
+      unrankedPeople.map((user) => user.id),
+    );
+  }
+
+  async function showKeyboardRankDropPoint(index: number) {
+    const points = keyboardRankDropPoints();
+    if (points.length === 0) return;
+    keyboardDropPointIndex = Math.min(points.length - 1, Math.max(0, index));
+    const point = points[keyboardDropPointIndex];
+    activeRankDropTarget = point.target;
+    activeRankDropCardId = point.cardId;
+    activeRankDropPosition = point.position === 'unranked' ? null : point.position;
+    await tick();
+    const target = point.cardId === null
+      ? document.querySelector<HTMLElement>('[data-rank-zone="unranked"]')
+      : document.querySelector<HTMLElement>(`[data-rank-user-id="${point.cardId}"]`);
+    target?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function beginKeyboardRankMove() {
+    if (rankingReordering || selectedRankedUserId === null) return;
+    const points = keyboardRankDropPoints();
+    const sourcePoint = points.findIndex(
+      (point) => point.target.kind === 'swap' && point.target.userId === selectedRankedUserId,
+    );
+    if (sourcePoint < 0) return;
+    clearRankDragState();
+    keyboardMovingUserId = selectedRankedUserId;
+    void showKeyboardRankDropPoint(sourcePoint);
+  }
+
+  function moveKeyboardRankDropPoint(delta: -1 | 1) {
+    if (keyboardMovingUserId === null) return;
+    void showKeyboardRankDropPoint(keyboardDropPointIndex + delta);
+  }
+
+  function cancelKeyboardRankMove() {
+    keyboardMovingUserId = null;
+    keyboardDropPointIndex = -1;
+    activeRankDropTarget = null;
+    activeRankDropCardId = null;
+    activeRankDropPosition = null;
+  }
+
+  function confirmKeyboardRankMove() {
+    const userId = keyboardMovingUserId;
+    const point = keyboardRankDropPoints()[keyboardDropPointIndex];
+    if (userId === null || !point) return;
+    cancelKeyboardRankMove();
+    void moveRankedUser(userId, point.target);
+  }
+
+  function toggleKeyboardRankMove() {
+    if (keyboardMovingUserId === null) beginKeyboardRankMove();
+    else confirmKeyboardRankMove();
+  }
+
+  function keyboardRankDropLabel(): string {
+    if (keyboardMovingUserId === null) {
+      return rankedUsers.find((user) => user.id === selectedRankedUserId)?.name ?? '选择一项';
+    }
+    const point = keyboardRankDropPoints()[keyboardDropPointIndex];
+    if (!point) return '选择落点';
+    if (point.target.kind === 'unranked') return '放到无排名';
+    if (point.target.kind === 'insert') return `插入第 ${point.target.index + 1} 位`;
+    if (point.target.kind === 'swap') {
+      const targetUserId = point.target.userId;
+      const target = rankedUsers.find((user) => user.id === targetUserId);
+      return `替换 ${target?.name ?? '当前项'}`;
+    }
+    return '选择落点';
+  }
+
   async function openDesktopPanel(panel: DesktopPanel) {
+    if (panel !== 'ranking') cancelKeyboardRankMove();
     desktopPanel = panel;
     if (panel === 'ranking' && rankedUsers.length > 0) {
       await selectRankedUser(selectedRankedUserId ?? rankedUsers[0].id);
@@ -520,9 +610,15 @@
     return aliases.length > 0 ? aliases.join('、') : '暂无其他别名';
   }
 
+  function hasOtherAliases(user: RankedUser): boolean {
+    return user.aliases.some(
+      (alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'),
+    );
+  }
+
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
     selectedRankedUserId = userId;
-    if (rankingReordering || event.button !== 0) return;
+    if (rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     if ((event.target as HTMLElement).closest('button, input, textarea, select, form')) return;
     pendingRankDragUserId = userId;
     rankDragPointerId = event.pointerId;
@@ -626,20 +722,28 @@
 
   async function saveRankedUser() {
     if (!userName.trim()) return;
+    if (editingUserId !== null && editingRankField === 'aliases' && !userAliases.trim()) return;
     rankingSaving = true;
     rankingError = '';
     try {
-      const currentRank = editingUserId === null
-        ? 10_000
-        : rankedUsers.find((user) => user.id === editingUserId)?.rank ?? 10_000;
-      await invoke('save_ranked_user', {
-        user: {
-          id: editingUserId,
-          name: userName.trim(),
-          rank: currentRank,
-          aliases: parseOptionText(userAliases),
-        },
-      });
+      if (editingUserId !== null && editingRankField === 'aliases') {
+        await invoke('add_ranked_user_alias', {
+          userId: editingUserId,
+          alias: userAliases.trim(),
+        });
+      } else {
+        const currentRank = editingUserId === null
+          ? 10_000
+          : rankedUsers.find((user) => user.id === editingUserId)?.rank ?? 10_000;
+        await invoke('save_ranked_user', {
+          user: {
+            id: editingUserId,
+            name: userName.trim(),
+            rank: currentRank,
+            aliases: [],
+          },
+        });
+      }
       resetUserForm();
       await loadRankedUsers();
       await resolveNames();
@@ -651,16 +755,15 @@
   }
 
   function requestDeleteRankedUser(user: RankedUser) {
+    cancelKeyboardRankMove();
     selectedRankedUserId = user.id;
     pendingDeleteUser = user;
     rankingError = '';
   }
 
   function requestClearRankedUserAliases(user: RankedUser) {
-    const hasOtherAliases = user.aliases.some(
-      (alias) => alias.name.toLocaleLowerCase('zh-CN') !== user.name.toLocaleLowerCase('zh-CN'),
-    );
-    if (!hasOtherAliases) return;
+    if (!hasOtherAliases(user)) return;
+    cancelKeyboardRankMove();
     selectedRankedUserId = user.id;
     pendingAliasClearUser = user;
     rankingError = '';
@@ -690,15 +793,13 @@
     clearingAliasesUserId = user.id;
     rankingError = '';
     try {
-      await invoke('save_ranked_user', {
-        user: { id: user.id, name: user.name, rank: user.rank, aliases: [] },
-      });
+      await invoke('clear_ranked_user_aliases', { userId: user.id });
       pendingAliasClearUser = null;
       if (editingUserId === user.id) resetUserForm();
       await loadRankedUsers();
       await resolveNames();
     } catch (reason) {
-      rankingError = messageFrom(reason, '无法清空选项别名');
+      rankingError = messageFrom(reason, '无法删除全部别名');
     } finally {
       clearingAliasesUserId = null;
     }
@@ -723,6 +824,10 @@
 
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (keyboardMovingUserId !== null) {
+        cancelKeyboardRankMove();
+        return;
+      }
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       resetUserForm();
       selectedRankedUserId = null;
@@ -749,6 +854,16 @@
       }
       return;
     }
+    if (keyboardMovingUserId !== null) {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveKeyboardRankDropPoint(event.key === 'ArrowUp' ? -1 : 1);
+      } else if (event.key === 'Enter' || event.code === 'Space') {
+        event.preventDefault();
+        confirmKeyboardRankMove();
+      }
+      return;
+    }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       moveRankedUserSelection(event.key === 'ArrowUp' ? -1 : 1);
@@ -757,7 +872,10 @@
 
     const selected = rankedUsers.find((user) => user.id === selectedRankedUserId);
     if (!selected) return;
-    if (event.key === 'Enter') {
+    if (event.code === 'Space') {
+      event.preventDefault();
+      beginKeyboardRankMove();
+    } else if (event.key === 'Enter') {
       event.preventDefault();
       void editRankedUser(selected, 'name');
     } else if (key === 'e') {
@@ -831,8 +949,16 @@
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
-            <div class:dragging={draggingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
+            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager">
               {#if rankingError}<div class="ranking-error" role="alert">{rankingError}</div>{/if}
+              <div class:active={keyboardMovingUserId !== null} class="rank-keyboard-order">
+                <span>
+                  <strong>{keyboardMovingUserId === null ? '键盘排序' : rankedUsers.find((user) => user.id === keyboardMovingUserId)?.name}</strong>
+                  <small>{keyboardRankLabel}</small>
+                </span>
+                <button type="button" disabled={selectedRankedUserId === null || rankingReordering} on:click={toggleKeyboardRankMove}>{keyboardMovingUserId === null ? '选中' : '放下'}</button>
+                {#if keyboardMovingUserId !== null}<button type="button" class="cancel-rank-move" on:click={cancelKeyboardRankMove}>取消</button>{/if}
+              </div>
               <div class="ranked-user-list">
                 {#if rankingLoading}
                   <p>正在读取排名表…</p>
@@ -850,7 +976,7 @@
                         class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
                         class:insert-before={activeRankDropCardId === user.id && activeRankDropPosition === 'before'}
                         class:insert-after={activeRankDropCardId === user.id && activeRankDropPosition === 'after'}
-                        class:drag-source={draggingUserId === user.id}
+                        class:drag-source={rankMoveSourceId === user.id}
                         data-rank-user-id={user.id}
                         data-rank-index={index}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
@@ -871,7 +997,7 @@
                                 <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} aria-label="添加别名" placeholder="输入别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}
@@ -882,11 +1008,16 @@
                               <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                               <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                             </div>
-                            <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                            <div class="ranked-user-aliases">
+                              <small>{otherAliasSummary(user)}</small>
+                              {#if hasOtherAliases(user)}
+                                <button type="button" class="clear-aliases" on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                              {/if}
+                            </div>
                           {/if}
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
-                        {#if draggingUserId !== null && draggingUserId !== user.id}
+                        {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}
                           <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i><i></i></div>
                         {/if}
                       </article>
@@ -905,7 +1036,7 @@
                       <article
                         class:keyboard-selected={selectedRankedUserId === user.id}
                         class:drop-target={activeRankDropCardId === user.id && activeRankDropPosition === 'swap'}
-                        class:drag-source={draggingUserId === user.id}
+                        class:drag-source={rankMoveSourceId === user.id}
                         data-rank-user-id={user.id}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
                         on:pointermove={moveRankPointerDrag}
@@ -925,7 +1056,7 @@
                                 <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} aria-label="添加别名" placeholder="输入别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown={(event) => event.key === 'Escape' && resetUserForm()} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}
@@ -936,11 +1067,16 @@
                               <button type="button" class="alias-action" on:click={() => editRankedUser(user, 'aliases')}>添加别名</button>
                               <button type="button" class="delete-user" on:click={() => requestDeleteRankedUser(user)}>删除</button>
                             </div>
-                            <small title={otherAliasSummary(user)}>{otherAliasSummary(user)}</small>
+                            <div class="ranked-user-aliases">
+                              <small>{otherAliasSummary(user)}</small>
+                              {#if hasOtherAliases(user)}
+                                <button type="button" class="clear-aliases" on:click={() => requestClearRankedUserAliases(user)}>删除全部别名</button>
+                              {/if}
+                            </div>
                           {/if}
                         </div>
                         <span class="drag-handle" title="拖动调整排名">⠿</span>
-                        {#if draggingUserId !== null && draggingUserId !== user.id}<div class="swap-drop-guide" aria-hidden="true"></div>{/if}
+                        {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}<div class="swap-drop-guide" aria-hidden="true"></div>{/if}
                       </article>
                     {/each}
                   </section>
@@ -952,7 +1088,6 @@
                   <strong>添加</strong>
                 </div>
                 <label><span>名称</span><input bind:this={userNameInput} maxlength="80" required bind:value={userName} placeholder="名称" /></label>
-                <label><span>其他别名</span><input bind:this={userAliasInput} bind:value={userAliases} placeholder="当前名称会自动加入别名表" /></label>
                 <button type="submit" class="save-user" disabled={rankingSaving || !userName.trim()}>{rankingSaving ? '保存中…' : '保存'}</button>
               </form>
               {/if}
@@ -1171,11 +1306,11 @@
   <div class="delete-confirm-backdrop">
     <div class="delete-confirm-dialog alias-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-alias-title" aria-describedby="clear-alias-detail" tabindex="-1">
       <span class="delete-confirm-icon">−</span>
-      <h2 id="clear-alias-title">清空“{pendingAliasClearUser.name}”的别名？</h2>
-      <p id="clear-alias-detail">当前名称会保留，其他别名会全部清空。</p>
+      <h2 id="clear-alias-title">删除“{pendingAliasClearUser.name}”的全部别名？</h2>
+      <p id="clear-alias-detail">当前名称会保留，其他别名会全部删除。</p>
       <div>
         <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span><kbd>N / Esc</kbd></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认清空' : '清空中…'}</span><kbd>Y / Enter</kbd></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认删除' : '删除中…'}</span><kbd>Y / Enter</kbd></button>
       </div>
     </div>
   </div>
@@ -1183,10 +1318,10 @@
 
 <style>
   .lineup-page {
-    --lineup-muted-on-dark: #b4b7ac;
-    --lineup-dim-on-dark: #9da096;
-    --lineup-muted-on-light: #52554c;
-    --lineup-dim-on-light: #65685e;
+    --lineup-muted-on-dark: #d9dbd2;
+    --lineup-dim-on-dark: #c4c7bd;
+    --lineup-muted-on-light: #34362f;
+    --lineup-dim-on-light: #484b43;
     min-height: 0;
     padding: clamp(24px, 4vw, 58px);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1209,10 +1344,15 @@
   .config-heading span,
   .result-heading > div > span,
   .rule-note > span {
-    color: #98a451;
+    color: #c9d66f;
     font-family: var(--font-mono);
     font-size: calc(12px * var(--font-scale, 1));
     letter-spacing: 0.14em;
+  }
+
+  .config-heading span,
+  .rule-note > span {
+    color: #626d1f;
   }
 
   .lineup-workbench {
@@ -1334,7 +1474,7 @@
     font-size: calc(12px * var(--font-scale, 1));
   }
   .lineup-error { background: rgba(218, 91, 63, 0.1); color: #ad4b35; }
-  .outdated-notice { background: rgba(231, 255, 114, 0.08); color: #cbd58f; }
+  .outdated-notice { background: rgba(231, 255, 114, 0.1); color: #e2eab3; }
 
   .generate-button {
     display: flex;
@@ -1461,12 +1601,12 @@
     text-align: center;
   }
   .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
-  .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.12); border-radius: 9px; background: rgba(231, 255, 114, 0.035); color: #a8b45e; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
-  .empty-result strong { color: #b8baaf; font-size: calc(16px * var(--font-scale, 1)); }
+  .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.2); border-radius: 9px; background: rgba(231, 255, 114, 0.055); color: #cbd877; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
+  .empty-result strong { color: #dedfd8; font-size: calc(16px * var(--font-scale, 1)); }
   .empty-result p { max-width: 340px; margin-top: 7px; font-size: calc(12px * var(--font-scale, 1)); line-height: 1.6; }
 
   .preview-status {
-    color: #aeb490;
+    color: #dde2c2;
     font-size: calc(12px * var(--font-scale, 1));
   }
 
@@ -1485,7 +1625,7 @@
     align-items: center;
     gap: 9px;
     margin: 9px 0 2px;
-    color: #b8c56f;
+    color: #d8e582;
     font-family: var(--font-mono);
     font-size: calc(11px * var(--font-scale, 1));
     font-weight: 800;
@@ -1561,7 +1701,7 @@
   .preview-insert-form button {
     border: 1px solid rgba(231, 255, 114, 0.2);
     background: rgba(231, 255, 114, 0.05);
-    color: #bdc978;
+    color: #d5e184;
     cursor: pointer;
   }
 
@@ -1610,7 +1750,7 @@
     grid-template-columns: auto minmax(80px, 1fr);
     align-items: center;
     gap: 8px;
-    color: #c9cf9c;
+    color: #e4e8c8;
     font-size: calc(11px * var(--font-scale, 1));
   }
 
@@ -1712,7 +1852,7 @@
     border: 1px solid rgba(231, 255, 114, 0.17);
     border-radius: 11px;
     background: rgba(231, 255, 114, 0.05);
-    color: #c5cf89;
+    color: #e1eab0;
     cursor: pointer;
     font-size: calc(12px * var(--font-scale, 1));
     font-weight: 700;
@@ -1742,7 +1882,7 @@
     padding: 13px 14px;
     border: 0;
     background: transparent;
-    color: #55584f;
+    color: #33362f;
     cursor: pointer;
     font-size: calc(13px * var(--font-scale, 1));
     font-weight: 800;
@@ -1842,6 +1982,41 @@
     font-size: calc(11px * var(--font-scale, 1));
   }
 
+  .rank-keyboard-order {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    margin: 3px 0 10px;
+    padding: 8px;
+    border: 1px solid rgba(36, 37, 31, 0.13);
+    border-radius: 8px;
+    background: #e5e2d8;
+  }
+
+  .rank-keyboard-order.active {
+    border-color: rgba(105, 120, 42, 0.46);
+    background: #eef3d5;
+  }
+
+  .rank-keyboard-order > span { min-width: 0; }
+  .rank-keyboard-order strong,
+  .rank-keyboard-order small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-keyboard-order strong { color: #292b24; font-size: calc(11px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { margin-top: 2px; color: #4b4e45; font-size: calc(9px * var(--font-scale, 1)); }
+  .rank-keyboard-order button {
+    padding: 5px 7px;
+    border: 1px solid rgba(86, 101, 30, 0.32);
+    border-radius: 6px;
+    background: #f7f8ed;
+    color: #4d5a1e;
+    cursor: pointer;
+    font-size: calc(10px * var(--font-scale, 1));
+    font-weight: 800;
+  }
+  .rank-keyboard-order .cancel-rank-move { border-color: rgba(137, 66, 51, 0.24); color: #833f33; }
+
   .ranked-user-list {
     display: grid;
     max-height: 540px;
@@ -1919,7 +2094,8 @@
     font-size: calc(10px * var(--font-scale, 1));
   }
 
-  .rank-manager.dragging .unranked-drop-zone {
+  .rank-manager.dragging .unranked-drop-zone,
+  .rank-manager.keyboard-moving .unranked-drop-zone {
     border-color: rgba(122, 132, 47, 0.46);
     color: #626c26;
   }
@@ -2016,23 +2192,48 @@
   }
 
   .alias-action,
-  .delete-user {
+  .delete-user,
+  .clear-aliases {
     color: #72782e;
     font-size: calc(10px * var(--font-scale, 1));
   }
 
-  .delete-user { color: #9b5a4b; }
+  .delete-user,
+  .clear-aliases { color: #8f4437; }
 
   .alias-action:hover { color: #4f5819; }
-  .delete-user:hover { color: #ad3822; }
+  .delete-user:hover,
+  .clear-aliases:hover { color: #a92f1b; }
 
-  .ranked-user-content > small {
-    display: block;
-    overflow: hidden;
+  .ranked-user-aliases {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 7px;
     margin-top: 7px;
+  }
+
+  .ranked-user-aliases > small {
+    display: block;
+    max-height: 70px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
     color: var(--lineup-dim-on-light);
     font-size: calc(12px * var(--font-scale, 1));
-    text-overflow: ellipsis;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    scrollbar-color: #888b7c #e7e4da;
+    scrollbar-width: thin;
+  }
+
+  .clear-aliases {
+    padding: 3px 5px;
+    border: 1px solid rgba(159, 65, 47, 0.24);
+    border-radius: 5px;
+    background: #fbefec;
+    cursor: pointer;
     white-space: nowrap;
   }
 

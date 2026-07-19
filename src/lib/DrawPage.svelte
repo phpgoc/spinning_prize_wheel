@@ -2365,12 +2365,18 @@
 
         {#if desktopRuntime}
           <section class="shortcut-group">
-            <h3>分组</h3>
+            <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>排名 / 历史</span><kbd>A / Z</kbd></div>
-              <div><span>选择</span><kbd>↑ / ↓</kbd></div>
-              <div><span>名称 / 别名</span><kbd>Enter / E</kbd></div>
-              <div><span>删除 / 清空别名</span><kbd>D / F</kbd></div>
+              <div><span>打开排名 / 历史</span><kbd>A / Z</kbd></div>
+              <div><span>上一项 / 下一项</span><kbd>↑ / ↓</kbd></div>
+              <div><span>修改名称</span><kbd>Enter</kbd></div>
+              <div><span>添加新别名</span><kbd>E</kbd></div>
+              <div><span>删除当前项</span><kbd>D</kbd></div>
+              <div><span>删除全部别名</span><kbd>F</kbd></div>
+              <div><span>选中排序</span><kbd>空格</kbd></div>
+              <div><span>选择插入 / 替换落点</span><kbd>↑ / ↓</kbd></div>
+              <div><span>放下</span><kbd>空格 / Enter</kbd></div>
+              <div><span>取消排序</span><kbd>Esc</kbd></div>
             </div>
           </section>
         {/if}

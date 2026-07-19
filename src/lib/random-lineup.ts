@@ -32,6 +32,12 @@ export type RankedUserDropTarget =
   | { kind: 'swap'; userId: number }
   | { kind: 'unranked' };
 
+export interface RankedUserKeyboardDropPoint {
+  target: RankedUserDropTarget;
+  cardId: number | null;
+  position: 'before' | 'swap' | 'after' | 'unranked';
+}
+
 /** 把已排名卡片的上四分之一、中间、下四分之一映射为前插、替换、后插。 */
 export function rankedUserDropTargetForCard(
   userId: number,
@@ -42,6 +48,31 @@ export function rankedUserDropTargetForCard(
   if (verticalRatio < 0.25) return { kind: 'insert', index: rankIndex };
   if (verticalRatio > 0.75) return { kind: 'insert', index: rankIndex + 1 };
   return { kind: 'swap', userId };
+}
+
+/**
+ * 键盘排序在每个已排名选项上依次提供“前插、替换”两个落点，末尾再补一个后插落点。
+ * 因此上下键每按两次会跨过一个完整选项，同时不会产生相邻卡片间的重复插入位置。
+ */
+export function rankedUserKeyboardDropPoints(
+  rankedIds: readonly number[],
+  unrankedIds: readonly number[],
+): RankedUserKeyboardDropPoint[] {
+  const points: RankedUserKeyboardDropPoint[] = [];
+  rankedIds.forEach((userId, index) => {
+    points.push({ target: { kind: 'insert', index }, cardId: userId, position: 'before' });
+    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
+  });
+  points.push({
+    target: { kind: 'insert', index: rankedIds.length },
+    cardId: rankedIds.at(-1) ?? null,
+    position: rankedIds.length > 0 ? 'after' : 'before',
+  });
+  unrankedIds.forEach((userId) => {
+    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
+  });
+  points.push({ target: { kind: 'unranked' }, cardId: null, position: 'unranked' });
+  return points;
 }
 
 /** 红名只锁定数据库排名排阵；输入顺序仍可使用。 */
