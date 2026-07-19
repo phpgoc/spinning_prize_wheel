@@ -5,7 +5,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
     time::Duration,
 };
 use tauri::{AppHandle, Manager};
@@ -17,6 +17,21 @@ const DATABASE_FILE_NAME: &str = "draw-history.sqlite3";
 const SQL_LOG_FILE_NAME: &str = "sql.log";
 
 static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static SQL_TRACE_DEDUPLICATOR: OnceLock<Mutex<SqlTraceDeduplicator>> = OnceLock::new();
+
+#[derive(Default)]
+struct SqlTraceDeduplicator {
+    previous_was_full_user_delete: bool,
+}
+
+impl SqlTraceDeduplicator {
+    fn should_skip(&mut self, sql: &str) -> bool {
+        let is_full_user_delete = is_full_user_delete_statement(sql);
+        let duplicate = is_full_user_delete && self.previous_was_full_user_delete;
+        self.previous_was_full_user_delete = is_full_user_delete;
+        duplicate
+    }
+}
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -195,6 +210,14 @@ fn app_database(app: &AppHandle) -> Result<Connection, String> {
 }
 
 fn log_sql_statement(sql: &str) {
+    // SQLite 的外键级联会为一次全量删除重复回报同一条父语句，日志只保留第一条。
+    if SQL_TRACE_DEDUPLICATOR
+        .get_or_init(|| Mutex::new(SqlTraceDeduplicator::default()))
+        .lock()
+        .is_ok_and(|mut deduplicator| deduplicator.should_skip(sql))
+    {
+        return;
+    }
     if !should_log_sql_statement(sql) {
         return;
     }
@@ -214,11 +237,35 @@ fn should_log_sql_statement(sql: &str) -> bool {
         .split_ascii_whitespace()
         .next()
         .unwrap_or_default();
-    // CREATE 兼容建表记录，INSERT 对应业务里的新增；读取和事务语句不写日志。
+    // 迁移表会在每次打开数据库连接时检查，不属于需要审计的业务建表操作。
+    if operation.eq_ignore_ascii_case("CREATE")
+        && sql.split_ascii_whitespace().any(|token| {
+            token
+                .trim_matches(['(', ')', ';'])
+                .eq_ignore_ascii_case("schema_migrations")
+        })
+    {
+        return false;
+    }
+    // CREATE 兼容业务建表记录，INSERT 对应业务里的新增；读取和事务语句不写日志。
     operation.eq_ignore_ascii_case("CREATE")
         || operation.eq_ignore_ascii_case("INSERT")
         || operation.eq_ignore_ascii_case("UPDATE")
         || operation.eq_ignore_ascii_case("DELETE")
+}
+
+fn is_full_user_delete_statement(sql: &str) -> bool {
+    let mut tokens = sql.trim().trim_end_matches(';').split_ascii_whitespace();
+    tokens
+        .next()
+        .is_some_and(|token| token.eq_ignore_ascii_case("DELETE"))
+        && tokens
+            .next()
+            .is_some_and(|token| token.eq_ignore_ascii_case("FROM"))
+        && tokens
+            .next()
+            .is_some_and(|token| token.eq_ignore_ascii_case("user"))
+        && tokens.next().is_none()
 }
 
 fn format_sql_log_line(sql: &str, now: OffsetDateTime) -> String {
@@ -1364,9 +1411,22 @@ mod tests {
             "PRAGMA user_version",
             "BEGIN",
             "COMMIT",
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)",
         ] {
             assert!(!should_log_sql_statement(sql), "不应记录：{sql}");
         }
+    }
+
+    #[test]
+    fn sql_log_deduplicates_cascade_trace_for_full_user_delete() {
+        let mut deduplicator = SqlTraceDeduplicator::default();
+        assert!(!deduplicator.should_skip("DELETE FROM user"));
+        assert!(deduplicator.should_skip("DELETE FROM user"));
+        assert!(deduplicator.should_skip("DELETE FROM user;"));
+
+        assert!(!deduplicator.should_skip("SELECT id FROM user"));
+        assert!(!deduplicator.should_skip("DELETE FROM user"));
+        assert!(!deduplicator.should_skip("DELETE FROM user WHERE id = 1"));
     }
 
     #[test]
