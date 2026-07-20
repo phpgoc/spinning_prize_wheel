@@ -2,17 +2,11 @@ import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:
 import { dirname, join, resolve } from 'node:path';
 import { readProjectVersion, webBundleDirectory } from './project-version';
 
-type BuildStage = 'full' | 'caimi' | 'installer';
-
 const workspace = resolve(import.meta.dir, '..');
 const tauriDirectory = join(workspace, 'src-tauri');
 const releaseDirectory = join(tauriDirectory, 'target', 'release');
 const generatedCaimiConfig = join(tauriDirectory, 'tauri.version-caimi.conf.json');
 const generatedInstallerConfig = join(tauriDirectory, 'tauri.version-installer.conf.json');
-const stage = (Bun.argv[2] ?? 'full') as BuildStage;
-if (!['full', 'caimi', 'installer'].includes(stage)) {
-  throw new Error('Windows 构建阶段只支持 full、caimi 或 installer');
-}
 
 const version = await readProjectVersion();
 const caimiConfig = JSON.parse(
@@ -40,15 +34,11 @@ await writeFile(generatedCaimiConfig, `${JSON.stringify(versionedCaimiConfig, nu
 await writeFile(generatedInstallerConfig, `${JSON.stringify(versionedInstallerConfig, null, 2)}\n`, 'utf8');
 
 try {
-  if (stage !== 'installer') {
-    await run(['bun', 'x', 'tauri', 'build', '--no-bundle', '--config', generatedCaimiConfig]);
-    await prepareCaimiSidecar();
-  }
-  if (stage !== 'caimi') {
-    await clearOldInstallers();
-    await run(['bun', 'x', 'tauri', 'build', '--config', generatedInstallerConfig]);
-    await renameInstaller();
-  }
+  await run(['bun', 'x', 'tauri', 'build', '--no-bundle', '--config', generatedCaimiConfig]);
+  await prepareCaimiSidecar();
+  await clearOldInstallers();
+  await run(['bun', 'x', 'tauri', 'build', '--config', generatedInstallerConfig]);
+  await renameInstaller();
 } finally {
   await Promise.all([
     rm(generatedCaimiConfig, { force: true }),

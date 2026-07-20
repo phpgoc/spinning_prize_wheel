@@ -6,10 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:caimi": "vite --mode caimi",
-    "build": "bun run build:web",
-    "build:web": "bun run scripts/build-web.ts standard",
-    "build:web:caimi": "bun run scripts/build-web.ts caimi",
-    "build:windows": "bun run tauri:build",
+    "build": "bun run scripts/build-web.ts standard",
+    "build:windows": "bun run scripts/build-windows.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "bun test src",
     "test:e2e": "bun run test:e2e:web && bun run test:e2e:tauri",
@@ -18,10 +16,6 @@
     "test:e2e:headed": "playwright test --headed",
     "tauri:dev": "tauri dev",
     "tauri:dev:caimi": "tauri dev --config src-tauri/tauri.caimi.conf.json",
-    "tauri:build": "bun run scripts/build-windows.ts full",
-    "tauri:build:caimi": "bun run scripts/build-windows.ts caimi",
-    "tauri:build:installer": "bun run scripts/build-windows.ts installer",
-    "prepare:windows:bundle": "bun run scripts/prepare-windows-bundle.ts",
     "tauri": "tauri"
   },
   "devDependencies": {
