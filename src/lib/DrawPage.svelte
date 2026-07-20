@@ -94,6 +94,7 @@
 
   type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
   type DrawSidePanel = 'candidates' | 'statistics';
+  type ConfirmableNumberField = 'limit' | 'interval' | 'reward';
 
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   export let mode: DrawMode = 'selected';
@@ -134,6 +135,11 @@
   let pendingDrawHistoryDeletion: { kind: 'one'; draw: SavedDraw } | { kind: 'all' } | null = null;
   let continuousTarget = 0;
   let continuousIntervalSeconds = 3;
+  let numberBeforeEdit: Record<ConfirmableNumberField, number> = {
+    limit: continuousTarget,
+    interval: continuousIntervalSeconds,
+    reward: rewardAmount,
+  };
   export let continuousRunning = false;
   export let fontScale = DEFAULT_FONT_SCALE;
 
@@ -906,7 +912,7 @@
       result = {
         eyebrow: '候选项已锁定',
         title: '当前受限抽奖已经开始',
-        detail: '开始新的抽奖，或把有效结果上限设为 0 后再修改候选项。',
+        detail: '开始新的抽奖，或把上限设为 0 后再修改候选项。',
         tone: 'danger',
       };
     }
@@ -966,6 +972,61 @@
     continuousTarget = normalizeResultLimit(continuousTarget, validCompleted);
   }
 
+  function currentConfirmableNumber(field: ConfirmableNumberField): number {
+    if (field === 'limit') return continuousTarget;
+    if (field === 'interval') return continuousIntervalSeconds;
+    return rewardAmount;
+  }
+
+  function normalizeConfirmableNumber(field: ConfirmableNumberField, value: unknown): number {
+    if (field === 'limit') {
+      continuousTarget = normalizeResultLimit(value, validCompleted);
+      return continuousTarget;
+    }
+    if (field === 'interval') {
+      continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(value) || 3));
+      return continuousIntervalSeconds;
+    }
+    rewardAmount = Math.max(0, Number(value) || 0);
+    return rewardAmount;
+  }
+
+  function beginConfirmableNumberEdit(event: FocusEvent, field: ConfirmableNumberField) {
+    numberBeforeEdit[field] = currentConfirmableNumber(field);
+    const input = event.currentTarget as HTMLInputElement;
+    input.select();
+    if (field === 'reward') {
+      candidateKeyboardActive = true;
+      selectedPrizeId = null;
+    }
+  }
+
+  function updateConfirmableNumber(event: Event, field: ConfirmableNumberField) {
+    if (field === 'reward' && rewardAmountIsLocked()) {
+      showRewardAmountLocked();
+      return;
+    }
+    const input = event.currentTarget as HTMLInputElement;
+    input.value = String(normalizeConfirmableNumber(field, input.value));
+  }
+
+  function finishConfirmableNumberEdit(
+    input: HTMLInputElement,
+    field: ConfirmableNumberField,
+    cancel: boolean,
+  ) {
+    const value = cancel
+      ? normalizeConfirmableNumber(field, numberBeforeEdit[field])
+      : normalizeConfirmableNumber(field, input.value);
+    input.value = String(value);
+    input.blur();
+    candidateKeyboardActive = false;
+    commonKeyboardActive = false;
+    selectedPrizeId = null;
+    selectedCommonId = null;
+    focusGlobalShortcuts();
+  }
+
   function beginRetryWeightEdit(event: FocusEvent) {
     retryWeightBeforeEdit = positiveNumberOrFallback(retryWeight, 0.65);
     (event.currentTarget as HTMLInputElement).select();
@@ -985,7 +1046,7 @@
   function showResultLimitReached() {
     stopContinuousDraw();
     result = {
-      eyebrow: '有效结果上限',
+      eyebrow: '上限',
       title: `已完成 ${validCompleted} 个结果`,
       detail: '把上限调高后可以继续；设为 0 则不限制次数。',
       tone: 'success',
@@ -1063,7 +1124,7 @@
     if (continuousTarget === 0) {
       result = {
         eyebrow: '连续抽奖',
-        title: '请先设置有效结果上限',
+        title: '请先设置上限',
         detail: '0 表示手动抽奖不限次数；连续抽奖需要一个明确的结束数量。',
         tone: 'idle',
       };
@@ -1073,7 +1134,7 @@
     if (isResultLimitReached(continuousTarget, continuousCompleted)) {
       result = {
         eyebrow: '连续抽奖',
-        title: '已达到有效结果上限',
+        title: '已达到上限',
         detail: `当前已有 ${continuousCompleted} 个有效结果。`,
         tone: 'success',
       };
@@ -1569,6 +1630,15 @@
       return;
     }
 
+    if (target instanceof HTMLInputElement && target.dataset.confirmableNumber) {
+      const field = target.dataset.confirmableNumber as ConfirmableNumberField;
+      if (isSingleLineTextConfirm(event) || isTextEditCancel(event)) {
+        event.preventDefault();
+        finishConfirmableNumberEdit(target, field, isTextEditCancel(event));
+        return;
+      }
+    }
+
     if (target?.classList.contains('name-input') && isSingleLineTextConfirm(event)) {
       event.preventDefault();
       (target as HTMLInputElement).blur();
@@ -2035,7 +2105,7 @@
           </div>
 
           {#if candidateChangesLocked && !isSpinning}
-            <div class="candidate-lock-note">当前受限抽奖已经开始；新建抽奖或把有效结果上限设为 0 后可修改名单。</div>
+            <div class="candidate-lock-note">当前受限抽奖已经开始；新建抽奖或把上限设为 0 后可修改名单。</div>
           {/if}
 
           <button
@@ -2116,8 +2186,9 @@
             <section class="continuous-control">
               <div class="continuous-fields">
                 <label>
-                  <span>有效结果上限</span>
+                  <span>上限</span>
                   <input
+                    data-confirmable-number="limit"
                     type="number"
                     min="0"
                     max={Math.max(1000, continuousCompleted)}
@@ -2125,14 +2196,26 @@
                     title="0 表示不限次数"
                     bind:value={continuousTarget}
                     disabled={continuousRunning}
-                    on:change={normalizeContinuousTarget}
-                    on:blur={normalizeContinuousTarget}
+                    on:focus={(event) => beginConfirmableNumberEdit(event, 'limit')}
+                    on:change={(event) => updateConfirmableNumber(event, 'limit')}
+                    on:blur={(event) => updateConfirmableNumber(event, 'limit')}
                   />
                 </label>
                 <label>
                   <span>结果停留</span>
                   <span class="seconds-input">
-                    <input type="number" min="0.5" max="30" step="0.5" bind:value={continuousIntervalSeconds} disabled={continuousRunning} />
+                    <input
+                      data-confirmable-number="interval"
+                      type="number"
+                      min="0.5"
+                      max="30"
+                      step="0.5"
+                      bind:value={continuousIntervalSeconds}
+                      disabled={continuousRunning}
+                      on:focus={(event) => beginConfirmableNumberEdit(event, 'interval')}
+                      on:change={(event) => updateConfirmableNumber(event, 'interval')}
+                      on:blur={(event) => updateConfirmableNumber(event, 'interval')}
+                    />
                     <small>秒</small>
                   </span>
                 </label>
@@ -2160,23 +2243,16 @@
               <span class="reward-input">
                 <input
                   bind:this={rewardInput}
+                  data-confirmable-number="reward"
                   type="number"
                   min="0"
                   step="0.01"
                   bind:value={rewardAmount}
                   disabled={rewardAmountLocked}
                   title={rewardAmountLocked ? '桌面端产生抽奖记录后，奖励金额会锁定到下一轮' : '设置每个有效结果的奖励金额'}
-                  on:focus={() => {
-                    candidateKeyboardActive = true;
-                    selectedPrizeId = null;
-                  }}
-                  on:change={() => {
-                    if (rewardAmountIsLocked()) {
-                      showRewardAmountLocked();
-                    } else {
-                      rewardAmount = normalizedRewardAmount();
-                    }
-                  }}
+                  on:focus={(event) => beginConfirmableNumberEdit(event, 'reward')}
+                  on:change={(event) => updateConfirmableNumber(event, 'reward')}
+                  on:blur={(event) => updateConfirmableNumber(event, 'reward')}
                 />
               </span>
             </label>

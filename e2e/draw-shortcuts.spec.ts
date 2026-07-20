@@ -108,7 +108,7 @@ test('文本区只用 Alt+回车确认，Esc 取消且单键不会越过输入�
 test('R 清空候选，T 保留候选并开始新抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   await page.getByRole('button', { name: '统计 0' }).click();
-  await page.getByLabel('有效结果上限').fill('8');
+  await page.getByLabel('上限').fill('8');
   await page.getByLabel('奖励金额').fill('88');
   await page.keyboard.press('Escape');
 
@@ -116,17 +116,17 @@ test('R 清空候选，T 保留候选并开始新抽奖', async ({ page }) => {
   await expect(page.locator('[data-prize-id]')).toHaveCount(2);
   await expect(page.locator('.wheel-status')).toContainText('等待开始');
   await page.getByRole('button', { name: '统计 0' }).click();
-  await expect(page.getByLabel('有效结果上限')).toHaveValue('0');
+  await expect(page.getByLabel('上限')).toHaveValue('0');
   await expect(page.getByLabel('奖励金额')).toHaveValue('0');
 
-  await page.getByLabel('有效结果上限').fill('6');
+  await page.getByLabel('上限').fill('6');
   await page.getByLabel('奖励金额').fill('66');
   await page.keyboard.press('Escape');
 
   await page.keyboard.press('r');
   await expect(page.locator('[data-prize-id]')).toHaveCount(0);
   await page.getByRole('button', { name: '统计 0' }).click();
-  await expect(page.getByLabel('有效结果上限')).toHaveValue('0');
+  await expect(page.getByLabel('上限')).toHaveValue('0');
   await expect(page.getByLabel('奖励金额')).toHaveValue('0');
 });
 
@@ -167,7 +167,7 @@ test('X 进入候选后覆盖方向、权重、编辑、新增、停用、删除
   await expect(page.locator('.prize-row.selected')).toHaveCount(0);
 });
 
-test('A/F 管理常用候选，Z 切换快捷键，M 选择奖励金额', async ({ page }) => {
+test('A/F 管理常用候选，Z 切换快捷键，数字设置可确认或取消', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   await page.getByRole('button', { name: '＋ 保存为常用候选' }).click();
   const commonName = page.getByLabel('给这组候选起个名字');
@@ -187,9 +187,34 @@ test('A/F 管理常用候选，Z 切换快捷键，M 选择奖励金额', async 
   await expect(page.getByRole('heading', { name: '通用操作逻辑' })).toBeHidden();
 
   await page.keyboard.press('m');
-  await expect(page.getByLabel('奖励金额')).toBeFocused();
-  await page.getByLabel('奖励金额').press('z');
-  await expect(page.getByLabel('奖励金额')).toBeFocused();
+  const reward = page.getByLabel('奖励金额');
+  await expect(reward).toBeFocused();
+  await reward.press('z');
+  await expect(reward).toBeFocused();
+  await reward.fill('125.5');
+  await reward.press('Enter');
+  await expect(reward).not.toBeFocused();
+  await expect(reward).toHaveValue('125.5');
+  await page.keyboard.press('m');
+  await reward.fill('300');
+  await reward.press('Escape');
+  await expect(reward).not.toBeFocused();
+  await expect(reward).toHaveValue('125.5');
+
+  const limit = page.getByLabel('上限');
+  await limit.fill('12');
+  await limit.press('Enter');
+  await expect(limit).not.toBeFocused();
+  await expect(limit).toHaveValue('12');
+  await limit.fill('20');
+  await limit.press('Escape');
+  await expect(limit).toHaveValue('12');
+
+  const interval = page.getByLabel('结果停留');
+  await interval.fill('1.5');
+  await interval.press('Enter');
+  await expect(interval).not.toBeFocused();
+  await expect(interval).toHaveValue('1.5');
 });
 
 test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽奖', async ({ page }) => {

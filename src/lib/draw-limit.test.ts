@@ -7,7 +7,7 @@ import {
   remainingResultSlots,
 } from './draw-limit';
 
-describe('有效结果上限', () => {
+describe('上限', () => {
   test('0 表示不限次数', () => {
     expect(normalizeResultLimit(0, 12)).toBe(0);
     expect(remainingResultSlots(0, 12)).toBeNull();
