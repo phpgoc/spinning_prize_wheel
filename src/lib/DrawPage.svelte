@@ -112,6 +112,7 @@
   let drawSidePanel: DrawSidePanel = 'candidates';
   let importTextarea: HTMLTextAreaElement;
   let selectedPrizeId: string | null = null;
+  let pendingNewPrizeId: string | null = null;
   let selectedCommonId: string | null = null;
   let candidateKeyboardActive = false;
   let commonKeyboardActive = false;
@@ -792,6 +793,7 @@
         enabled: true,
       },
     ])) return;
+    pendingNewPrizeId = id;
     await selectPrize(id);
     await editSelectedPrizeName();
   }
@@ -923,6 +925,9 @@
     if (drawHistorySaving) return false;
     if (guardCandidateChanges()) return false;
     prizes = normalizePrizes(next);
+    if (pendingNewPrizeId && !prizes.some((prize) => prize.id === pendingNewPrizeId)) {
+      pendingNewPrizeId = null;
+    }
     if (selectedPrizeId && !prizes.some((prize) => prize.id === selectedPrizeId)) {
       selectedPrizeId = null;
     }
@@ -1617,6 +1622,8 @@
 
     if (target?.classList.contains('name-input') && isSingleLineTextConfirm(event)) {
       event.preventDefault();
+      const prizeId = target.closest<HTMLElement>('[data-prize-id]')?.dataset.prizeId;
+      if (prizeId === pendingNewPrizeId) pendingNewPrizeId = null;
       (target as HTMLInputElement).blur();
       candidateKeyboardActive = true;
       return;
@@ -1624,6 +1631,13 @@
 
     if (target instanceof HTMLInputElement && target.classList.contains('name-input') && isTextEditCancel(event)) {
       event.preventDefault();
+      const prizeId = target.closest<HTMLElement>('[data-prize-id]')?.dataset.prizeId;
+      if (prizeId === pendingNewPrizeId) {
+        pendingNewPrizeId = null;
+        target.blur();
+        deleteSelectedPrize();
+        return;
+      }
       target.value = prizes.find((prize) => prize.id === selectedPrizeId)?.name ?? target.defaultValue;
       target.blur();
       candidateKeyboardActive = true;

@@ -153,10 +153,22 @@ test('X 进入候选后覆盖方向、权重、编辑、新增、停用、删除
   await secondName.fill('乙改');
   await secondName.press('Enter');
   await expect(secondName).toHaveValue('乙改');
+  await page.keyboard.press('Enter');
+  await secondName.fill('不保存');
+  await secondName.press('Escape');
+  await expect(secondName).toHaveValue('乙改');
 
   await page.keyboard.press('n');
   await expect(rows).toHaveCount(3);
-  const thirdName = page.getByRole('textbox', { name: '第 3 个奖项名称' });
+  let thirdName = page.getByRole('textbox', { name: '第 3 个奖项名称' });
+  await expect(thirdName).toBeFocused();
+  await thirdName.fill('不保留');
+  await thirdName.press('Escape');
+  await expect(rows).toHaveCount(2);
+
+  await page.keyboard.press('n');
+  await expect(rows).toHaveCount(3);
+  thirdName = page.getByRole('textbox', { name: '第 3 个奖项名称' });
   await expect(thirdName).toBeFocused();
   await thirdName.fill('丙');
   await thirdName.press('Enter');
