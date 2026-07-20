@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  adjustResultLimit,
   areCandidateChangesLocked,
   isResultLimitReached,
   isRewardAmountLocked,
@@ -24,6 +25,13 @@ describe('上限', () => {
     expect(remainingResultSlots(8, 5)).toBe(3);
     expect(remainingResultSlots(5, 5)).toBe(0);
     expect(isResultLimitReached(5, 5)).toBeTrue();
+  });
+
+  test('快捷键增减上限时不低于已完成数', () => {
+    expect(adjustResultLimit(8, -1, 5)).toBe(7);
+    expect(adjustResultLimit(5, -1, 5)).toBe(5);
+    expect(adjustResultLimit(0, -1, 5)).toBe(0);
+    expect(adjustResultLimit(0, 1, 5)).toBe(6);
   });
 
   test('有上限且已开始后锁定候选项，零上限仍可修改', () => {

@@ -21,6 +21,7 @@
     simulateBatch,
   } from './draw';
   import {
+    adjustResultLimit,
     areCandidateChangesLocked,
     isResultLimitReached,
     isRewardAmountLocked,
@@ -1021,6 +1022,11 @@
     continuousTarget = normalizeResultLimit(continuousTarget, validCompleted);
   }
 
+  function adjustContinuousTarget(delta: -1 | 1) {
+    if (continuousRunning) return;
+    continuousTarget = adjustResultLimit(continuousTarget, delta, validCompleted);
+  }
+
   function currentConfirmableNumber(field: ConfirmableNumberField): number {
     if (field === 'limit') return continuousTarget;
     if (field === 'interval') return continuousIntervalSeconds;
@@ -1652,6 +1658,21 @@
       importText = '';
       importOpen = false;
       focusGlobalShortcuts();
+      return;
+    }
+
+    const statisticsShortcut = drawSidePanel === 'statistics'
+      && event.altKey
+      && !modifier
+      && !event.shiftKey;
+    if (statisticsShortcut && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      adjustContinuousTarget(event.key === 'ArrowUp' ? 1 : -1);
+      return;
+    }
+    if (statisticsShortcut && event.key === 'Enter') {
+      event.preventDefault();
+      startContinuousDraw();
       return;
     }
 
@@ -2587,6 +2608,14 @@
             <div><span>权重减 1</span><kbd>Alt</kbd><b>＋</b><kbd>↓</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>启用 / 停用</span><kbd>空格</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group shortcut-statistics">
+          <h3>统计</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>增减上限</span><kbd>Alt</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
+            <div><span>开始连续抽奖</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
           </div>
         </section>
 

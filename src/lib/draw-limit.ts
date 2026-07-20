@@ -18,6 +18,26 @@ export function normalizeResultLimit(value: unknown, completed: number): number 
 }
 
 /**
+ * 用快捷键增减上限。0 保持“不限次数”的语义，向上增加时从已完成数之后开始。
+ */
+export function adjustResultLimit(
+  value: number,
+  delta: -1 | 1,
+  completed: number,
+): number {
+  const completedCount = normalizedCompleted(completed);
+  const current = normalizeResultLimit(value, completedCount);
+
+  if (current === 0) {
+    return delta > 0
+      ? normalizeResultLimit(completedCount + 1, completedCount)
+      : 0;
+  }
+
+  return normalizeResultLimit(current + delta, completedCount);
+}
+
+/**
  * 返回还能生成的有效结果数；null 表示没有上限。
  */
 export function remainingResultSlots(limit: number, completed: number): number | null {

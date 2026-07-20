@@ -232,6 +232,22 @@ test('A/F 管理常用候选，Z 切换快捷键，数字设置可确认或取�
   await expect(interval).toHaveValue('1.5');
 });
 
+test('统计栏快捷键增减上限并开始连续抽奖', async ({ page }) => {
+  await importCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '统计 0' }).click();
+  const limit = page.getByLabel('上限');
+
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect(limit).toHaveValue('1');
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect(limit).toHaveValue('2');
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect(limit).toHaveValue('1');
+
+  await page.keyboard.press('Alt+Enter');
+  await expect(page.getByRole('button', { name: '停止连续抽奖' })).toBeVisible();
+});
+
 test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   await page.getByLabel('动画时长').fill('1');
