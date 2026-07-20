@@ -1698,7 +1698,7 @@
               <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".csv,.json,text/csv,application/json" on:change={importLineupHistoryFile} />
               <div class="history-dates">
                 <label><span>开始日期</span><input type="date" bind:value={historyStart} /></label>
-                <label><span>结束日期</span><input type="date" bind:value={historyEnd} /></label>
+                <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={historyEnd} /></label>
               </div>
               {#if historyError}<div class="ranking-error" role="alert">{historyError}</div>{/if}
               <div class="lineup-history-list">

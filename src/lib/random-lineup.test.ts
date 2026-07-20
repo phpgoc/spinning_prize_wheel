@@ -205,7 +205,7 @@ describe('随机排阵', () => {
     expect(nextRankedUserActionIndex(0, 'left', 3)).toBe(-1);
   });
 
-  test('排阵历史按日期筛选并只保留最新 5 条', () => {
+  test('分组历史开始日期包含当天、结束日期不包含当天，并只保留最新 5 条', () => {
     const histories: SavedLineup[] = Array.from({ length: 8 }, (_, index) => ({
       id: `history-${index}`,
       createdAt: new Date(2026, 6, index + 1, 12).getTime(),
@@ -217,6 +217,6 @@ describe('随机排阵', () => {
       'history-7', 'history-6', 'history-5', 'history-4', 'history-3',
     ]);
     expect(recentLineupHistories(histories, '2026-07-03', '2026-07-05').map((history) => history.id))
-      .toEqual(['history-4', 'history-3', 'history-2']);
+      .toEqual(['history-3', 'history-2']);
   });
 });

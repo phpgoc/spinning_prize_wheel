@@ -243,21 +243,22 @@ export function recentLineupHistories(
   endDate = '',
   limit = 5,
 ): SavedLineup[] {
-  const startAt = dateBoundary(startDate, false);
-  const endAt = dateBoundary(endDate, true);
+  const startAt = dateBoundary(startDate) ?? Number.NEGATIVE_INFINITY;
+  const endAt = dateBoundary(endDate) ?? Number.POSITIVE_INFINITY;
   return [...histories]
-    .filter((history) => history.createdAt >= startAt && history.createdAt <= endAt)
+    .filter((history) => history.createdAt >= startAt && history.createdAt < endAt)
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, Math.max(0, Math.floor(limit)));
 }
 
-function dateBoundary(value: string, endOfDay: boolean): number {
-  if (!value) return endOfDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+function dateBoundary(value: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return null;
   const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return endOfDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-  return endOfDay
-    ? new Date(year, month - 1, day, 23, 59, 59, 999).getTime()
-    : new Date(year, month - 1, day).getTime();
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return date.getTime();
 }
 
 function secureRandom(): number {
