@@ -1857,78 +1857,6 @@
         </div>
       </div>
 
-      <section class="setting-block font-scale-setting">
-        <div class="setting-title-row compact">
-          <label for="font-scale">界面字号</label>
-          <output>{Math.round(fontScale * 100)}<small>%</small></output>
-        </div>
-        <input
-          id="font-scale"
-          class="range-input"
-          type="range"
-          min="1"
-          max="3"
-          step="0.1"
-          bind:value={fontScale}
-          style={`--range-progress: ${((fontScale - 1) / 2) * 100}%`}
-        />
-        <div class="range-labels"><span>标准</span><span>放大两倍</span><span>放大三倍</span></div>
-      </section>
-
-      <div class="section-divider"></div>
-
-      <section class="setting-block">
-        <div class="setting-title-row">
-          <div>
-            <h3>重来机制</h3>
-          </div>
-          <button
-            type="button"
-            class:active={retryEnabled}
-            class="switch"
-            aria-label={retryEnabled ? '关闭重来机制' : '开启重来机制'}
-            aria-pressed={retryEnabled}
-            disabled={isSpinning}
-            on:click={() => (retryEnabled = !retryEnabled)}
-          ><span></span></button>
-        </div>
-        <p>抽到“重来”会增加尝试次数，批量任务会自动补抽到有效数量。</p>
-        {#if retryEnabled}
-          <label class="inline-number">
-            <span>重来权重</span>
-            <input
-              type="text"
-              inputmode="decimal"
-              value={retryWeight}
-              disabled={isSpinning}
-              on:focus={beginRetryWeightEdit}
-              on:input={updateRetryWeight}
-              on:blur={finishRetryWeightEdit}
-            />
-          </label>
-        {/if}
-      </section>
-
-      {#if desktopRuntime}
-        <div class="section-divider"></div>
-        <section class="setting-block auto-save-setting">
-          <div class="setting-title-row">
-            <div><h3>自动保存历史</h3></div>
-            <button
-              type="button"
-              class:active={autoSaveHistory}
-              class="switch"
-              aria-label={autoSaveHistory ? '关闭自动保存历史' : '开启自动保存历史'}
-              aria-pressed={autoSaveHistory}
-              disabled={isSpinning || drawHistorySaving}
-              on:click={() => void toggleAutoSaveHistory()}
-            ><span></span></button>
-          </div>
-        </section>
-      {/if}
-
-      <div class="section-divider"></div>
-
       <section class="setting-block">
         <h3>动画质感</h3>
         <div class:roulette-mode={mode === 'roulette'} class="animation-options">
@@ -2003,6 +1931,78 @@
           style={`--range-progress: ${((staySeconds - 0.5) / 29.5) * 100}%`}
         />
         <div class="range-labels"><span>0.5 秒</span><span>30 秒</span></div>
+      </section>
+
+      <div class="section-divider"></div>
+
+      <section class="setting-block">
+        <div class="setting-title-row">
+          <div>
+            <h3>重来机制</h3>
+          </div>
+          <button
+            type="button"
+            class:active={retryEnabled}
+            class="switch"
+            aria-label={retryEnabled ? '关闭重来机制' : '开启重来机制'}
+            aria-pressed={retryEnabled}
+            disabled={isSpinning}
+            on:click={() => (retryEnabled = !retryEnabled)}
+          ><span></span></button>
+        </div>
+        <p>抽到“重来”会增加尝试次数，批量任务会自动补抽到有效数量。</p>
+        {#if retryEnabled}
+          <label class="inline-number">
+            <span>重来权重</span>
+            <input
+              type="text"
+              inputmode="decimal"
+              value={retryWeight}
+              disabled={isSpinning}
+              on:focus={beginRetryWeightEdit}
+              on:input={updateRetryWeight}
+              on:blur={finishRetryWeightEdit}
+            />
+          </label>
+        {/if}
+      </section>
+
+      {#if desktopRuntime}
+        <div class="section-divider"></div>
+        <section class="setting-block auto-save-setting">
+          <div class="setting-title-row">
+            <div><h3>自动保存历史</h3></div>
+            <button
+              type="button"
+              class:active={autoSaveHistory}
+              class="switch"
+              aria-label={autoSaveHistory ? '关闭自动保存历史' : '开启自动保存历史'}
+              aria-pressed={autoSaveHistory}
+              disabled={isSpinning || drawHistorySaving}
+              on:click={() => void toggleAutoSaveHistory()}
+            ><span></span></button>
+          </div>
+        </section>
+      {/if}
+
+      <div class="section-divider"></div>
+
+      <section class="setting-block font-scale-setting">
+        <div class="setting-title-row compact">
+          <label for="font-scale">界面字号</label>
+          <output>{Math.round(fontScale * 100)}<small>%</small></output>
+        </div>
+        <input
+          id="font-scale"
+          class="range-input"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          bind:value={fontScale}
+          style={`--range-progress: ${((fontScale - 1) / 2) * 100}%`}
+        />
+        <div class="range-labels"><span>标准</span><span>放大两倍</span><span>放大三倍</span></div>
       </section>
       </div>
       {/if}
@@ -2570,7 +2570,6 @@
             <div><span>列表下一项</span><kbd>↓</kbd></div>
             <div><span>候选 / 排名编辑</span><kbd>回车</kbd></div>
             <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
-            <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
             <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
         </section>
@@ -2586,9 +2585,6 @@
             <div><span>打开 / 关闭快捷键</span><kbd>Z</kbd></div>
             <div><span>开始抽奖</span><kbd>空格</kbd></div>
             <div><span>修改奖励金额</span><kbd>M</kbd></div>
-            {#if desktopRuntime}
-              <div><span>切换自动保存历史</span><kbd>S</kbd></div>
-            {/if}
             <div><span>进入候选</span><kbd>X</kbd></div>
           </div>
         </section>
@@ -2654,6 +2650,16 @@
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>回车</kbd></div>
             <div><span>取消</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
+          </div>
+        </section>
+
+        <section class="shortcut-group shortcut-settings">
+          <h3>设置</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
+            {#if desktopRuntime}
+              <div><span>切换自动保存历史</span><kbd>S</kbd></div>
+            {/if}
           </div>
         </section>
       </div>
