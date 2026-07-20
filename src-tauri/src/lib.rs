@@ -1080,6 +1080,9 @@ fn move_ranked_user_in(
                 .map_err(|error| format!("无法写入目标排名：{error}"))?;
         }
         RankedUserDropTargetInput::Swap { user_id } => {
+            if source_rank >= UNRANKED_RANK {
+                return Err("无排名选项只能插入排名".to_string());
+            }
             if user_id != dragged_id {
                 let target_rank = transaction
                     .query_row(
@@ -1858,6 +1861,14 @@ mod tests {
         let second = save("乙", Some(2));
         let third = save("丙", None);
         drop(save);
+
+        let error = move_ranked_user_in(
+            &mut connection,
+            third.id,
+            RankedUserDropTargetInput::Swap { user_id: second.id },
+        )
+        .expect_err("无排名选项不能交换");
+        assert_eq!(error, "无排名选项只能插入排名");
 
         move_ranked_user_in(
             &mut connection,

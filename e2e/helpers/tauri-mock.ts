@@ -188,6 +188,7 @@ export async function installTauriMock(
         const dragged = findUser(args.draggedId);
         const target = args.target as { kind: 'insert'; index: number } | { kind: 'swap'; userId: number } | { kind: 'unranked' };
         if (target.kind === 'swap') {
+          if (dragged.rank >= 10_000) throw new Error('无排名选项只能插入排名');
           const other = findUser(target.userId);
           [dragged.rank, other.rank] = [other.rank, dragged.rank];
         } else if (target.kind === 'unranked') {

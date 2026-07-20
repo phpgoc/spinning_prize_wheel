@@ -150,6 +150,7 @@
   $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
   $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
   $: rankMoveSourceId = draggingUserId ?? keyboardMovingUserId;
+  $: rankMoveSwapAllowed = rankMoveSourceCanSwap(rankMoveSourceId);
   $: {
     rankedUsers;
     rankedPeople;
@@ -966,10 +967,17 @@
   }
 
   function keyboardRankDropPoints() {
+    const sourceId = keyboardMovingUserId ?? selectedRankedUserId;
     return rankedUserKeyboardDropPoints(
       rankedPeople.map((user) => user.id),
       unrankedPeople.map((user) => user.id),
+      rankMoveSourceCanSwap(sourceId),
     );
+  }
+
+  function rankMoveSourceCanSwap(userId: number | null): boolean {
+    return userId !== null
+      && rankedUsers.some((user) => user.id === userId && user.rank < 10_000);
   }
 
   async function showKeyboardRankDropPoint(index: number) {
@@ -1105,7 +1113,13 @@
       if (Number.isInteger(rankIndex)) {
         const rect = card.getBoundingClientRect();
         const verticalRatio = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
-        const target = rankedUserDropTargetForCard(userId, rankIndex, verticalRatio);
+        const sourceId = draggingUserId ?? pendingRankDragUserId;
+        const target = rankedUserDropTargetForCard(
+          userId,
+          rankIndex,
+          verticalRatio,
+          rankMoveSourceCanSwap(sourceId),
+        );
         activeRankDropPosition = target.kind === 'insert'
           ? target.index === rankIndex ? 'before' : 'after'
           : target.kind === 'swap' ? 'swap' : null;
@@ -1699,7 +1713,9 @@
                           {/if}
                         </div>
                         {#if rankMoveSourceId !== null && rankMoveSourceId !== user.id}
-                          <div class="rank-drop-guides" aria-hidden="true"><i></i><i></i><i></i></div>
+                          <div class:insert-only={!rankMoveSwapAllowed} class="rank-drop-guides" aria-hidden="true">
+                            <i></i>{#if rankMoveSwapAllowed}<i></i>{/if}<i></i>
+                          </div>
                         {/if}
                       </article>
                     {/each}
@@ -3445,6 +3461,10 @@
     grid-template-rows: 1fr 2fr 1fr;
     background: rgba(255, 253, 248, 0.76);
     pointer-events: none;
+  }
+
+  .rank-drop-guides.insert-only {
+    grid-template-rows: 1fr 1fr;
   }
 
   .rank-drop-guides i {

@@ -331,7 +331,7 @@ test('键盘排序上方落点执行插入，无排名项可循环插入第一�
   await expect.poll(() => mockedRankedNames(page)).toEqual(['丁', '丙', '甲', '乙']);
 });
 
-test('鼠标拖拽中间二分之一区域替换，上四分之一区域插入', async ({ page }) => {
+test('鼠标拖拽中间区域替换，无排名项的中间区域只插入', async ({ page }) => {
   await openDesktopLineup(page);
   await dragToRatio(
     page,
@@ -348,6 +348,14 @@ test('鼠标拖拽中间二分之一区域替换，上四分之一区域插入',
     0.1,
   );
   await expect.poll(() => mockedRankedNames(page)).toEqual(['丙', '乙', '甲']);
+
+  await dragToRatio(
+    page,
+    page.locator('[data-rank-user-id="4"]'),
+    page.locator('[data-rank-user-id="2"]'),
+    0.5,
+  );
+  await expect.poll(() => mockedRankedNames(page)).toEqual(['丙', '乙', '丁', '甲']);
 
   await page.getByRole('button', { name: '甲', exact: true }).click({ position: { x: 10, y: 10 } });
   await expect(page.getByLabel('修改名称')).toBeFocused();

@@ -56,22 +56,29 @@ export function nextRankedUserActionIndex(
     : Math.min(lastIndex, currentIndex + 1);
 }
 
-/** 排名卡片上、下四分之一用于插入，中间二分之一用于替换。 */
+/** 已排名源项保留中间替换区；无排名源项把卡片上下半区都作为插入区。 */
 export function rankedUserDropTargetForCard(
   userId: number,
   rankIndex: number | null,
   verticalRatio: number,
+  allowSwap = true,
 ): RankedUserDropTarget {
   if (rankIndex === null) return { kind: 'unranked' };
+  if (!allowSwap) {
+    return verticalRatio < 0.5
+      ? { kind: 'insert', index: rankIndex }
+      : { kind: 'insert', index: rankIndex + 1 };
+  }
   if (verticalRatio < 0.25) return { kind: 'insert', index: rankIndex };
   if (verticalRatio > 0.75) return { kind: 'insert', index: rankIndex + 1 };
   return { kind: 'swap', userId };
 }
 
-/** 键盘排序依次经过无排名、每一项前插、替换和排名末尾。 */
+/** 无排名源项只经过插入落点，已排名源项仍可经过替换落点。 */
 export function rankedUserKeyboardDropPoints(
   rankedIds: readonly number[],
   _unrankedIds: readonly number[],
+  allowSwap = true,
 ): RankedUserKeyboardDropPoint[] {
   // 无排名只保留一个落点，并放在首尾循环的交界处。
   const points: RankedUserKeyboardDropPoint[] = [
@@ -79,7 +86,9 @@ export function rankedUserKeyboardDropPoints(
   ];
   rankedIds.forEach((userId, index) => {
     points.push({ target: { kind: 'insert', index }, cardId: userId, position: 'before' });
-    points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
+    if (allowSwap) {
+      points.push({ target: { kind: 'swap', userId }, cardId: userId, position: 'swap' });
+    }
   });
   points.push({
     target: { kind: 'insert', index: rankedIds.length },

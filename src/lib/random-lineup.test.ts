@@ -198,6 +198,20 @@ describe('随机排阵', () => {
     ]);
   });
 
+  test('无排名源项只按卡片上下半区插入', () => {
+    expect([
+      rankedUserDropTargetForCard(7, 2, 0.1, false),
+      rankedUserDropTargetForCard(7, 2, 0.4, false),
+      rankedUserDropTargetForCard(7, 2, 0.6, false),
+      rankedUserDropTargetForCard(7, 2, 0.9, false),
+    ]).toEqual([
+      { kind: 'insert', index: 2 },
+      { kind: 'insert', index: 2 },
+      { kind: 'insert', index: 3 },
+      { kind: 'insert', index: 3 },
+    ]);
+  });
+
   test('键盘排序依次包含无排名、插入和替换落点', () => {
     expect(rankedUserKeyboardDropPoints([11, 22], [33])).toEqual([
       { target: { kind: 'unranked' }, cardId: null, position: 'unranked' },
@@ -205,6 +219,15 @@ describe('随机排阵', () => {
       { target: { kind: 'swap', userId: 11 }, cardId: 11, position: 'swap' },
       { target: { kind: 'insert', index: 1 }, cardId: 22, position: 'before' },
       { target: { kind: 'swap', userId: 22 }, cardId: 22, position: 'swap' },
+      { target: { kind: 'insert', index: 2 }, cardId: 22, position: 'after' },
+    ]);
+  });
+
+  test('无排名源项的键盘排序跳过替换落点', () => {
+    expect(rankedUserKeyboardDropPoints([11, 22], [33], false)).toEqual([
+      { target: { kind: 'unranked' }, cardId: null, position: 'unranked' },
+      { target: { kind: 'insert', index: 0 }, cardId: 11, position: 'before' },
+      { target: { kind: 'insert', index: 1 }, cardId: 22, position: 'before' },
       { target: { kind: 'insert', index: 2 }, cardId: 22, position: 'after' },
     ]);
   });
