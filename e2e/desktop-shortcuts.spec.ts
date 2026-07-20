@@ -80,7 +80,7 @@ test('开启自动保存后关闭窗口会等当前旋转结束并归档', async
     .toBeLessThan(closeState.commands.lastIndexOf('plugin:window|destroy'));
 });
 
-test('点击排名或按 A 选择第一项，添加输入框不抢焦点', async ({ page }) => {
+test('点击排名或按 A 选择第一项，N 聚焦添加排名', async ({ page }) => {
   await openDesktopLineup(page);
   const firstCard = page.locator('[data-rank-user-id="1"]');
   const rankingToggle = page.locator('.desktop-accordion:first-child > .desktop-accordion-toggle');
@@ -95,6 +95,11 @@ test('点击排名或按 A 选择第一项，添加输入框不抢焦点', async
   await page.keyboard.press('a');
   await expect(firstCard).toBeFocused();
   await expect(addInput).not.toBeFocused();
+
+  await page.keyboard.press('a');
+  await expect(page.locator('.desktop-accordion').filter({ hasText: '排名' })).not.toHaveClass(/open/);
+  await page.keyboard.press('n');
+  await expect(addInput).toBeFocused();
 
   await addInput.click();
   await expect(addInput).toBeFocused();

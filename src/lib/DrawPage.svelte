@@ -2570,6 +2570,7 @@
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
             <div><span>预览序号选中 / 插入</span><kbd>空格</kbd></div>
             {#if desktopRuntime}
+              <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>
             {/if}
           </div>
@@ -2579,7 +2580,7 @@
           <section class="shortcut-group shortcut-ranking">
             <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>添加排名</span><kbd>A</kbd></div>
+              <div><span>添加排名</span><kbd>N</kbd></div>
               <div><span>添加新别名</span><kbd>S</kbd></div>
               <div><span>删除当前项</span><kbd>D</kbd></div>
               <div><span>删除全部别名</span><kbd>F</kbd></div>

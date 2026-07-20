@@ -899,12 +899,13 @@
     void cancelRankedUserEdit();
   }
 
-  async function focusRankingSelection() {
+  async function focusRankingAdd() {
     cancelKeyboardRankMove();
     resetUserForm();
     await openDesktopPanel('ranking');
     rankingFocusActive = true;
-    if (rankedUsers.length > 0) await selectRankedUser(rankedUsers[0].id);
+    await tick();
+    document.querySelector<HTMLInputElement>('.rank-person-form input')?.focus({ preventScroll: true });
   }
 
   async function selectRankedUser(userId: number) {
@@ -1474,9 +1475,14 @@
       return;
     }
     if (!desktopRuntime) return;
+    if (key === 'n') {
+      event.preventDefault();
+      void focusRankingAdd();
+      return;
+    }
     if (key === 'a') {
       event.preventDefault();
-      void focusRankingSelection();
+      toggleDesktopPanelShortcut('ranking');
       return;
     }
     if (key === 'z') {
