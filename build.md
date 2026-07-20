@@ -125,20 +125,15 @@ bun run tauri:dev:caimi
 bun run build
 ```
 
-假设 `version` 是 `0.1.0`，产物目录为：
+假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
 
 ```text
-dist\转盘-0.1.0
+转盘-0.1.0-web.zip
 ```
 
-该目录中的 `index.html` 已经内联全部资源，包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。可直接双击本地使用，也可部署到网站根目录或任意子目录。
+构建过程仍会保留 `dist\转盘-0.1.0` 目录用于检查。ZIP 根目录中的 `index.html` 已经内联全部资源，包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。解压后可直接双击使用，也可部署到网站根目录或任意子目录。
 
-需要制作网页压缩包时执行：
-
-```powershell
-$version = (Get-Content .\version -Raw).Trim()
-Compress-Archive -Path ".\dist\转盘-$version\*" -DestinationPath ".\转盘-$version-web.zip" -Force
-```
+不需要再手动压缩 `dist`。
 
 ## 7. 构建 Windows 安装包
 
@@ -154,15 +149,13 @@ bun run build:windows
 2. 构建普通版网页和 `转盘.exe`。
 3. 把两个 EXE 打进同一个 NSIS 安装包。
 
-第一次完整构建耗时较长。假设 `version` 是 `0.1.0`，主要产物为：
+第一次完整构建耗时较长。假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
 
 ```text
-src-tauri\target\release\转盘.exe
-src-tauri\target\release\转盘-猜蜜版.exe
-src-tauri\target\release\bundle\nsis\转盘-0.1.0-setup.exe
+转盘-0.1.0-setup.exe
 ```
 
-正式分发最后一个 `setup.exe` 即可。它会把普通版和猜蜜版两个可执行文件安装到同一目录，并创建两个启动入口。项目不生成 MSI。
+Tauri 的原始产物仍会保留在 `src-tauri\target\release`。正式分发根目录中的 `setup.exe` 即可，它会把普通版和猜蜜版两个可执行文件安装到同一目录，并创建两个启动入口。项目不生成 MSI。
 
 ## 8. 构建前检查
 

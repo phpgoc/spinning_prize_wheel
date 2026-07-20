@@ -9,17 +9,42 @@ const outDir = webBundleDirectory(version, variant);
 const arguments_ = ['bun', 'x', 'vite', 'build', '--outDir', outDir];
 if (variant === 'caimi') arguments_.push('--mode', 'caimi');
 
-const child = Bun.spawn(arguments_, {
-  cwd: workspace,
-  stdin: 'inherit',
-  stdout: 'inherit',
-  stderr: 'inherit',
-});
-const exitCode = await child.exited;
-if (exitCode !== 0) process.exit(exitCode);
+await run(arguments_);
 
 await makeLocalFileCompatible(resolve(workspace, outDir, 'index.html'));
 console.log(`Web 产物：${outDir}`);
+if (variant === 'standard') {
+  const archiveName = `转盘-${version}-web.zip`;
+  await createWebArchive(
+    resolve(workspace, outDir, 'index.html'),
+    resolve(workspace, archiveName),
+  );
+  console.log(`Web ZIP：${archiveName}`);
+}
+
+async function run(command: string[]) {
+  const child = Bun.spawn(command, {
+    cwd: workspace,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  const exitCode = await child.exited;
+  if (exitCode !== 0) throw new Error(`构建命令失败：${command.join(' ')}`);
+}
+
+async function createWebArchive(indexPath: string, archivePath: string) {
+  const script = [
+    `$indexPath = ${powerShellLiteral(indexPath)}`,
+    `$archivePath = ${powerShellLiteral(archivePath)}`,
+    'Compress-Archive -LiteralPath $indexPath -DestinationPath $archivePath -Force',
+  ].join('; ');
+  await run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script]);
+}
+
+function powerShellLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
 
 async function makeLocalFileCompatible(indexPath: string) {
   const moduleScript = /<script type="module" crossorigin src="([^"]+)"><\/script>/u;

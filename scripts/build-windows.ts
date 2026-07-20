@@ -89,8 +89,11 @@ async function renameInstaller() {
     throw new Error(`NSIS 目录中应当只有一个安装包，实际为 ${installers.length} 个`);
   }
   const targetName = `转盘-${version}-setup.exe`;
+  const targetPath = join(installerDirectory, targetName);
   if (installers[0].name !== targetName) {
-    await rename(join(installerDirectory, installers[0].name), join(installerDirectory, targetName));
+    await rename(join(installerDirectory, installers[0].name), targetPath);
   }
+  await copyFile(targetPath, join(workspace, targetName));
   console.log(`Windows 安装包：src-tauri/target/release/bundle/nsis/${targetName}`);
+  console.log(`Release 安装包：${targetName}`);
 }

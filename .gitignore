@@ -10,6 +10,7 @@ node_modules/
 build/
 dist/
 /转盘-*-web.zip
+/转盘-*-setup.exe
 .vite/
 coverage/
 /test-results/
