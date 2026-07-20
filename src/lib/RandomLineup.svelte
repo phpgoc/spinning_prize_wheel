@@ -481,7 +481,7 @@
     cancelKeyboardRankMove();
     resetUserForm();
     aliasLinkName = name;
-    aliasLinkRankInput = '';
+    resetRankSelectionShortcut();
     await openDesktopPanel('ranking');
     if (rankedUsers.length > 0) {
       await selectRankedUser(
@@ -494,18 +494,18 @@
 
   function cancelAliasLink() {
     aliasLinkName = null;
-    aliasLinkRankInput = '';
+    resetRankSelectionShortcut();
   }
 
   function updateAliasLinkRankShortcut(key: string) {
-    aliasLinkRankInput = updateRankShortcutInput(aliasLinkRankInput, key);
-    const userId = rankedUserIdAtShortcut(rankedUsers, aliasLinkRankInput);
-    if (userId !== null) void selectRankedUser(userId);
+    updateRankSelectionShortcut(key);
+    aliasLinkRankInput = rankSelectionShortcutInput;
   }
 
   function resetRankSelectionShortcut() {
     rankSelectionShortcutInput = '';
     rankSelectionShortcutAt = 0;
+    aliasLinkRankInput = '';
   }
 
   function updateRankSelectionShortcut(key: string) {
@@ -531,7 +531,7 @@
       const updated = await invoke<RankedUser>('add_ranked_user_alias', { userId, alias });
       rankedUsers = rankedUsers.map((user) => user.id === updated.id ? updated : user);
       aliasLinkName = null;
-      aliasLinkRankInput = '';
+      resetRankSelectionShortcut();
       await resolveNames();
     } catch (reason) {
       rankingError = messageFrom(reason, '无法关联名称');

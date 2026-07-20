@@ -233,6 +233,8 @@ test('未识别预览可按数字选排名并用空格关联，Enter 不会误�
   await expect(unknownRow).toBeVisible();
   await unknownRow.getByRole('button', { name: '关联' }).click();
 
+  await page.keyboard.press('1');
+  await expect(page.locator('[data-rank-user-id="1"]')).toHaveClass(/keyboard-selected/);
   await page.keyboard.press('2');
   await expect(page.locator('[data-rank-user-id="2"]')).toHaveClass(/keyboard-selected/);
   await page.keyboard.press('Enter');
