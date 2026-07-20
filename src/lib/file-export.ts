@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 export type CsvCell = string | number | boolean | null | undefined;
 
 export interface ExportCompletedNotice {
@@ -51,7 +53,6 @@ async function downloadFile(
   type: string,
 ): Promise<string> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { invoke } = await import('@tauri-apps/api/core');
     const location = await invoke<string>('export_text_file', { prefix, extension, content });
     publishExportCompleted({ location, desktop: true });
     return location;

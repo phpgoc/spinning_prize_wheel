@@ -9,6 +9,7 @@ node_modules/
 .svelte-kit/
 build/
 dist/
+/转盘-*-web.zip
 .vite/
 coverage/
 /test-results/

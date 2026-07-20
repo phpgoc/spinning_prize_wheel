@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import caimiIconUrl from './assets/caimi-icon.png?url';
   import defaultIconUrl from '../src-tauri/icons/app-icon.svg?url';
   import AppHeader from './lib/AppHeader.svelte';
@@ -47,7 +48,6 @@
 
   async function registerCloseRequestedListener() {
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const currentWindow = getCurrentWindow();
       const unlisten = await currentWindow.onCloseRequested(async (event) => {
         const currentDrawPage = drawPage;

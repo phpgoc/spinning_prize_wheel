@@ -62,15 +62,6 @@ Set-Location .\spinning_prize_wheel
 
 也可以在 GitHub 项目页面选择“Code → Download ZIP”，解压后进入该目录。在资源管理器地址栏输入 `powershell` 并回车，就会在当前目录打开终端。
 
-执行下面的命令确认当前目录正确：
-
-```powershell
-Get-Location
-Get-ChildItem package.json, version
-```
-
-能同时看到 `package.json` 和 `version` 文件后再继续。
-
 ## 3. 安装项目依赖
 
 在项目根目录执行：
@@ -134,19 +125,13 @@ bun run tauri:dev:caimi
 bun run build
 ```
 
-也可以使用同义命令：
-
-```powershell
-bun run build:web
-```
-
 假设 `version` 是 `0.1.0`，产物目录为：
 
 ```text
 dist\转盘-0.1.0
 ```
 
-该目录已经包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。部署时上传目录内的全部文件，并把 `index.html` 作为入口。
+该目录中的 `index.html` 已经内联全部资源，包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。可直接双击本地使用，也可部署到网站根目录或任意子目录。
 
 需要制作网页压缩包时执行：
 
