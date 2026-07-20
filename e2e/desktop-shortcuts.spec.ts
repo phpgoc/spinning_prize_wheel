@@ -376,6 +376,19 @@ test('未识别预览可按数字选排名并用空格关联，Enter 不会误�
   expect(aliases).toContain('神秘');
 });
 
+test('未录入预览可直接加入无排名', async ({ page }) => {
+  await openDesktopLineup(page);
+  await confirmDesktopNames(page, ['甲', '新项']);
+  const newItemInput = page.getByLabel('第 2 个名称');
+  const unknownRow = page.locator('.preview-row.unknown').filter({ has: newItemInput });
+  await expect(unknownRow.getByText('未录入排名', { exact: true })).toBeVisible();
+
+  await unknownRow.getByRole('button', { name: '录入' }).click();
+
+  await expect(page.locator('.unranked-zone [data-rank-user-id]').filter({ hasText: '新项' })).toHaveCount(1);
+  await expect(page.locator('.preview-row').filter({ has: newItemInput })).not.toHaveClass(/unknown/);
+});
+
 test('桌面预览添加后集中核对并可用 Esc 取消关联', async ({ page }) => {
   await openDesktopLineup(page);
   await confirmDesktopNames(page, ['甲', '乙']);

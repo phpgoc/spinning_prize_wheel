@@ -517,11 +517,32 @@
     }
   }
 
-  function addUnknownPerson(name: string) {
+  async function addUnknownPerson(name: string) {
+    const normalizedName = name.trim();
+    if (!desktopRuntime || !normalizedName || rankingSaving) return;
     cancelAliasLink();
+    cancelKeyboardRankMove();
     resetUserForm();
-    desktopPanel = 'ranking';
-    userName = name;
+    rankingSaving = true;
+    rankingError = '';
+    try {
+      const created = await invoke<RankedUser>('save_ranked_user', {
+        user: {
+          id: null,
+          name: normalizedName,
+          rank: 10_000,
+          aliases: [],
+        },
+      });
+      selectedRankedUserId = created.id;
+      await loadRankedUsers();
+      await resolveNames();
+      await openDesktopPanel('ranking');
+    } catch (reason) {
+      rankingError = messageFrom(reason, '无法录入排名');
+    } finally {
+      rankingSaving = false;
+    }
   }
 
   async function startAliasLink(name: string) {
@@ -1851,13 +1872,13 @@
                       ? '核对中'
                       : row.resolved?.known
                         ? `本名 ${row.resolved.canonicalName} · 排名 ${row.resolved.rank}`
-                        : '别名表中没有对应选项'}</small>
+                        : '未录入排名'}</small>
                   {/if}
                 </div>
                 {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                   <div class="preview-link-actions">
                     <button type="button" class="link-preview-user" title="关联到现有排名" on:click={() => startAliasLink(row.name)}>关联</button>
-                    <button type="button" class="add-preview-user" title="添加到排名表" on:click={() => addUnknownPerson(row.name)}>录入</button>
+                    <button type="button" class="add-preview-user" title="直接加入无排名" disabled={rankingSaving} on:click={() => addUnknownPerson(row.name)}>录入</button>
                   </div>
                 {/if}
                 <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>×</button>
