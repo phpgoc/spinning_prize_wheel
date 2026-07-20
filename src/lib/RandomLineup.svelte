@@ -123,6 +123,7 @@
   let rankingImporting = false;
   let historyImporting = false;
   let importErrorDialog: { title: string; detail: string } | null = null;
+  let clearLineupConfirmation = false;
   let lineupResultElement: HTMLElement | null = null;
   let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
@@ -1332,6 +1333,17 @@
       return;
     }
 
+    if (clearLineupConfirmation) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        clearLineupConfirmation = false;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        clearAll();
+      }
+      return;
+    }
+
     if (pendingLineupHistoryDeletion) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -1501,7 +1513,12 @@
     }
   }
 
+  function requestClearAll() {
+    if (sourceText || confirmedSourceText) clearLineupConfirmation = true;
+  }
+
   function clearAll() {
+    clearLineupConfirmation = false;
     cancelPreviewMove();
     sourceText = '';
     confirmedSourceText = '';
@@ -1509,6 +1526,7 @@
     resolvedNames = [];
     resolvingNames = false;
     result = null;
+    resultHistory = null;
     error = '';
     historyStatus = 'idle';
   }
@@ -1954,12 +1972,26 @@
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove}></textarea></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
-        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={clearAll}>清空</button>
+        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
       </div>
       <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
     </aside>
   </div>
 </main>
+
+{#if clearLineupConfirmation}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-lineup-title" aria-describedby="clear-lineup-detail" tabindex="-1">
+      <span class="delete-confirm-icon">!</span>
+      <h2 id="clear-lineup-title">同时清空名单预览？</h2>
+      <p id="clear-lineup-detail">名单、名单预览和当前分组结果都会清空。</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (clearLineupConfirmation = false)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={clearAll}><span>确认</span></button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if draggingUserId !== null}
   <div class="rank-drag-ghost" style={`left: ${rankDragX}px; top: ${rankDragY}px;`} aria-hidden="true">

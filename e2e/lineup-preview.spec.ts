@@ -36,6 +36,21 @@ test('名单文本区延迟到 Alt+回车集中确认，Esc 恢复上次确认�
   await expect(page.locator('.preview-row')).toHaveCount(2);
 });
 
+test('清空名单会明确提示并同时清空名单预览', async ({ page }) => {
+  await confirmNames(page, ['甲', '乙']);
+  const clearButton = page.getByRole('button', { name: '清空', exact: true });
+
+  await clearButton.click();
+  await expect(page.getByRole('heading', { name: '同时清空名单预览？' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.preview-row')).toHaveCount(2);
+
+  await clearButton.click();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.names-field textarea')).toHaveValue('');
+  await expect(page.locator('.preview-row')).toHaveCount(0);
+});
+
 test('预览支持前插、末尾添加并用回车保存', async ({ page }) => {
   await confirmNames(page, ['甲', '乙']);
 
