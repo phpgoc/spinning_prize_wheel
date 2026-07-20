@@ -2344,9 +2344,9 @@
               {#each currentStats as stat (stat.id)}
                 <article>
                   <i style:background={stat.color}></i>
-                  <div class="current-stat-main"><strong>{stat.name}</strong></div>
+                  <div class="current-stat-main"><strong class="stat-name">{stat.name}</strong></div>
                   <div class="side-stat-value"><strong>{formatAmount(stat.weight)}</strong><span>权重</span></div>
-                  <div class="side-stat-value"><strong>{stat.count}</strong><span>中奖</span></div>
+                  <div class="side-stat-value win-stat"><strong>{stat.count}</strong><span>中奖</span></div>
                   <div class="side-stat-value"><strong>{formatAmount(stat.rewardTotal)}</strong><span>金额</span></div>
                 </article>
               {:else}

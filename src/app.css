@@ -2764,13 +2764,20 @@ kbd {
 }
 
 .side-stats-list article {
-  grid-template-columns: 8px minmax(70px, 1fr) 40px 40px 62px;
-  gap: 7px;
+  grid-template-columns: 8px minmax(90px, 1fr) 38px 60px 60px;
+  gap: 6px;
   padding: 9px 2px;
 }
 
-.side-stats-list .current-stat-main strong {
-  font-size: calc(12px * var(--font-scale, 1));
+.side-stats-list .current-stat-main .stat-name {
+  display: block;
+  overflow: hidden;
+  color: #171812;
+  font-size: calc(24px * var(--font-scale, 1));
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-stat-value {
@@ -2791,6 +2798,22 @@ kbd {
   margin-top: 2px;
   color: var(--text-dim);
   font-size: calc(10px * var(--font-scale, 1));
+}
+
+.side-stats-list .win-stat strong,
+.side-stats-list .win-stat span {
+  color: #171812;
+  font-weight: 800;
+}
+
+.side-stats-list .win-stat strong {
+  font-size: calc(18px * var(--font-scale, 1));
+}
+
+.side-stats-list .win-stat span {
+  margin-top: 0;
+  font-size: calc(20px * var(--font-scale, 1));
+  line-height: 1.05;
 }
 
 .side-stats-actions {
