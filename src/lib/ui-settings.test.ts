@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_STAY_SECONDS,
   DEFAULT_FONT_SCALE,
+  MAX_STAY_SECONDS,
   MAX_FONT_SCALE,
+  MIN_STAY_SECONDS,
   MIN_FONT_SCALE,
   normalizeFontScale,
+  normalizeStaySeconds,
   positiveNumberOrFallback,
 } from './ui-settings';
 
@@ -32,5 +36,12 @@ describe('界面字号设置', () => {
     expect(positiveNumberOrFallback(0, 0.65)).toBe(0.65);
     expect(positiveNumberOrFallback(-2, 0.65)).toBe(0.65);
     expect(positiveNumberOrFallback('oops', 0.65)).toBe(0.65);
+  });
+
+  test('停留时间使用默认值并限制在半秒到三十秒', () => {
+    expect(normalizeStaySeconds(undefined)).toBe(DEFAULT_STAY_SECONDS);
+    expect(normalizeStaySeconds(0)).toBe(MIN_STAY_SECONDS);
+    expect(normalizeStaySeconds(60)).toBe(MAX_STAY_SECONDS);
+    expect(normalizeStaySeconds(7.5)).toBe(7.5);
   });
 });

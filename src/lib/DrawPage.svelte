@@ -37,7 +37,9 @@
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
   import {
     DEFAULT_FONT_SCALE,
+    DEFAULT_STAY_SECONDS,
     normalizeFontScale,
+    normalizeStaySeconds,
     positiveNumberOrFallback,
   } from './ui-settings';
   import {
@@ -142,7 +144,8 @@
   let autoSaveHistory = true;
   let pendingDrawHistoryDeletion: DrawHistoryDeletion | null = null;
   let continuousTarget = 0;
-  let continuousIntervalSeconds = 3;
+  let staySeconds = DEFAULT_STAY_SECONDS;
+  let continuousIntervalSeconds = DEFAULT_STAY_SECONDS;
   let numberBeforeEdit: Record<ConfirmableNumberField, number> = {
     limit: continuousTarget,
     interval: continuousIntervalSeconds,
@@ -239,7 +242,7 @@
         retryWeight,
         autoSaveHistory,
         continuousTarget,
-        continuousIntervalSeconds,
+        staySeconds,
         fontScale,
       }),
     );
@@ -258,6 +261,7 @@
           retryWeight: number;
           autoSaveHistory: boolean;
           continuousTarget: number;
+          staySeconds: number;
           continuousIntervalSeconds: number;
           fontScale: number;
         }>;
@@ -279,9 +283,9 @@
         if (typeof parsed.continuousTarget === 'number') {
           continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
         }
-        if (typeof parsed.continuousIntervalSeconds === 'number') {
-          continuousIntervalSeconds = Math.min(30, Math.max(0.5, parsed.continuousIntervalSeconds));
-        }
+        // 旧版把统计栏的值直接持久化；迁移后只把它作为首次设置默认值。
+        staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds);
+        continuousIntervalSeconds = staySeconds;
         fontScale = normalizeFontScale(parsed.fontScale);
       }
     } catch {
@@ -1029,7 +1033,7 @@
       return continuousTarget;
     }
     if (field === 'interval') {
-      continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(value) || 3));
+      continuousIntervalSeconds = normalizeStaySeconds(value);
       return continuousIntervalSeconds;
     }
     rewardAmount = Math.max(0, Number(value) || 0);
@@ -1163,7 +1167,7 @@
   function startContinuousDraw() {
     if (isSpinning || continuousRunning || enabledPrizes.length < 2) return;
     normalizeContinuousTarget();
-    continuousIntervalSeconds = Math.min(30, Math.max(0.5, Number(continuousIntervalSeconds) || 3));
+    continuousIntervalSeconds = normalizeStaySeconds(continuousIntervalSeconds);
     drawSidePanel = 'statistics';
 
     if (continuousTarget === 0) {
@@ -1956,6 +1960,28 @@
           style={`--range-progress: ${((durationSeconds - 1) / 9) * 100}%`}
         />
         <div class="range-labels"><span>迅速</span><span>仪式感</span><span>史诗</span></div>
+      </section>
+
+      <section class="setting-block duration-block">
+        <div class="setting-title-row compact">
+          <div class="setting-label-with-note">
+            <label for="stay-duration">停留时间</label>
+            <small>仅启动时同步</small>
+          </div>
+          <output>{staySeconds.toFixed(1)}<small>秒</small></output>
+        </div>
+        <input
+          id="stay-duration"
+          class="range-input"
+          type="range"
+          min="0.5"
+          max="30"
+          step="0.5"
+          bind:value={staySeconds}
+          disabled={isSpinning}
+          style={`--range-progress: ${((staySeconds - 0.5) / 29.5) * 100}%`}
+        />
+        <div class="range-labels"><span>0.5 秒</span><span>30 秒</span></div>
       </section>
       </div>
       {/if}

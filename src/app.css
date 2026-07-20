@@ -815,6 +815,17 @@ p {
   font-weight: 750;
 }
 
+.setting-label-with-note {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.setting-label-with-note small {
+  color: var(--text-dim);
+  font-size: calc(11px * var(--font-scale, 1));
+}
+
 .setting-title-row output {
   font-family: var(--font-mono);
   font-size: calc(18px * var(--font-scale, 1));
