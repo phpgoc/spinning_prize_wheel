@@ -124,6 +124,12 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
 
   await page.goto('/#/lineup');
   await page.getByRole('button', { name: /分组历史/u }).click();
+  const lineupHistoryPanel = page.locator('.history-panel');
+  await expect(lineupHistoryPanel.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
+  await lineupHistoryPanel.locator('.history-view').first().click();
+  await expect(page.locator('.lineup-result tbody tr')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'CSV', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /删除 .* 的分组历史/u }).first().click();
   await page.keyboard.press('Enter');
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);

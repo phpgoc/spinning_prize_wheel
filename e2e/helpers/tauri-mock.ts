@@ -190,8 +190,11 @@ export async function installTauriMock(
         state.lineupHistories = [clone(args.lineup), ...state.lineupHistories.filter((item: any) => item.id !== args.lineup.id)];
         return null;
       }
-      if (cmd === 'import_lineup_histories') {
-        state.lineupHistories = [...clone(args.histories), ...state.lineupHistories];
+      if (cmd === 'import_lineup_history') {
+        state.lineupHistories = [
+          clone(args.history),
+          ...state.lineupHistories.filter((item: any) => item.id !== args.history.id),
+        ];
         return clone(state.lineupHistories);
       }
       if (cmd === 'delete_lineup_history') {

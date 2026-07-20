@@ -5,9 +5,7 @@
   import { downloadCsv, downloadFormattedJson } from './file-export';
   import {
     createLineupHistoryTransfer,
-    lineupHistoryCsvRows,
     parseLineupHistoryTransfer,
-    type LineupHistoryFileFormat,
   } from './lineup-history-transfer';
   import { parseOptionText } from './parse-options';
   import {
@@ -17,6 +15,7 @@
   } from './ranking-transfer';
   import {
     applyCaimiLineupSwap,
+    createLineupRankingSnapshot,
     createRandomLineup,
     insertLineupPreviewName,
     isResolvedLineupName,
@@ -103,6 +102,7 @@
   let resultOrderMode: LineupOrderMode = 'input';
   let resultSourceNames: string[] = [];
   let resultOrderedNames: string[] = [];
+  let resultHistory: SavedLineup | null = null;
   let lineupHistories: SavedLineup[] = [];
   let historyLoading = false;
   let historyError = '';
@@ -282,6 +282,9 @@
         }
       }
       const orderedNames = orderedNamesForLineup(orderMode);
+      const rankingSnapshot = orderMode === 'rank'
+        ? createLineupRankingSnapshot(orderedNames, resolvedNames)
+        : [];
       const generated = createRandomLineup(orderedNames, Number(groupCount));
       result = variant === 'caimi'
         ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
@@ -290,6 +293,21 @@
       resultSourceNames = [...names];
       resultOrderedNames = orderedNames;
       groupCount = result.groupCount;
+      const createdAt = Date.now();
+      resultHistory = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `lineup-${createdAt}-${Math.random().toString(16).slice(2)}`,
+        createdAt,
+        input: {
+          sourceNames: resultSourceNames,
+          orderedNames,
+          groupCount,
+          orderMode,
+          ...(orderMode === 'rank' ? { rankingSnapshot } : {}),
+        },
+        result,
+      };
       const resolvedSignature = desktopRuntime
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
@@ -297,31 +315,13 @@
       resetLineupReveal();
     } catch (reason) {
       result = null;
+      resultHistory = null;
       error = messageFrom(reason, '无法生成分组');
     }
   }
 
-  async function saveHistory(
-    orderedNames: string[],
-    lineupResult: RandomLineup,
-    orderMode: LineupOrderMode,
-  ) {
+  async function saveHistory(lineup: SavedLineup) {
     historyStatus = 'saving';
-    const createdAt = Date.now();
-    const lineup: SavedLineup = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `lineup-${createdAt}-${Math.random().toString(16).slice(2)}`,
-      createdAt,
-      input: {
-        sourceNames: resultSourceNames,
-        resolvedNames,
-        orderedNames,
-        groupCount,
-        orderMode,
-      },
-      result: lineupResult,
-    };
     try {
       await invoke('save_lineup_history', { lineup, variant });
       historyStatus = 'saved';
@@ -336,28 +336,19 @@
     if (
       !desktopRuntime
       || !result
+      || !resultHistory
       || resultOutdated
       || historyStatus === 'saving'
       || historyStatus === 'saved'
     ) return;
-    await saveHistory(resultOrderedNames, result, resultOrderMode);
+    await saveHistory(resultHistory);
   }
 
   async function exportLineupJson() {
-    if (!result) return;
+    if (!resultHistory) return;
     error = '';
     try {
-      await downloadFormattedJson('分组结果', {
-        exportedAt: new Date().toISOString(),
-        kind: 'random-lineup',
-        input: {
-          sourceNames: resultSourceNames,
-          orderedNames: resultOrderedNames,
-          groupCount: result.groupCount,
-          orderMode: resultOrderMode,
-        },
-        result,
-      });
+      await downloadFormattedJson('分组结果', createLineupHistoryTransfer(resultHistory, variant));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 JSON');
     }
@@ -766,24 +757,6 @@
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
-  async function exportLineupHistoryCsv(history: SavedLineup) {
-    historyError = '';
-    try {
-      await downloadCsv('分组历史', lineupHistoryCsvRows([history]));
-    } catch (reason) {
-      historyError = messageFrom(reason, '无法导出分组历史 CSV');
-    }
-  }
-
-  async function exportLineupHistoryJson(history: SavedLineup) {
-    historyError = '';
-    try {
-      await downloadFormattedJson('分组历史', createLineupHistoryTransfer([history], variant));
-    } catch (reason) {
-      historyError = messageFrom(reason, '无法导出分组历史 JSON');
-    }
-  }
-
   function openLineupHistoryImporter() {
     historyFileInput?.click();
   }
@@ -794,23 +767,20 @@
     input.value = '';
     if (!file) return;
     const extension = file.name.split('.').pop()?.toLocaleLowerCase('zh-CN');
-    if (extension !== 'csv' && extension !== 'json') {
-      showImportError('分组历史导入失败', '只支持 CSV 或 JSON 文件');
+    if (extension !== 'json') {
+      showImportError('分组历史导入失败', '只支持单条分组历史 JSON 文件');
       return;
     }
     historyImporting = true;
     historyError = '';
     historyImportStatus = '';
     try {
-      const histories = parseLineupHistoryTransfer(
-        await file.text(),
-        extension as LineupHistoryFileFormat,
-      );
-      lineupHistories = await invoke<SavedLineup[]>('import_lineup_histories', {
+      const history = parseLineupHistoryTransfer(await file.text());
+      lineupHistories = await invoke<SavedLineup[]>('import_lineup_history', {
         variant,
-        histories,
+        history,
       });
-      historyImportStatus = `已导入 ${histories.length} 条`;
+      historyImportStatus = '已导入 1 条';
     } catch (reason) {
       showImportError('分组历史导入失败', messageFrom(reason, '无法导入分组历史'));
     } finally {
@@ -841,6 +811,7 @@
       return;
     }
     result = historicalResult as RandomLineup;
+    resultHistory = history;
     const input = history.input as Partial<{
       orderMode: LineupOrderMode;
       orderedNames: unknown[];
@@ -1756,7 +1727,7 @@
           </button>
           {#if desktopPanel === 'history'}
             <div class="desktop-accordion-content history-panel">
-              <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".csv,.json,text/csv,application/json" on:change={importLineupHistoryFile} />
+              <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importLineupHistoryFile} />
               <div class="history-dates">
                 <label><span>开始日期</span><input type="date" bind:value={historyStart} /></label>
                 <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={historyEnd} /></label>
@@ -1773,11 +1744,9 @@
                       <button type="button" class="history-view" on:click={() => viewHistory(history)}>
                         <span>{formatHistoryDate(history.createdAt)}</span>
                         <strong>{historySummary(history)}</strong>
-                        <small>查看结果 →</small>
+                        <small>预览 →</small>
                       </button>
                       <div class="history-item-actions">
-                        <button type="button" on:click={() => exportLineupHistoryCsv(history)}>CSV</button>
-                        <button type="button" on:click={() => exportLineupHistoryJson(history)}>JSON</button>
                         <button
                           type="button"
                           class="history-delete"
@@ -1791,7 +1760,7 @@
                 {/if}
               </div>
               <div class="history-export-actions">
-                <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 CSV/JSON'}</button>
+                <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</button>
                 <button type="button" on:click={() => openLineupDatabaseFolder('history')}>打开文件夹</button>
                 <button type="button" class="history-delete-all" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</button>
               </div>

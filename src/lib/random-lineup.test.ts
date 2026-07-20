@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   applyCaimiLineupSwap,
+  createLineupRankingSnapshot,
   createRandomLineup,
   groupName,
   insertLineupPreviewName,
@@ -102,6 +103,18 @@ describe('随机排阵', () => {
 
     expect(uniqueResolvedLineupPeople(people).map((person) => person.inputName))
       .toEqual(['小甲', '陌生']);
+  });
+
+  test('排名快照按分组使用顺序记录输入名、本名和当时排名', () => {
+    const people: ResolvedLineupName[] = [
+      { inputName: '小乙', known: true, userId: 2, canonicalName: '乙', rank: 2 },
+      { inputName: '小甲', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+    ];
+
+    expect(createLineupRankingSnapshot(['小甲', '小乙'], people)).toEqual([
+      { inputName: '小甲', name: '甲', rank: 1 },
+      { inputName: '小乙', name: '乙', rank: 2 },
+    ]);
   });
 
   test('关联数字只在排名完全存在时跳转并支持退格', () => {

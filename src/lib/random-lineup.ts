@@ -27,6 +27,12 @@ export interface LineupOrderAvailability {
   rank: boolean;
 }
 
+export interface LineupRankingSnapshotEntry {
+  inputName: string;
+  name: string;
+  rank: number;
+}
+
 export type RankedUserDropTarget =
   | { kind: 'insert'; index: number }
   | { kind: 'swap'; userId: number }
@@ -235,6 +241,23 @@ export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]):
       || left.canonicalName!.localeCompare(right.canonicalName!, 'zh-CN')
     ))
     .map((person) => person.inputName);
+}
+
+/** 保存排名分组当时使用的本名和排名，只作为历史 JSON 元数据。 */
+export function createLineupRankingSnapshot(
+  orderedNames: readonly string[],
+  people: readonly ResolvedLineupName[],
+): LineupRankingSnapshotEntry[] {
+  const byInputName = new Map(
+    people.map((person) => [person.inputName.toLocaleLowerCase('zh-CN'), person] as const),
+  );
+  return orderedNames.map((inputName) => {
+    const person = byInputName.get(inputName.toLocaleLowerCase('zh-CN'));
+    if (!person?.known || person.canonicalName === null || person.rank === null) {
+      throw new Error(`无法记录“${inputName}”的排名快照`);
+    }
+    return { inputName, name: person.canonicalName, rank: person.rank };
+  });
 }
 
 export function recentLineupHistories(

@@ -1359,35 +1359,24 @@ fn list_lineup_histories(
     })
 }
 
-fn import_lineup_histories_in(
-    connection: &mut Connection,
+fn import_lineup_history_in(
+    connection: &Connection,
     variant: &str,
-    histories: Vec<SavedLineup>,
+    history: &SavedLineup,
 ) -> Result<Vec<SavedLineup>, String> {
-    if histories.len() > 10_000 {
-        return Err("一次最多导入 10000 条分组历史".to_string());
-    }
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("无法开始导入分组历史：{error}"))?;
-    for history in &histories {
-        save_lineup_history_in(&transaction, variant, history)?;
-    }
-    transaction
-        .commit()
-        .map_err(|error| format!("无法提交分组历史导入：{error}"))?;
+    save_lineup_history_in(connection, variant, history)?;
     list_lineup_histories_in(connection, variant)
 }
 
 #[tauri::command]
-fn import_lineup_histories(
+fn import_lineup_history(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-    histories: Vec<SavedLineup>,
+    history: SavedLineup,
 ) -> Result<Vec<SavedLineup>, String> {
     with_app_database(&app, &database, |connection| {
-        import_lineup_histories_in(connection, &variant, histories)
+        import_lineup_history_in(connection, &variant, &history)
     })
 }
 
@@ -1457,7 +1446,7 @@ pub fn run() {
             resolve_lineup_names,
             save_lineup_history,
             list_lineup_histories,
-            import_lineup_histories,
+            import_lineup_history,
             delete_lineup_history,
             clear_lineup_histories,
             open_database_folder,
@@ -1883,8 +1872,8 @@ mod tests {
     }
 
     #[test]
-    fn importing_lineup_histories_is_atomic() {
-        let mut connection = test_database();
+    fn importing_one_lineup_history_preserves_existing_records() {
+        let connection = test_database();
         let old = SavedLineup {
             id: "lineup-old".to_string(),
             created_at: 1_700_000_000_000,
@@ -1899,18 +1888,23 @@ mod tests {
             input: serde_json::json!({"names": ["新"]}),
             result: serde_json::json!({"tiers": [["新"]]}),
         };
+        import_lineup_history_in(&connection, "standard", &valid).expect("导入单条分组历史");
+        let histories = list_lineup_histories_in(&connection, "standard").expect("读取分组历史");
+        assert_eq!(histories.len(), 2);
+
         let invalid = SavedLineup {
             id: "非法 编号".to_string(),
             created_at: old.created_at + 2,
             input: valid.input.clone(),
             result: valid.result.clone(),
         };
-        import_lineup_histories_in(&mut connection, "standard", vec![valid, invalid])
-            .expect_err("任一条失败应回滚整个历史导入");
+        import_lineup_history_in(&connection, "standard", &invalid)
+            .expect_err("非法单条历史不能导入");
 
         let histories = list_lineup_histories_in(&connection, "standard").expect("读取分组历史");
-        assert_eq!(histories.len(), 1);
-        assert_eq!(histories[0].id, old.id);
+        assert_eq!(histories.len(), 2);
+        assert!(histories.iter().any(|history| history.id == old.id));
+        assert!(histories.iter().any(|history| history.id == valid.id));
     }
 
     #[test]
