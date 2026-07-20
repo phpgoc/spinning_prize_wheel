@@ -140,6 +140,10 @@ export async function installTauriMock(
         }
         const user = findUser(input.id);
         const canonical = user.aliases.find((alias) => alias.name === user.name);
+        const nameKey = name.toLocaleLowerCase('zh-CN');
+        user.aliases = user.aliases.filter((alias) => (
+          alias === canonical || alias.name.toLocaleLowerCase('zh-CN') !== nameKey
+        ));
         user.name = name;
         if (canonical) canonical.name = name;
         else user.aliases.unshift({ id: nextAliasId++, name, userId: user.id });

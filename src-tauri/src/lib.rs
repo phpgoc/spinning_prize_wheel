@@ -522,16 +522,25 @@ fn normalize_aliases(name: &str, aliases: Vec<String>) -> Result<Vec<String>, St
 }
 
 fn ensure_name_available(connection: &Connection, name: &str) -> Result<(), String> {
+    ensure_name_available_except(connection, name, None)
+}
+
+fn ensure_name_available_except(
+    connection: &Connection,
+    name: &str,
+    excluded_user_id: Option<i64>,
+) -> Result<(), String> {
+    let excluded_user_id = excluded_user_id.unwrap_or(i64::MIN);
     let owner = connection
         .query_row(
             "SELECT owner_name FROM (
-               SELECT name AS owner_name FROM user WHERE name = ?1 COLLATE NOCASE
+               SELECT id AS owner_id, name AS owner_name FROM user WHERE name = ?1 COLLATE NOCASE
                UNION ALL
-               SELECT user.name AS owner_name
+               SELECT user.id AS owner_id, user.name AS owner_name
                FROM alias JOIN user ON user.id = alias.user_id
                WHERE alias.name = ?1 COLLATE NOCASE
-             ) LIMIT 1",
-            params![name],
+             ) WHERE owner_id <> ?2 LIMIT 1",
+            params![name, excluded_user_id],
             |row| row.get::<_, String>(0),
         )
         .optional()
@@ -593,7 +602,13 @@ fn save_ranked_user_in(
             .map_err(|error| format!("无法读取排名选项：{error}"))?
             .ok_or_else(|| "找不到要更新的排名选项".to_string())?;
         if !previous_name.eq_ignore_ascii_case(&name) {
-            ensure_name_available(&transaction, &name)?;
+            ensure_name_available_except(&transaction, &name, Some(id))?;
+            transaction
+                .execute(
+                    "DELETE FROM alias WHERE user_id = ?1 AND name = ?2 COLLATE NOCASE",
+                    params![id, name],
+                )
+                .map_err(|error| format!("无法更新本名对应的别名：{error}"))?;
         }
         for alias in aliases.iter().skip(1) {
             ensure_name_available(&transaction, alias)?;
@@ -1674,6 +1689,42 @@ mod tests {
         assert!(error.contains("已经被"));
         assert!(!error.to_ascii_lowercase().contains("constraint"));
         assert!(!error.to_ascii_lowercase().contains("unique"));
+    }
+
+    #[test]
+    fn canonical_name_can_take_an_alias_owned_by_the_same_user() {
+        let mut connection = test_database();
+        let user = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: None,
+                name: "甲".to_string(),
+                rank: Some(1),
+                aliases: vec!["小甲".to_string(), "甲同学".to_string()],
+            },
+        )
+        .expect("保存带别名的排名项");
+
+        let renamed = save_ranked_user_in(
+            &mut connection,
+            RankedUserInput {
+                id: Some(user.id),
+                name: "小甲".to_string(),
+                rank: Some(1),
+                aliases: vec![],
+            },
+        )
+        .expect("允许把自己的别名改成本名");
+
+        assert_eq!(renamed.name, "小甲");
+        assert_eq!(
+            renamed
+                .aliases
+                .iter()
+                .map(|alias| alias.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["小甲", "甲同学"]
+        );
     }
 
     #[test]

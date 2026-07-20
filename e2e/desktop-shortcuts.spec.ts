@@ -216,11 +216,26 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
   await aliasInput.press('Enter');
   await expect(page.locator('[data-rank-user-id="3"]')).toContainText('三号');
 
+  await page.keyboard.press('Enter');
+  await expect(nameInput).toBeFocused();
+  await nameInput.fill('三号');
+  await nameInput.press('Enter');
+  await expect(page.getByRole('button', { name: '三号', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.rankedUsers
+      .find((user: any) => user.id === 3)
+      .aliases.map((alias: any) => alias.name)
+  ))).toEqual(['三号']);
+
+  await page.keyboard.press('s');
+  await aliasInput.fill('备用');
+  await aliasInput.press('Enter');
+
   await page.keyboard.press('f');
   await expect(page.getByRole('alertdialog')).toBeVisible();
   await page.keyboard.press('y');
   await expect(page.getByRole('alertdialog')).toBeHidden();
-  await expect(page.locator('[data-rank-user-id="3"]')).not.toContainText('三号');
+  await expect(page.locator('[data-rank-user-id="3"]')).not.toContainText('备用');
 
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('[data-rank-user-id="4"]')).toHaveClass(/keyboard-selected/);
