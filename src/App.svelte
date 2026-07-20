@@ -28,12 +28,48 @@
   let drawSpinning = false;
   let continuousRunning = false;
   let fontScale = initialFontScale();
+  let removeCloseRequestedListener: (() => void) | null = null;
+  let appUnmounted = false;
+  let closingWindow = false;
 
   onMount(() => {
+    appUnmounted = false;
     syncRoute();
     window.addEventListener('hashchange', syncRoute);
-    return () => window.removeEventListener('hashchange', syncRoute);
+    if (desktopRuntime) void registerCloseRequestedListener();
+    return () => {
+      appUnmounted = true;
+      window.removeEventListener('hashchange', syncRoute);
+      removeCloseRequestedListener?.();
+      removeCloseRequestedListener = null;
+    };
   });
+
+  async function registerCloseRequestedListener() {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const currentWindow = getCurrentWindow();
+      const unlisten = await currentWindow.onCloseRequested(async (event) => {
+        const currentDrawPage = drawPage;
+        if (!currentDrawPage?.shouldHandleWindowClose()) return;
+        event.preventDefault();
+        if (closingWindow) return;
+
+        closingWindow = true;
+        try {
+          if (await currentDrawPage.prepareForWindowClose()) {
+            await currentWindow.destroy();
+          }
+        } finally {
+          closingWindow = false;
+        }
+      });
+      if (appUnmounted) unlisten();
+      else removeCloseRequestedListener = unlisten;
+    } catch (reason) {
+      console.error('无法监听窗口关闭事件', reason);
+    }
+  }
 
   function initialFontScale(): number {
     if (typeof window === 'undefined') return 1;

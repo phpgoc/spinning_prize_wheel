@@ -6,7 +6,11 @@
   import PrizeEditor from './PrizeEditor.svelte';
   import Wheel from './Wheel.svelte';
   import type { AppVariant } from './app-variant';
-  import { changeAutoSaveHistory } from './auto-save';
+  import {
+    changeAutoSaveHistory,
+    prepareAutoSaveClose,
+    shouldHandleAutoSaveClose,
+  } from './auto-save';
   import { applyCaimiSelectedWeights, caimiRouletteWeight } from './caimi';
   import {
     RETRY_ID,
@@ -485,6 +489,33 @@
       return false;
     } finally {
       drawHistorySaving = false;
+    }
+  }
+
+  export function shouldHandleWindowClose(): boolean {
+    return desktopRuntime && shouldHandleAutoSaveClose(
+      autoSaveHistory,
+      validCompleted,
+      isSpinning,
+      drawHistorySaving,
+    );
+  }
+
+  export async function prepareForWindowClose(): Promise<boolean> {
+    if (!desktopRuntime) return true;
+    return prepareAutoSaveClose({
+      enabled: () => autoSaveHistory,
+      effectiveResultCount: () => validCompleted,
+      stopContinuous: stopContinuousDraw,
+      waitForSpin: () => waitWhile(() => isSpinning),
+      waitForSaving: () => waitWhile(() => drawHistorySaving),
+      saveCurrent: archiveCurrentDrawHistory,
+    });
+  }
+
+  async function waitWhile(active: () => boolean): Promise<void> {
+    while (active()) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
     }
   }
 

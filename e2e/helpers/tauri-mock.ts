@@ -30,6 +30,8 @@ export async function installTauriMock(
 
     let nextAliasId = 1;
     let nextUserId = Math.max(0, ...users.map((user) => user.id)) + 1;
+    let nextCallbackId = 1;
+    const callbacks = new Map<number, (payload: unknown) => unknown>();
     const rankedUsers: RankedUser[] = users.map((user) => ({
       id: user.id,
       name: user.name,
@@ -46,6 +48,8 @@ export async function installTauriMock(
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
+      closeRequestedHandler: null as number | null,
+      windowDestroyed: false,
       invocations: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
     };
 
@@ -73,6 +77,18 @@ export async function installTauriMock(
 
     const invoke = async (cmd: string, args: Record<string, any> = {}) => {
       state.invocations.push({ cmd, args: clone(args) });
+      if (cmd === 'plugin:event|listen') {
+        if (args.event === 'tauri://close-requested') state.closeRequestedHandler = args.handler;
+        return 1;
+      }
+      if (cmd === 'plugin:event|unlisten') {
+        state.closeRequestedHandler = null;
+        return null;
+      }
+      if (cmd === 'plugin:window|destroy') {
+        state.windowDestroyed = true;
+        return null;
+      }
       if (cmd === 'list_common_selections') return clone(state.commonSelections);
       if (cmd === 'save_common_selection') {
         state.commonSelections.unshift(clone(args.selection));
@@ -212,10 +228,22 @@ export async function installTauriMock(
 
     const browserWindow = window as any;
     browserWindow.__E2E_TAURI_STATE__ = state;
+    browserWindow.__E2E_TAURI_CLOSE__ = async () => {
+      const handler = state.closeRequestedHandler === null
+        ? null
+        : callbacks.get(state.closeRequestedHandler);
+      if (!handler) throw new Error('Tauri 关闭监听尚未就绪');
+      await handler({ event: 'tauri://close-requested', id: 1, payload: null });
+    };
     browserWindow.__TAURI_INTERNALS__ = {
       invoke,
-      transformCallback: () => 1,
-      unregisterCallback: () => {},
+      metadata: { currentWindow: { label: 'main' } },
+      transformCallback: (callback: (payload: unknown) => unknown) => {
+        const id = nextCallbackId++;
+        callbacks.set(id, callback);
+        return id;
+      },
+      unregisterCallback: (id: number) => callbacks.delete(id),
     };
   }, { users: initialUsers, data: initialData });
 }

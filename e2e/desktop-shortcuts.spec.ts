@@ -14,6 +14,14 @@ async function confirmDesktopNames(page: Page, names: string[]) {
   await expect(page.locator('.preview-row')).toHaveCount(names.length);
 }
 
+async function importDrawCandidates(page: Page, names: string[]) {
+  await page.keyboard.press('w');
+  const textarea = page.locator('.import-box textarea');
+  await textarea.fill(names.join('\n'));
+  await textarea.press('Alt+Enter');
+  await expect(page.locator('[data-prize-id]')).toHaveCount(names.length);
+}
+
 async function dragToRatio(page: Page, source: Locator, target: Locator, ratio: number) {
   const sourceBox = await source.boundingBox();
   const targetBox = await target.boundingBox();
@@ -42,6 +50,34 @@ test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page 
   await textarea.press('s');
   await expect(textarea).toHaveValue('甲s');
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
+});
+
+test('开启自动保存后关闭窗口会等当前旋转结束并归档', async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto('/#/draw');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.closeRequestedHandler !== null
+  ))).toBe(true);
+  await importDrawCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
+  await page.locator('#duration').fill('1');
+  await page.getByRole('button', { name: '开启奢华转盘' }).click();
+
+  await page.evaluate(() => (window as any).__E2E_TAURI_CLOSE__());
+
+  const closeState = await page.evaluate(() => {
+    const state = (window as any).__E2E_TAURI_STATE__;
+    return {
+      destroyed: state.windowDestroyed,
+      histories: state.drawHistories,
+      commands: state.invocations.map((invocation: any) => invocation.cmd),
+    };
+  });
+  expect(closeState.destroyed).toBe(true);
+  expect(closeState.histories).toHaveLength(1);
+  expect(closeState.histories[0].records.some((record: any) => record.outcome === 'selected')).toBe(true);
+  expect(closeState.commands.lastIndexOf('save_draw_history'))
+    .toBeLessThan(closeState.commands.lastIndexOf('plugin:window|destroy'));
 });
 
 test('点击排名或按 A 选择第一项，添加输入框不抢焦点', async ({ page }) => {
