@@ -835,17 +835,28 @@
     userAliasInput = null;
   }
 
-  async function focusRankedUserAddition() {
-    if (desktopPanel !== 'ranking') await openDesktopPanel('ranking');
+  async function cancelRankedUserEdit() {
+    const userId = editingUserId;
+    resetUserForm();
+    await tick();
+    rankingFocusActive = true;
+    if (userId !== null && rankedUsers.some((user) => user.id === userId)) {
+      await selectRankedUser(userId);
+    }
+  }
+
+  function handleRankedUserEditCancel(event: KeyboardEvent) {
+    if (!isTextEditCancel(event)) return;
+    event.preventDefault();
+    void cancelRankedUserEdit();
+  }
+
+  async function focusRankingSelection() {
     cancelKeyboardRankMove();
     resetUserForm();
+    await openDesktopPanel('ranking');
     rankingFocusActive = true;
-    selectedRankedUserId = null;
-    rankedUserActionIndex = -1;
-    await tick();
-    const input = document.querySelector<HTMLInputElement>('.rank-person-form input');
-    input?.focus({ preventScroll: true });
-    input?.select();
+    if (rankedUsers.length > 0) await selectRankedUser(rankedUsers[0].id);
   }
 
   async function selectRankedUser(userId: number) {
@@ -1135,6 +1146,7 @@
     if (!userName.trim()) return;
     if (editingUserId !== null && editingRankField === 'aliases' && !userAliases.trim()) return;
     const keepAdding = editingUserId === null;
+    const editedUserId = editingUserId;
     rankingSaving = true;
     rankingError = '';
     let continueAdding = false;
@@ -1177,6 +1189,9 @@
         const input = document.querySelector<HTMLInputElement>('.rank-person-form input');
         input?.focus({ preventScroll: true });
         input?.select();
+      } else if (editedUserId !== null && rankedUsers.some((user) => user.id === editedUserId)) {
+        rankingFocusActive = true;
+        await selectRankedUser(editedUserId);
       }
     }
   }
@@ -1261,6 +1276,10 @@
       if (editingUserId === user.id) resetUserForm();
       await loadRankedUsers();
       await resolveNames();
+      rankingFocusActive = true;
+      if (rankedUsers.some((candidate) => candidate.id === user.id)) {
+        await selectRankedUser(user.id);
+      }
     } catch (reason) {
       rankingError = messageFrom(reason, '无法删除全部别名');
     } finally {
@@ -1387,7 +1406,7 @@
     if (!desktopRuntime) return;
     if (key === 'a') {
       event.preventDefault();
-      void focusRankedUserAddition();
+      void focusRankingSelection();
       return;
     }
     if (key === 'z') {
@@ -1560,14 +1579,14 @@
                             <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
                               <div>
                                 {#if editingRankField === 'name'}
-                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={handleRankedUserEditCancel} />
                                 {:else}
                                   <strong>{userName}</strong>
                                 {/if}
-                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
+                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={() => void cancelRankedUserEdit()}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={handleRankedUserEditCancel} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}
@@ -1621,14 +1640,14 @@
                             <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
                               <div>
                                 {#if editingRankField === 'name'}
-                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
+                                  <input bind:this={userNameInput} maxlength="80" required bind:value={userName} aria-label="修改名称" on:keydown|stopPropagation={handleRankedUserEditCancel} />
                                 {:else}
                                   <strong>{userName}</strong>
                                 {/if}
-                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={resetUserForm}>×</button></span>
+                                <span><button type="submit" aria-label="保存">✓</button><button type="button" aria-label="取消" on:click={() => void cancelRankedUserEdit()}>×</button></span>
                               </div>
                               {#if editingRankField === 'aliases'}
-                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={(event) => isTextEditCancel(event) && resetUserForm()} />
+                                <input bind:this={userAliasInput} bind:value={userAliases} maxlength="80" required aria-label="添加新别名" placeholder="输入新别名" on:keydown|stopPropagation={handleRankedUserEditCancel} />
                               {:else}
                                 <small>{otherAliasSummary(user)}</small>
                               {/if}

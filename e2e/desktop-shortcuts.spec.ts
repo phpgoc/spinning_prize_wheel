@@ -44,10 +44,22 @@ test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page 
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
 });
 
-test('A 连续添加排名，文本输入时单键不越过作用域', async ({ page }) => {
+test('点击排名或按 A 选择第一项，添加输入框不抢焦点', async ({ page }) => {
   await openDesktopLineup(page);
-  await page.keyboard.press('a');
+  const firstCard = page.locator('[data-rank-user-id="1"]');
+  const rankingToggle = page.locator('.desktop-accordion:first-child > .desktop-accordion-toggle');
   const addInput = page.locator('.rank-person-form input');
+
+  await rankingToggle.click();
+  await expect(firstCard).toBeFocused();
+  await expect(addInput).not.toBeFocused();
+
+  await rankingToggle.click();
+  await page.keyboard.press('a');
+  await expect(firstCard).toBeFocused();
+  await expect(addInput).not.toBeFocused();
+
+  await addInput.click();
   await expect(addInput).toBeFocused();
   await addInput.fill('戊');
   await addInput.press('Enter');
@@ -106,6 +118,24 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
   await expect(page.locator('[data-rank-user-id="4"]')).toHaveClass(/keyboard-selected/);
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
+});
+
+test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
+  await openDesktopLineup(page);
+  const thirdCard = page.locator('[data-rank-user-id="3"]');
+  await page.keyboard.press('3');
+
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('修改名称')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(thirdCard).toBeFocused();
+  await expect(thirdCard).toHaveClass(/keyboard-selected/);
+
+  await page.keyboard.press('s');
+  await expect(page.getByLabel('添加新别名')).toBeFocused();
+  await thirdCard.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(thirdCard).toBeFocused();
+  await expect(thirdCard).toHaveClass(/keyboard-selected/);
 });
 
 test('左右键遍历当前项操作，D 的确认框支持 N 取消和回车确认', async ({ page }) => {
