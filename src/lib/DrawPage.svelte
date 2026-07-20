@@ -344,10 +344,8 @@
   }
 
   async function openCommonSelectionSaver() {
-    if (isSpinning) return;
-    commonSelectionName = prizes.length === 0
-      ? '空名单'
-      : `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
+    if (isSpinning || prizes.length === 0) return;
+    commonSelectionName = `${prizes.slice(0, 2).map((prize) => prize.name).join('、')}${prizes.length > 2 ? `等 ${prizes.length} 项` : ''}`;
     commonSelectionSaveOpen = true;
     commonSelectionError = '';
     await tick();
@@ -356,7 +354,7 @@
 
   async function saveCurrentSelection() {
     const name = commonSelectionName.trim();
-    if (!name || commonSelectionSaving) return;
+    if (!name || prizes.length === 0 || commonSelectionSaving) return;
 
     const selection: CommonSelection = {
       version: 1,
@@ -2043,7 +2041,7 @@
           <button
             type="button"
             class="save-selection-trigger"
-            disabled={isSpinning}
+            disabled={isSpinning || prizes.length === 0}
             on:click={openCommonSelectionSaver}
           >
             <span>＋</span>
@@ -2062,7 +2060,7 @@
                   placeholder="例如：周五例会名单"
                   disabled={commonSelectionSaving}
                 />
-                <button type="submit" disabled={!commonSelectionName.trim() || commonSelectionSaving}>
+                <button type="submit" disabled={!commonSelectionName.trim() || prizes.length === 0 || commonSelectionSaving}>
                   {commonSelectionSaving ? '保存中' : '保存'}
                 </button>
                 <button
