@@ -155,7 +155,7 @@
   }
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
   $: hiddenLineupCellKeys = (() => {
-    if (!result || !desktopRuntime || !slowRevealEnabled || allLineupCellsRevealed) {
+    if (!result || !slowRevealEnabled || allLineupCellsRevealed) {
       return new Set<string>();
     }
     return new Set(result.tiers.flatMap((tier, tierIndex) => (
@@ -1849,9 +1849,7 @@
           <div class="rank-order-lock" role="status">还有未关联项，数据库排名分组暂不可用；可以使用输入顺序分组。</div>
         {/if}
 
-        {#if desktopRuntime}
-          <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>缓慢开启</span></label>
-        {/if}
+        <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
         <div class="lineup-actions">
           {#if desktopRuntime}
             <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>

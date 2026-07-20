@@ -91,3 +91,20 @@ test('X 只聚焦分组结果，不会在文本编辑时抢走按键', async ({ 
   await page.keyboard.press('x');
   await expect(page.locator('.lineup-result')).toBeFocused();
 });
+
+test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) => {
+  await confirmNames(page, ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']);
+
+  await expect(page.getByText('悬念揭晓', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '开始分组' }).click();
+
+  const resultRows = page.locator('.lineup-result tbody tr');
+  await expect(resultRows).toHaveCount(2);
+  await expect(resultRows.first().locator('.slow-reveal-cell')).toHaveCount(0);
+  await expect(resultRows.nth(1).locator('.slow-reveal-cell')).toHaveCount(4);
+
+  await resultRows.nth(1).locator('.slow-reveal-cell').first().click();
+  await expect(resultRows.nth(1).locator('.slow-reveal-cell')).toHaveCount(3);
+  await page.getByRole('button', { name: '显示全部' }).click();
+  await expect(page.locator('.slow-reveal-cell')).toHaveCount(0);
+});
