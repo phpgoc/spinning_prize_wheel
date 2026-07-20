@@ -1910,11 +1910,11 @@
         {/if}
 
         <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
-        <div class="lineup-actions">
+        <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
           {#if desktopRuntime}
-            <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列名单预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名排序预览</button>
-            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名分组' : '按排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按排名分组</span><i>→</i></button>
-            <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序分组</button>
+            <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列名单预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名顺序预览</button>
+            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名分组' : '按排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
+            <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
           {:else}
             <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
           {/if}
@@ -2725,14 +2725,25 @@
     margin-top: 13px;
   }
 
+  .lineup-actions.desktop-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
+  }
+
   .slow-reveal-setting {
     display: inline-flex;
+    min-height: 48px;
     align-items: center;
     gap: 7px;
     margin-top: 12px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.035);
     color: var(--lineup-muted-on-dark);
     cursor: pointer;
-    font-size: calc(11px * var(--font-scale, 1));
+    font-size: calc(13px * var(--font-scale, 1));
+    font-weight: 700;
   }
 
   .slow-reveal-setting input {
@@ -2742,38 +2753,46 @@
   }
 
   .lineup-actions .generate-button {
+    min-height: 48px;
     flex: 1;
     margin-top: 0;
   }
 
   .lineup-actions .rank-generate-button {
     width: auto;
-    flex: 1 1 0;
-    padding: 9px 12px;
-    font-size: calc(13px * var(--font-scale, 1));
+    padding: 10px 16px;
+    border: 1px solid #f1ff87;
+    background: linear-gradient(135deg, #f0ff78, #c7eb4e);
+    box-shadow: 0 8px 22px rgba(202, 235, 75, 0.22);
+    color: #1d2610;
+    font-size: calc(14px * var(--font-scale, 1));
   }
 
   .lineup-actions .rank-generate-button i {
-    margin-left: 14px;
-    font-size: calc(16px * var(--font-scale, 1));
+    margin-left: 12px;
+    color: #344514;
+    font-size: calc(17px * var(--font-scale, 1));
   }
 
   .rank-preview-button {
-    flex: 1 1 0;
-    padding: 9px 12px;
-    border: 1px solid rgba(211, 226, 126, 0.34);
+    min-height: 48px;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #b9efa0;
     border-radius: 11px;
-    background: linear-gradient(145deg, rgba(211, 226, 126, 0.13), rgba(211, 226, 126, 0.045));
-    color: #eef5c7;
+    background: linear-gradient(145deg, #b9ee9a, #86d779);
+    box-shadow: 0 6px 16px rgba(114, 201, 98, 0.17);
+    color: #173117;
     cursor: pointer;
-    font-size: calc(12px * var(--font-scale, 1));
+    font-size: calc(13px * var(--font-scale, 1));
     font-weight: 800;
   }
 
   .rank-preview-button:hover:not(:disabled) {
-    border-color: rgba(231, 255, 114, 0.58);
-    background: rgba(231, 255, 114, 0.14);
-    color: #f8ffd8;
+    border-color: #dcffbf;
+    background: linear-gradient(145deg, #cfffb2, #97e88a);
+    color: #102a11;
+    transform: translateY(-1px);
   }
 
   .lineup-actions .rank-preview-button:disabled,
@@ -2784,14 +2803,30 @@
   }
 
   .input-order-button {
+    min-height: 48px;
+    min-width: 0;
     padding: 10px 13px;
-    border: 1px solid rgba(231, 255, 114, 0.17);
+    border: 1px solid #8af1df;
     border-radius: 11px;
-    background: rgba(231, 255, 114, 0.05);
-    color: #e1eab0;
+    background: linear-gradient(145deg, #85ead6, #4fcbbc);
+    box-shadow: 0 6px 16px rgba(74, 203, 187, 0.18);
+    color: #102d2a;
     cursor: pointer;
-    font-size: calc(12px * var(--font-scale, 1));
-    font-weight: 700;
+    font-size: calc(13px * var(--font-scale, 1));
+    font-weight: 800;
+  }
+
+  .input-order-button:hover:not(:disabled) {
+    border-color: #c2fff4;
+    background: linear-gradient(145deg, #a0f5e5, #61dccb);
+    color: #082622;
+    transform: translateY(-1px);
+  }
+
+  .input-order-button:disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.8);
+    opacity: 0.32;
   }
 
   .lineup-sidebar {
@@ -3707,5 +3742,6 @@
     .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .lineup-actions { flex-direction: column; }
+    .lineup-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

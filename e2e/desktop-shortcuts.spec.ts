@@ -126,11 +126,11 @@ test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ 
   await expect(page.locator('.lineup-result')).toBeFocused();
 });
 
-test('按排名排序预览与按排名分组共用可用状态', async ({ page }) => {
+test('按排名顺序预览与按排名顺序分组共用可用状态', async ({ page }) => {
   await openDesktopLineup(page);
   await confirmDesktopNames(page, ['丙', '甲', '乙']);
-  const sortPreview = page.getByRole('button', { name: '按排名排序预览' });
-  const groupByRank = page.getByRole('button', { name: '按排名分组' });
+  const sortPreview = page.getByRole('button', { name: '按排名顺序预览' });
+  const groupByRank = page.getByRole('button', { name: '按排名顺序分组' });
   await expect(sortPreview).toBeEnabled();
   await expect(groupByRank).toBeEnabled();
 
