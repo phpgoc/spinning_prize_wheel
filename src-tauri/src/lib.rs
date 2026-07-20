@@ -8,7 +8,7 @@ use std::{
     sync::{Mutex, OnceLock},
     time::Duration,
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use time::OffsetDateTime;
 
 const UNRANKED_RANK: i64 = 10_000;
@@ -18,6 +18,11 @@ const SQL_LOG_FILE_NAME: &str = "sql.log";
 
 static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static SQL_TRACE_DEDUPLICATOR: OnceLock<Mutex<SqlTraceDeduplicator>> = OnceLock::new();
+
+#[derive(Default)]
+struct DatabaseState {
+    connection: Mutex<Option<Connection>>,
+}
 
 #[derive(Default)]
 struct SqlTraceDeduplicator {
@@ -193,7 +198,7 @@ fn valid_selection_id(id: &str) -> bool {
         })
 }
 
-fn app_database(app: &AppHandle) -> Result<Connection, String> {
+fn open_app_database(app: &AppHandle) -> Result<Connection, String> {
     let directory = app_database_dir(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建历史数据库目录：{error}"))?;
     let _ = SQL_LOG_PATH.set(directory.join(SQL_LOG_FILE_NAME));
@@ -207,6 +212,29 @@ fn app_database(app: &AppHandle) -> Result<Connection, String> {
         .map_err(|error| database_file_error(format!("无法配置本地数据库：{error}")))?;
     migrate_database(&mut connection).map_err(database_file_error)?;
     Ok(connection)
+}
+
+fn with_app_database<T>(
+    app: &AppHandle,
+    database: &DatabaseState,
+    operation: impl FnOnce(&mut Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    with_database_connection(database, || open_app_database(app), operation)
+}
+
+fn with_database_connection<T>(
+    database: &DatabaseState,
+    open: impl FnOnce() -> Result<Connection, String>,
+    operation: impl FnOnce(&mut Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut connection = database
+        .connection
+        .lock()
+        .map_err(|_| database_file_error("数据库连接状态异常".to_string()))?;
+    if connection.is_none() {
+        *connection = Some(open()?);
+    }
+    operation(connection.as_mut().expect("数据库连接已经初始化"))
 }
 
 fn log_sql_statement(sql: &str) {
@@ -872,9 +900,15 @@ fn save_draw_history_in(
 }
 
 #[tauri::command]
-fn save_draw_history(app: AppHandle, variant: String, draw: SavedDraw) -> Result<(), String> {
-    let connection = app_database(&app)?;
-    save_draw_history_in(&connection, &variant, &draw)
+fn save_draw_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    draw: SavedDraw,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        save_draw_history_in(connection, &variant, &draw)
+    })
 }
 
 fn list_draw_histories_in(
@@ -903,38 +937,54 @@ fn list_draw_histories_in(
 }
 
 #[tauri::command]
-fn list_draw_histories(app: AppHandle, variant: String) -> Result<Vec<SavedDraw>, String> {
-    let connection = app_database(&app)?;
-    list_draw_histories_in(&connection, &variant).map_err(database_file_error)
+fn list_draw_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<Vec<SavedDraw>, String> {
+    with_app_database(&app, &database, |connection| {
+        list_draw_histories_in(connection, &variant).map_err(database_file_error)
+    })
 }
 
 #[tauri::command]
-fn delete_draw_history(app: AppHandle, variant: String, id: String) -> Result<(), String> {
+fn delete_draw_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    id: String,
+) -> Result<(), String> {
     let variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("抽奖记录编号不合法".to_string());
     }
-    let connection = app_database(&app)?;
-    connection
-        .execute(
-            "DELETE FROM draw_history WHERE id = ?1 AND variant = ?2",
-            params![id, variant],
-        )
-        .map_err(|error| format!("无法删除抽奖记录：{error}"))?;
-    Ok(())
+    with_app_database(&app, &database, |connection| {
+        connection
+            .execute(
+                "DELETE FROM draw_history WHERE id = ?1 AND variant = ?2",
+                params![id, variant],
+            )
+            .map_err(|error| format!("无法删除抽奖记录：{error}"))?;
+        Ok(())
+    })
 }
 
 #[tauri::command]
-fn clear_draw_histories(app: AppHandle, variant: String) -> Result<(), String> {
+fn clear_draw_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<(), String> {
     let variant = validate_variant(&variant)?;
-    let connection = app_database(&app)?;
-    connection
-        .execute(
-            "DELETE FROM draw_history WHERE variant = ?1",
-            params![variant],
-        )
-        .map_err(|error| format!("无法清空抽奖历史：{error}"))?;
-    Ok(())
+    with_app_database(&app, &database, |connection| {
+        connection
+            .execute(
+                "DELETE FROM draw_history WHERE variant = ?1",
+                params![variant],
+            )
+            .map_err(|error| format!("无法清空抽奖历史：{error}"))?;
+        Ok(())
+    })
 }
 
 fn list_ranked_users_in(connection: &Connection) -> Result<Vec<RankedUser>, String> {
@@ -1059,79 +1109,104 @@ fn move_ranked_user_in(
 }
 
 #[tauri::command]
-fn save_ranked_user(app: AppHandle, user: RankedUserInput) -> Result<RankedUser, String> {
-    let mut connection = app_database(&app)?;
-    save_ranked_user_in(&mut connection, user)
+fn save_ranked_user(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    user: RankedUserInput,
+) -> Result<RankedUser, String> {
+    with_app_database(&app, &database, |connection| {
+        save_ranked_user_in(connection, user)
+    })
 }
 
 #[tauri::command]
 fn add_ranked_user_alias(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     user_id: i64,
     alias: String,
 ) -> Result<RankedUser, String> {
-    let connection = app_database(&app)?;
-    add_ranked_user_alias_in(&connection, user_id, alias)
+    with_app_database(&app, &database, |connection| {
+        add_ranked_user_alias_in(connection, user_id, alias)
+    })
 }
 
 #[tauri::command]
-fn clear_ranked_user_aliases(app: AppHandle, user_id: i64) -> Result<RankedUser, String> {
-    let connection = app_database(&app)?;
-    clear_ranked_user_aliases_in(&connection, user_id)
+fn clear_ranked_user_aliases(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    user_id: i64,
+) -> Result<RankedUser, String> {
+    with_app_database(&app, &database, |connection| {
+        clear_ranked_user_aliases_in(connection, user_id)
+    })
 }
 
 #[tauri::command]
 fn replace_ranked_users(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     users: Vec<RankedUserTransferInput>,
 ) -> Result<Vec<RankedUser>, String> {
-    let mut connection = app_database(&app)?;
-    replace_ranked_users_in(&mut connection, users)
+    with_app_database(&app, &database, |connection| {
+        replace_ranked_users_in(connection, users)
+    })
 }
 
 #[tauri::command]
-fn list_ranked_users(app: AppHandle) -> Result<Vec<RankedUser>, String> {
-    let connection = app_database(&app)?;
-    list_ranked_users_in(&connection).map_err(database_file_error)
+fn list_ranked_users(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+) -> Result<Vec<RankedUser>, String> {
+    with_app_database(&app, &database, |connection| {
+        list_ranked_users_in(connection).map_err(database_file_error)
+    })
 }
 
 #[tauri::command]
 fn move_ranked_user(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     dragged_id: i64,
     target: RankedUserDropTargetInput,
 ) -> Result<Vec<RankedUser>, String> {
-    let mut connection = app_database(&app)?;
-    move_ranked_user_in(&mut connection, dragged_id, target)
+    with_app_database(&app, &database, |connection| {
+        move_ranked_user_in(connection, dragged_id, target)
+    })
 }
 
 #[tauri::command]
-fn delete_ranked_user(app: AppHandle, id: i64) -> Result<(), String> {
-    let mut connection = app_database(&app)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("无法开始删除排名选项：{error}"))?;
-    let rank = transaction
-        .query_row("SELECT rank FROM user WHERE id = ?1", params![id], |row| {
-            row.get::<_, i64>(0)
-        })
-        .optional()
-        .map_err(|error| format!("无法读取排名选项：{error}"))?
-        .ok_or_else(|| "找不到要删除的排名选项".to_string())?;
-    transaction
-        .execute("DELETE FROM user WHERE id = ?1", params![id])
-        .map_err(|error| format!("无法删除排名选项：{error}"))?;
-    if rank < UNRANKED_RANK {
+fn delete_ranked_user(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    id: i64,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| format!("无法开始删除排名选项：{error}"))?;
+        let rank = transaction
+            .query_row("SELECT rank FROM user WHERE id = ?1", params![id], |row| {
+                row.get::<_, i64>(0)
+            })
+            .optional()
+            .map_err(|error| format!("无法读取排名选项：{error}"))?
+            .ok_or_else(|| "找不到要删除的排名选项".to_string())?;
         transaction
-            .execute(
-                "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
-                params![rank, UNRANKED_RANK],
-            )
-            .map_err(|error| format!("无法收拢选项排名：{error}"))?;
-    }
-    transaction
-        .commit()
-        .map_err(|error| format!("无法提交删除选项：{error}"))
+            .execute("DELETE FROM user WHERE id = ?1", params![id])
+            .map_err(|error| format!("无法删除排名选项：{error}"))?;
+        if rank < UNRANKED_RANK {
+            transaction
+                .execute(
+                    "UPDATE user SET rank = rank - 1 WHERE rank > ?1 AND rank < ?2",
+                    params![rank, UNRANKED_RANK],
+                )
+                .map_err(|error| format!("无法收拢选项排名：{error}"))?;
+        }
+        transaction
+            .commit()
+            .map_err(|error| format!("无法提交删除选项：{error}"))
+    })
 }
 
 fn resolve_lineup_names_in(
@@ -1182,10 +1257,12 @@ fn resolve_lineup_names_in(
 #[tauri::command]
 fn resolve_lineup_names(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     names: Vec<String>,
 ) -> Result<Vec<ResolvedLineupName>, String> {
-    let connection = app_database(&app)?;
-    resolve_lineup_names_in(&connection, names)
+    with_app_database(&app, &database, |connection| {
+        resolve_lineup_names_in(connection, names)
+    })
 }
 
 fn save_lineup_history_in(
@@ -1222,9 +1299,15 @@ fn save_lineup_history_in(
 }
 
 #[tauri::command]
-fn save_lineup_history(app: AppHandle, variant: String, lineup: SavedLineup) -> Result<(), String> {
-    let connection = app_database(&app)?;
-    save_lineup_history_in(&connection, &variant, &lineup)
+fn save_lineup_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    lineup: SavedLineup,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        save_lineup_history_in(connection, &variant, &lineup)
+    })
 }
 
 fn list_lineup_histories_in(
@@ -1266,9 +1349,14 @@ fn list_lineup_histories_in(
 }
 
 #[tauri::command]
-fn list_lineup_histories(app: AppHandle, variant: String) -> Result<Vec<SavedLineup>, String> {
-    let connection = app_database(&app)?;
-    list_lineup_histories_in(&connection, &variant).map_err(database_file_error)
+fn list_lineup_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<Vec<SavedLineup>, String> {
+    with_app_database(&app, &database, |connection| {
+        list_lineup_histories_in(connection, &variant).map_err(database_file_error)
+    })
 }
 
 fn import_lineup_histories_in(
@@ -1294,32 +1382,41 @@ fn import_lineup_histories_in(
 #[tauri::command]
 fn import_lineup_histories(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     variant: String,
     histories: Vec<SavedLineup>,
 ) -> Result<Vec<SavedLineup>, String> {
-    let mut connection = app_database(&app)?;
-    import_lineup_histories_in(&mut connection, &variant, histories)
+    with_app_database(&app, &database, |connection| {
+        import_lineup_histories_in(connection, &variant, histories)
+    })
 }
 
 #[tauri::command]
-fn delete_lineup_history(app: AppHandle, variant: String, id: String) -> Result<(), String> {
+fn delete_lineup_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    id: String,
+) -> Result<(), String> {
     let variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("分组记录编号不合法".to_string());
     }
-    let connection = app_database(&app)?;
-    connection
-        .execute(
-            "DELETE FROM lineup_history WHERE id = ?1 AND variant = ?2",
-            params![id, variant],
-        )
-        .map_err(|error| format!("无法删除分组记录：{error}"))?;
-    Ok(())
+    with_app_database(&app, &database, |connection| {
+        connection
+            .execute(
+                "DELETE FROM lineup_history WHERE id = ?1 AND variant = ?2",
+                params![id, variant],
+            )
+            .map_err(|error| format!("无法删除分组记录：{error}"))?;
+        Ok(())
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(DatabaseState::default())
         .invoke_handler(tauri::generate_handler![
             save_common_selection,
             list_common_selections,
@@ -1427,6 +1524,49 @@ mod tests {
         assert!(!deduplicator.should_skip("SELECT id FROM user"));
         assert!(!deduplicator.should_skip("DELETE FROM user"));
         assert!(!deduplicator.should_skip("DELETE FROM user WHERE id = 1"));
+    }
+
+    #[test]
+    fn database_state_reuses_one_connection() {
+        let database = DatabaseState::default();
+        let open_count = std::cell::Cell::new(0);
+
+        with_database_connection(
+            &database,
+            || {
+                open_count.set(open_count.get() + 1);
+                Connection::open_in_memory().map_err(|error| error.to_string())
+            },
+            |connection| {
+                connection
+                    .execute("CREATE TABLE shared_state (value INTEGER NOT NULL)", [])
+                    .map_err(|error| error.to_string())?;
+                connection
+                    .execute("INSERT INTO shared_state (value) VALUES (7)", [])
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            },
+        )
+        .expect("首次使用数据库");
+
+        let value = with_database_connection(
+            &database,
+            || {
+                open_count.set(open_count.get() + 1);
+                Connection::open_in_memory().map_err(|error| error.to_string())
+            },
+            |connection| {
+                connection
+                    .query_row("SELECT value FROM shared_state", [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .map_err(|error| error.to_string())
+            },
+        )
+        .expect("再次使用数据库");
+
+        assert_eq!(value, 7);
+        assert_eq!(open_count.get(), 1);
     }
 
     #[test]
