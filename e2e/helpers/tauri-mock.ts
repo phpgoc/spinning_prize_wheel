@@ -7,6 +7,11 @@ export interface MockRankedUserInput {
   aliases?: string[];
 }
 
+export interface MockTauriInitialData {
+  drawHistories?: unknown[];
+  lineupHistories?: unknown[];
+}
+
 export const DEFAULT_RANKED_USERS: MockRankedUserInput[] = [
   { id: 1, name: '甲', rank: 1, aliases: ['甲', '甲别名'] },
   { id: 2, name: '乙', rank: 2, aliases: ['乙'] },
@@ -17,8 +22,9 @@ export const DEFAULT_RANKED_USERS: MockRankedUserInput[] = [
 export async function installTauriMock(
   page: Page,
   initialUsers: MockRankedUserInput[] = DEFAULT_RANKED_USERS,
+  initialData: MockTauriInitialData = {},
 ) {
-  await page.addInitScript(({ users }) => {
+  await page.addInitScript(({ users, data }) => {
     type AliasRecord = { id: number; name: string; userId: number };
     type RankedUser = { id: number; name: string; rank: number; aliases: AliasRecord[] };
 
@@ -38,8 +44,8 @@ export async function installTauriMock(
     const state = {
       rankedUsers,
       commonSelections: [] as unknown[],
-      drawHistories: [] as unknown[],
-      lineupHistories: [] as unknown[],
+      drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
+      lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
       invocations: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
     };
 
@@ -188,6 +194,14 @@ export async function installTauriMock(
         state.lineupHistories = [...clone(args.histories), ...state.lineupHistories];
         return clone(state.lineupHistories);
       }
+      if (cmd === 'delete_lineup_history') {
+        state.lineupHistories = state.lineupHistories.filter((item: any) => item.id !== args.id);
+        return null;
+      }
+      if (cmd === 'clear_lineup_histories') {
+        state.lineupHistories = [];
+        return null;
+      }
       if (cmd === 'open_database_folder') return null;
       if (cmd === 'export_text_file') return 'E2E/导出文件';
       throw new Error(`E2E Tauri mock 未实现命令：${cmd}`);
@@ -200,7 +214,7 @@ export async function installTauriMock(
       transformCallback: () => 1,
       unregisterCallback: () => {},
     };
-  }, { users: initialUsers });
+  }, { users: initialUsers, data: initialData });
 }
 
 export async function mockedRankedNames(page: Page): Promise<string[]> {

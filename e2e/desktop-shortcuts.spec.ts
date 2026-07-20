@@ -90,6 +90,53 @@ test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ 
   await expect(page.locator('.lineup-result')).toBeFocused();
 });
 
+test('抽奖和分组的删除全部历史都需要二次确认', async ({ page }) => {
+  const createdAt = new Date(2026, 6, 20, 12).getTime();
+  const drawHistory = {
+    version: 1,
+    id: 'draw-1',
+    createdAt,
+    mode: 'selected',
+    rewardAmount: 0,
+    prizes: [{ id: 'p-1', name: '甲', weight: 1, color: '#111111', enabled: true }],
+    records: [],
+  };
+  const lineupHistories = [1, 2].map((index) => ({
+    id: `lineup-${index}`,
+    createdAt: createdAt + index,
+    input: { sourceNames: ['甲', '乙'], groupCount: 2, orderMode: 'input' },
+    result: { groupNames: ['A', 'B'], tiers: [[{ name: '甲' }, { name: '乙' }]] },
+  }));
+  await installTauriMock(page, undefined, {
+    drawHistories: [drawHistory],
+    lineupHistories,
+  });
+
+  await page.goto('/#/draw');
+  await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
+  await page.getByRole('button', { name: '清空历史' }).click();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '真的清空全部抽奖历史？' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.drawHistories.length)).toBe(1);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.drawHistories.length)).toBe(0);
+
+  await page.goto('/#/lineup');
+  await page.getByRole('button', { name: /分组历史/u }).click();
+  await page.getByRole('button', { name: /删除 .* 的分组历史/u }).first().click();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);
+
+  await page.getByRole('button', { name: '删除全部', exact: true }).click();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '真的删除全部分组历史？' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(0);
+});
+
 test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名', async ({ page }) => {
   await openDesktopLineup(page);
   await page.keyboard.press('3');

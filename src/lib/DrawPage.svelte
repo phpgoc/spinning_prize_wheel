@@ -95,6 +95,9 @@
   type SidebarPanel = 'settings' | 'common' | 'batch' | 'history' | 'shortcuts';
   type DrawSidePanel = 'candidates' | 'statistics';
   type ConfirmableNumberField = 'limit' | 'interval' | 'reward';
+  type DrawHistoryDeletion =
+    | { kind: 'one'; draw: SavedDraw }
+    | { kind: 'all'; confirmation: 1 | 2 };
 
   let prizes = defaultPrizes.map((prize) => ({ ...prize }));
   export let mode: DrawMode = 'selected';
@@ -133,7 +136,7 @@
   let drawHistoryStart = '';
   let drawHistoryEnd = '';
   let autoSaveHistory = true;
-  let pendingDrawHistoryDeletion: { kind: 'one'; draw: SavedDraw } | { kind: 'all' } | null = null;
+  let pendingDrawHistoryDeletion: DrawHistoryDeletion | null = null;
   let continuousTarget = 0;
   let continuousIntervalSeconds = 3;
   let numberBeforeEdit: Record<ConfirmableNumberField, number> = {
@@ -563,12 +566,18 @@
   }
 
   function requestClearDrawHistories() {
-    if (drawHistories.length > 0) pendingDrawHistoryDeletion = { kind: 'all' };
+    if (drawHistories.length > 0) {
+      pendingDrawHistoryDeletion = { kind: 'all', confirmation: 1 };
+    }
   }
 
   async function confirmDrawHistoryDeletion() {
     const pending = pendingDrawHistoryDeletion;
     if (!desktopRuntime || !pending || drawHistoryDeleting) return;
+    if (pending.kind === 'all' && pending.confirmation === 1) {
+      pendingDrawHistoryDeletion = { kind: 'all', confirmation: 2 };
+      return;
+    }
     drawHistoryDeleting = true;
     if (pending.kind === 'one') await deleteDrawHistory(pending.draw);
     else await clearDrawHistories();
@@ -2569,8 +2578,14 @@
     <div class="draw-confirm-backdrop">
       <div class="draw-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="draw-confirm-title" aria-describedby="draw-confirm-detail">
         <span class="draw-confirm-icon">!</span>
-        <h2 id="draw-confirm-title">{pendingDrawHistoryDeletion.kind === 'all' ? '清空全部抽奖历史？' : '删除这条抽奖历史？'}</h2>
-        <p id="draw-confirm-detail">删除后无法恢复。</p>
+        <h2 id="draw-confirm-title">{pendingDrawHistoryDeletion.kind === 'one'
+          ? '删除这条抽奖历史？'
+          : pendingDrawHistoryDeletion.confirmation === 1
+            ? '清空全部抽奖历史？'
+            : '真的清空全部抽奖历史？'}</h2>
+        <p id="draw-confirm-detail">{pendingDrawHistoryDeletion.kind === 'all' && pendingDrawHistoryDeletion.confirmation === 1
+          ? '全部抽奖历史都会删除。'
+          : '删除后无法恢复。'}</p>
         <div>
           <button type="button" disabled={drawHistoryDeleting} on:click={() => (pendingDrawHistoryDeletion = null)}><span>取消</span></button>
           <button type="button" class="confirm-delete" disabled={drawHistoryDeleting} on:click={confirmDrawHistoryDeletion}><span>{drawHistoryDeleting ? '删除中…' : '确认'}</span></button>

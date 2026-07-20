@@ -44,6 +44,9 @@
 
   type LineupOrderMode = 'rank' | 'input';
   type DesktopPanel = 'ranking' | 'history';
+  type LineupHistoryDeletion =
+    | { kind: 'one'; history: SavedLineup }
+    | { kind: 'all'; confirmation: 1 | 2 };
 
   let sourceText = '';
   let confirmedSourceText = '';
@@ -106,6 +109,8 @@
   let historyImportStatus = '';
   let historyStart = '';
   let historyEnd = '';
+  let pendingLineupHistoryDeletion: LineupHistoryDeletion | null = null;
+  let historyDeleting = false;
   let insertIndex: number | null = null;
   let insertName = '';
   let insertError = '';
@@ -451,6 +456,44 @@
       historyError = messageFrom(reason, '无法读取分组历史');
     } finally {
       historyLoading = false;
+    }
+  }
+
+  function requestDeleteLineupHistory(history: SavedLineup) {
+    pendingLineupHistoryDeletion = { kind: 'one', history };
+  }
+
+  function requestClearLineupHistories() {
+    if (lineupHistories.length > 0) {
+      pendingLineupHistoryDeletion = { kind: 'all', confirmation: 1 };
+    }
+  }
+
+  async function confirmLineupHistoryDeletion() {
+    const pending = pendingLineupHistoryDeletion;
+    if (!desktopRuntime || !pending || historyDeleting) return;
+    if (pending.kind === 'all' && pending.confirmation === 1) {
+      pendingLineupHistoryDeletion = { kind: 'all', confirmation: 2 };
+      return;
+    }
+
+    historyDeleting = true;
+    historyError = '';
+    historyImportStatus = '';
+    try {
+      if (pending.kind === 'one') {
+        await invoke('delete_lineup_history', { variant, id: pending.history.id });
+        lineupHistories = lineupHistories.filter((history) => history.id !== pending.history.id);
+      } else {
+        await invoke('clear_lineup_histories', { variant });
+        lineupHistories = [];
+      }
+      pendingLineupHistoryDeletion = null;
+    } catch (reason) {
+      historyError = messageFrom(reason, pending.kind === 'one' ? '无法删除分组历史' : '无法清空分组历史');
+      pendingLineupHistoryDeletion = null;
+    } finally {
+      historyDeleting = false;
     }
   }
 
@@ -1318,6 +1361,17 @@
       return;
     }
 
+    if (pendingLineupHistoryDeletion) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        pendingLineupHistoryDeletion = null;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        void confirmLineupHistoryDeletion();
+      }
+      return;
+    }
+
     if (pendingRankingImport) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -1724,6 +1778,13 @@
                       <div class="history-item-actions">
                         <button type="button" on:click={() => exportLineupHistoryCsv(history)}>CSV</button>
                         <button type="button" on:click={() => exportLineupHistoryJson(history)}>JSON</button>
+                        <button
+                          type="button"
+                          class="history-delete"
+                          aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的分组历史`}
+                          disabled={historyDeleting}
+                          on:click={() => requestDeleteLineupHistory(history)}
+                        >删除</button>
                       </div>
                     </article>
                   {/each}
@@ -1732,6 +1793,7 @@
               <div class="history-export-actions">
                 <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 CSV/JSON'}</button>
                 <button type="button" on:click={() => openLineupDatabaseFolder('history')}>打开文件夹</button>
+                <button type="button" class="history-delete-all" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</button>
               </div>
               {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
             </div>
@@ -1933,6 +1995,26 @@
 {#if draggingUserId !== null}
   <div class="rank-drag-ghost" style={`left: ${rankDragX}px; top: ${rankDragY}px;`} aria-hidden="true">
     {rankedUsers.find((user) => user.id === draggingUserId)?.name ?? '选项'}
+  </div>
+{/if}
+
+{#if pendingLineupHistoryDeletion}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-lineup-history-title" aria-describedby="delete-lineup-history-detail" tabindex="-1">
+      <span class="delete-confirm-icon">×</span>
+      <h2 id="delete-lineup-history-title">{pendingLineupHistoryDeletion.kind === 'one'
+        ? '删除这条分组历史？'
+        : pendingLineupHistoryDeletion.confirmation === 1
+          ? '删除全部分组历史？'
+          : '真的删除全部分组历史？'}</h2>
+      <p id="delete-lineup-history-detail">{pendingLineupHistoryDeletion.kind === 'all' && pendingLineupHistoryDeletion.confirmation === 1
+        ? '全部分组历史都会删除。'
+        : '删除后无法恢复。'}</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={historyDeleting} on:click={() => (pendingLineupHistoryDeletion = null)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={historyDeleting} on:click={confirmLineupHistoryDeletion}><span>{historyDeleting ? '删除中…' : '确认'}</span></button>
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -3444,6 +3526,20 @@
     cursor: pointer;
     font-size: calc(9px * var(--font-scale, 1));
     font-weight: 750;
+  }
+
+  .history-item-actions .history-delete,
+  .history-export-actions .history-delete-all {
+    border-color: rgba(156, 64, 52, 0.34);
+    background: #fae9e5;
+    color: #8b3429;
+  }
+
+  .history-item-actions .history-delete:hover:not(:disabled),
+  .history-export-actions .history-delete-all:hover:not(:disabled) {
+    border-color: #b85243;
+    background: #f5d4cd;
+    color: #681f17;
   }
 
   .lineup-history-list span { color: var(--lineup-dim-on-light); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }

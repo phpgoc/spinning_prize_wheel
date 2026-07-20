@@ -1413,6 +1413,28 @@ fn delete_lineup_history(
     })
 }
 
+fn clear_lineup_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    connection
+        .execute(
+            "DELETE FROM lineup_history WHERE variant = ?1",
+            params![variant],
+        )
+        .map_err(|error| format!("无法清空分组历史：{error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_lineup_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        clear_lineup_histories_in(connection, &variant)
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1437,6 +1459,7 @@ pub fn run() {
             list_lineup_histories,
             import_lineup_histories,
             delete_lineup_history,
+            clear_lineup_histories,
             open_database_folder,
             export_text_file
         ])
@@ -1846,6 +1869,17 @@ mod tests {
         assert_eq!(histories[0].result, lineup.result);
         assert_eq!(caimi_histories.len(), 1);
         assert_eq!(caimi_histories[0].id, caimi_lineup.id);
+
+        clear_lineup_histories_in(&connection, "standard").expect("清空普通版分组历史");
+        assert!(list_lineup_histories_in(&connection, "standard")
+            .expect("读取已清空的普通版分组历史")
+            .is_empty());
+        assert_eq!(
+            list_lineup_histories_in(&connection, "caimi")
+                .expect("读取保留的猜蜜版分组历史")
+                .len(),
+            1
+        );
     }
 
     #[test]
