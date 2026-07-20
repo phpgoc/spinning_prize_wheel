@@ -248,6 +248,17 @@
     await commitSourceNames(parseOptionText(sourceText));
   }
 
+  async function sortPreviewByRank() {
+    if (!canGenerateByRank) return;
+    cancelPreviewMove();
+    cancelPreviewInsertion();
+    try {
+      await commitSourceNames(orderResolvedLineupNames(resolvedNames));
+    } catch (reason) {
+      error = messageFrom(reason, '无法按排名排序名单预览');
+    }
+  }
+
   function orderedNamesForLineup(orderMode: LineupOrderMode): string[] {
     if (!desktopRuntime) return names;
     if (orderMode === 'input') {
@@ -754,7 +765,7 @@
   function historySummary(history: SavedLineup): string {
     const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number; orderMode: LineupOrderMode }>;
     const peopleCount = Array.isArray(input.sourceNames) ? input.sourceNames.length : 0;
-    const mode = input.orderMode === 'input' ? '输入顺序' : '数据库排名';
+    const mode = input.orderMode === 'input' ? '输入顺序' : '排名';
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
@@ -1833,7 +1844,7 @@
                   on:focus={() => (previewKeyboardIndex = index)}
                   on:keydown={(event) => handlePreviewPositionKeydown(event, index)}
                 >{String(index + 1).padStart(2, '0')}</button>
-                <div>
+                <div class="preview-name">
                   <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
                   {#if desktopRuntime}
                     <small>{resolvingNames
@@ -1895,14 +1906,15 @@
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
         {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
-          <div class="rank-order-lock" role="status">还有未关联项，数据库排名分组暂不可用；可以使用输入顺序分组。</div>
+          <div class="rank-order-lock" role="status">还有未关联项，按排名操作暂不可用；可以使用输入顺序分组。</div>
         {/if}
 
         <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
         <div class="lineup-actions">
           {#if desktopRuntime}
-            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按数据库排名分组' : '按数据库排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按数据库排名分组</span><i>→</i></button>
-            <button type="button" class="input-order-button" title="忽略数据库排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序分组</button>
+            <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列名单预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名排序预览</button>
+            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名分组' : '按排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按排名分组</span><i>→</i></button>
+            <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>仅按输入顺序分组</button>
           {:else}
             <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
           {/if}
@@ -1911,7 +1923,7 @@
 
       <div bind:this={lineupResultElement} class="lineup-result" tabindex="-1">
         <div class="result-heading">
-          <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '数据库排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
+          <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
               {#if hiddenLineupCellCount > 0}
@@ -2453,13 +2465,17 @@
     position: relative;
     display: grid;
     min-width: 0;
-    grid-template-columns: 22px 25px minmax(0, 1fr) auto 22px;
+    min-height: 66px;
+    grid-template-columns: 24px 29px minmax(0, 1fr) auto 24px;
     align-items: center;
     gap: 6px;
-    padding: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.035);
+    padding: 9px 10px;
+    border: 1px solid rgba(231, 255, 114, 0.13);
+    border-radius: 11px;
+    background:
+      linear-gradient(100deg, rgba(231, 255, 114, 0.065), transparent 54%),
+      rgba(255, 255, 255, 0.035);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   }
 
   .preview-row.unknown {
@@ -2504,6 +2520,15 @@
 
   .preview-row > div { min-width: 0; }
 
+  .preview-row > .preview-name {
+    display: grid;
+    min-height: 46px;
+    align-content: center;
+    justify-items: stretch;
+    padding: 0 8px;
+    text-align: center;
+  }
+
   .preview-row input {
     width: 100%;
     min-width: 0;
@@ -2511,10 +2536,19 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: #f4f1e8;
+    color: #fffbea;
     font-family: var(--font-sans);
-    font-size: calc(13px * var(--font-scale, 1));
-    font-weight: 750;
+    font-size: calc(18px * var(--font-scale, 1));
+    font-weight: 900;
+    letter-spacing: 0.025em;
+    text-align: center;
+    text-shadow: 0 2px 12px rgba(231, 255, 114, 0.14);
+  }
+
+  .preview-row input:focus {
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.055);
+    box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.2);
   }
 
   .preview-row small {
@@ -2522,7 +2556,7 @@
     overflow: hidden;
     margin-top: 3px;
     color: var(--lineup-muted-on-dark);
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(9px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -2714,7 +2748,7 @@
 
   .lineup-actions .rank-generate-button {
     width: auto;
-    flex: 0 1 auto;
+    flex: 1 1 0;
     padding: 9px 12px;
     font-size: calc(13px * var(--font-scale, 1));
   }
@@ -2722,6 +2756,31 @@
   .lineup-actions .rank-generate-button i {
     margin-left: 14px;
     font-size: calc(16px * var(--font-scale, 1));
+  }
+
+  .rank-preview-button {
+    flex: 1 1 0;
+    padding: 9px 12px;
+    border: 1px solid rgba(211, 226, 126, 0.34);
+    border-radius: 11px;
+    background: linear-gradient(145deg, rgba(211, 226, 126, 0.13), rgba(211, 226, 126, 0.045));
+    color: #eef5c7;
+    cursor: pointer;
+    font-size: calc(12px * var(--font-scale, 1));
+    font-weight: 800;
+  }
+
+  .rank-preview-button:hover:not(:disabled) {
+    border-color: rgba(231, 255, 114, 0.58);
+    background: rgba(231, 255, 114, 0.14);
+    color: #f8ffd8;
+  }
+
+  .lineup-actions .rank-preview-button:disabled,
+  .lineup-actions .rank-generate-button:disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.8);
+    opacity: 0.32;
   }
 
   .input-order-button {
