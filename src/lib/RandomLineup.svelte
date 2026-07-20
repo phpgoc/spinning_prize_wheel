@@ -2888,7 +2888,7 @@
     flex: 1;
     align-content: start;
     margin-top: 4px;
-    padding-right: 3px;
+    padding: 9px 3px 13px 0;
     overflow-y: auto;
   }
 
@@ -2980,7 +2980,8 @@
     touch-action: none;
     user-select: none;
     box-shadow: 0 9px 24px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.9);
-    transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease;
+    transform: translate3d(0, 0, 0);
+    transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease, transform 120ms ease;
   }
 
   .ranked-user-list article:active { cursor: grabbing; }
@@ -2991,12 +2992,29 @@
   }
 
   .ranked-user-list article.keyboard-selected {
-    outline: 3px solid rgba(223, 246, 108, 0.82);
-    outline-offset: 2px;
+    z-index: 3;
+    border-color: #1fbbe5;
+    outline: 4px solid #55dcff;
+    outline-offset: 3px;
     background:
-      radial-gradient(circle at 96% 0%, rgba(247, 214, 109, 0.28), transparent 31%),
-      linear-gradient(135deg, #fffef7, #eef3c9);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), 0 0 24px rgba(223, 246, 108, 0.18);
+      radial-gradient(circle at 96% 0%, rgba(85, 220, 255, 0.38), transparent 34%),
+      linear-gradient(135deg, #ffffff, #dff8ff);
+    box-shadow:
+      0 6px 0 #087a99,
+      0 18px 34px rgba(0, 0, 0, 0.48),
+      0 0 30px rgba(85, 220, 255, 0.52),
+      inset 0 1px rgba(255, 255, 255, 0.95);
+    transform: translate3d(0, -5px, 0);
+  }
+
+  .ranked-user-list article.keyboard-selected .rank-number {
+    border-color: #b8f4ff;
+    background: linear-gradient(145deg, #087e9f, #053b50);
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.24),
+      0 6px 0 #032b3a,
+      0 10px 18px rgba(4, 64, 84, 0.35);
   }
 
   .ranked-user-list article.insert-before {
