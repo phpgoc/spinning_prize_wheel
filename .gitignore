@@ -16,6 +16,7 @@ coverage/
 *.tsbuildinfo
 bun.lockb
 /src-tauri/binaries/*.exe
+/src-tauri/tauri.e2e-*.conf.json
 
 # Environment and local configuration
 .env

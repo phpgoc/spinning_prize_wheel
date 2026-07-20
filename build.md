@@ -185,10 +185,13 @@ src-tauri\target\release\bundle\nsis\转盘-0.1.0-setup.exe
 
 ```powershell
 bun run check
-bun test
-bun run test:e2e
+bun run test
+bun run test:e2e:web
+bun run test:e2e:tauri
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+`test:e2e:web` 会启动本地网页并测试四个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
 任意一条命令失败时，应先处理错误再发布产物。
 
