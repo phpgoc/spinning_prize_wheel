@@ -1924,13 +1924,13 @@
           class="range-input"
           type="range"
           min="0.5"
-          max="30"
+          max="10"
           step="0.5"
           bind:value={staySeconds}
           disabled={isSpinning}
-          style={`--range-progress: ${((staySeconds - 0.5) / 29.5) * 100}%`}
+          style={`--range-progress: ${((staySeconds - 0.5) / 9.5) * 100}%`}
         />
-        <div class="range-labels"><span>0.5 秒</span><span>30 秒</span></div>
+        <div class="range-labels"><span>0.5 秒</span><span>10 秒</span></div>
       </section>
 
       <div class="section-divider"></div>

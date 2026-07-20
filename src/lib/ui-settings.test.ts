@@ -38,7 +38,7 @@ describe('界面字号设置', () => {
     expect(positiveNumberOrFallback('oops', 0.65)).toBe(0.65);
   });
 
-  test('停留时间使用默认值并限制在半秒到三十秒', () => {
+  test('停留时间使用默认值并限制在半秒到十秒', () => {
     expect(normalizeStaySeconds(undefined)).toBe(DEFAULT_STAY_SECONDS);
     expect(normalizeStaySeconds(0)).toBe(MIN_STAY_SECONDS);
     expect(normalizeStaySeconds(60)).toBe(MAX_STAY_SECONDS);

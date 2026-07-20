@@ -3,7 +3,7 @@ export const MIN_FONT_SCALE = 1;
 export const MAX_FONT_SCALE = 3;
 export const DEFAULT_STAY_SECONDS = 3;
 export const MIN_STAY_SECONDS = 0.5;
-export const MAX_STAY_SECONDS = 30;
+export const MAX_STAY_SECONDS = 10;
 
 /** 把持久化或输入的字号倍率限制在界面支持范围内。 */
 export function normalizeFontScale(value: unknown): number {
