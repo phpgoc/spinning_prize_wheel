@@ -10,7 +10,6 @@
   export let onNavigatePage: (page: AppPage) => void;
   export let onNavigateVariant: (variant: AppVariant) => void;
   export let onModeChange: (mode: DrawMode) => void;
-  export let onResetDraw: () => void;
 </script>
 
 <header class="topbar">
@@ -61,7 +60,6 @@
           俄罗斯轮盘
         </button>
       </div>
-      <button type="button" class="icon-button" title="恢复默认设置" on:click={onResetDraw}>↺</button>
     {/if}
   </div>
 </header>

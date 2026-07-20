@@ -71,10 +71,6 @@
     drawPage?.setMode(mode);
   }
 
-  function resetDraw() {
-    drawPage?.resetSettings();
-  }
-
   function saveFontScale() {
     try {
       const saved = JSON.parse(
@@ -129,7 +125,6 @@
     onNavigatePage={navigatePage}
     onNavigateVariant={navigateVariant}
     onModeChange={changeDrawMode}
-    onResetDraw={resetDraw}
   />
 
   {#if variant === 'caimi'}

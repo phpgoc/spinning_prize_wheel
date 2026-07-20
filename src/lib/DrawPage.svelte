@@ -1472,30 +1472,6 @@
     void startNewDraw();
   }
 
-  export function resetSettings() {
-    if (guardCandidateChanges()) return;
-    const preserveRewardAmount = rewardAmountIsLocked();
-    prizes = defaultPrizes.map((prize) => ({ ...prize }));
-    selectedPrizeId = null;
-    animationStyle = 'luxury';
-    durationSeconds = 4;
-    if (!preserveRewardAmount) rewardAmount = 0;
-    retryEnabled = true;
-    retryWeight = 0.65;
-    continuousTarget = 0;
-    fontScale = DEFAULT_FONT_SCALE;
-    rouletteHits = {};
-    rouletteFinished = false;
-    result = {
-      eyebrow: '设置已还原',
-      title: '回到默认幸运池',
-      detail: preserveRewardAmount
-        ? '候选项、动画和重来权重已经恢复；当前奖励金额保持不变。'
-        : '候选项、奖励金额、动画和重来权重已经恢复。',
-      tone: 'idle',
-    };
-  }
-
   async function openImporter() {
     if (guardCandidateChanges()) return;
     exitCandidateKeyboard();

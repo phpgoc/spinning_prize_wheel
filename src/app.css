@@ -469,18 +469,6 @@ button:not(:disabled):active { filter: brightness(0.94); }
   gap: 10px;
 }
 
-.icon-button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 50%;
-  background: transparent;
-  color: #c7c9bd;
-  cursor: pointer;
-  place-items: center;
-}
-
 .workspace {
   display: grid;
   grid-template-columns: minmax(290px, 330px) minmax(520px, 1fr) minmax(310px, 360px);

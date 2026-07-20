@@ -18,6 +18,7 @@ test('发布版默认不再带示例候选', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '候选' })).toBeVisible();
   await expect(page.getByRole('button', { name: '＋ 添加候选' })).toBeVisible();
   await expect(page.locator('.candidate-board').getByRole('button', { name: '清空', exact: true })).toHaveCount(0);
+  await expect(page.locator('button[title="恢复默认设置"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '开启奢华转盘' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '＋ 保存为常用候选' })).toBeDisabled();
 });
