@@ -375,6 +375,39 @@ fn open_database_folder(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_download_folder(app: AppHandle) -> Result<(), String> {
+    let directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| format!("无法定位下载目录：{error}"))?;
+    fs::create_dir_all(&directory).map_err(|error| format!("无法创建下载目录：{error}"))?;
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer.exe");
+        command.arg(&directory);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(&directory);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(&directory);
+        command
+    };
+
+    command
+        .spawn()
+        .map_err(|error| format!("无法打开下载文件夹：{error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn export_text_file(
     app: AppHandle,
     prefix: String,
@@ -1468,6 +1501,7 @@ pub fn run() {
             delete_lineup_history,
             clear_lineup_histories,
             open_database_folder,
+            open_download_folder,
             export_text_file
         ])
         .run(tauri::generate_context!())

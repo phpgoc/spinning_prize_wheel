@@ -706,10 +706,10 @@
     return message && message !== '[object Object]' ? message : fallback;
   }
 
-  async function openDrawDatabaseFolder() {
+  async function openDrawDownloadFolder() {
     drawHistoryError = '';
     try {
-      await invoke('open_database_folder');
+      await invoke('open_download_folder');
     } catch (reason) {
       drawHistoryError = reason instanceof Error ? reason.message : String(reason);
     }
@@ -2285,7 +2285,7 @@
                       data-confirmable-number="interval"
                       type="number"
                       min="0.5"
-                      max="30"
+                      max="10"
                       step="0.5"
                       bind:value={continuousIntervalSeconds}
                       disabled={continuousRunning}
@@ -2537,7 +2537,7 @@
           <div class="history-actions sidebar-history-actions">
             <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesCsv}>汇总 CSV</button>
             <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</button>
-            <button type="button" on:click={openDrawDatabaseFolder}>打开文件夹</button>
+            <button type="button" on:click={openDrawDownloadFolder}>打开下载文件夹</button>
             <button type="button" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</button>
           </div>
         {/if}

@@ -226,7 +226,7 @@ export async function installTauriMock(
         state.lineupHistories = [];
         return null;
       }
-      if (cmd === 'open_database_folder') return null;
+      if (cmd === 'open_database_folder' || cmd === 'open_download_folder') return null;
       if (cmd === 'export_text_file') return 'E2E/导出文件';
       throw new Error(`E2E Tauri mock 未实现命令：${cmd}`);
     };
