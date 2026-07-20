@@ -2619,7 +2619,6 @@
           <h3>分组页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
-            <div><span>预览序号选中 / 插入</span><kbd>空格</kbd></div>
             {#if desktopRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>

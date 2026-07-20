@@ -68,32 +68,6 @@ test('预览支持前插、末尾添加并用回车保存', async ({ page }) => 
   expect(await previewNames(page)).toEqual(['甲', '丙', '乙', '丁']);
 });
 
-test('预览位置只用空格选中和插入，方向键移动落点，Enter 不误触', async ({ page }) => {
-  await confirmNames(page, ['甲', '乙', '丙', '丁']);
-
-  const firstPosition = page.locator('[data-preview-position="0"]');
-  await firstPosition.focus();
-  await firstPosition.press('Enter');
-  await expect(page.locator('.preview-move-source')).toHaveCount(0);
-  expect(await previewNames(page)).toEqual(['甲', '乙', '丙', '丁']);
-
-  const secondPosition = page.locator('[data-preview-position="1"]');
-  await secondPosition.focus();
-  await secondPosition.press('Space');
-  await expect(page.locator('.preview-row').nth(1)).toHaveClass(/preview-move-source/);
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Space');
-  expect(await previewNames(page)).toEqual(['甲', '丙', '丁', '乙']);
-
-  await firstPosition.focus();
-  await firstPosition.press('Space');
-  await expect(page.locator('.preview-move-source')).toHaveCount(1);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.preview-move-source')).toHaveCount(0);
-});
-
 test('X 只聚焦分组结果，不会在文本编辑时抢走按键', async ({ page }) => {
   const textarea = page.locator('.names-field textarea');
   await textarea.focus();

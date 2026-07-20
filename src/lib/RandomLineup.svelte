@@ -21,7 +21,6 @@
     isResolvedLineupName,
     lineupOrderAvailability,
     lineupPreviewTierStarts,
-    moveLineupPreviewName,
     nextRankedUserActionIndex,
     orderResolvedLineupNames,
     rankedUserIdAtShortcut,
@@ -115,8 +114,6 @@
   let insertName = '';
   let insertError = '';
   let insertInput: HTMLInputElement | null = null;
-  let previewMoveSourceIndex: number | null = null;
-  let previewKeyboardIndex: number | null = null;
   let rankingFileInput: HTMLInputElement | null = null;
   let historyFileInput: HTMLInputElement | null = null;
   let pendingRankingImport: RankedUserTransfer[] | null = null;
@@ -244,14 +241,12 @@
   }
 
   async function confirmSourceText() {
-    cancelPreviewMove();
     cancelPreviewInsertion();
     await commitSourceNames(parseOptionText(sourceText));
   }
 
   async function sortPreviewByRank() {
     if (!canGenerateByRank) return;
-    cancelPreviewMove();
     cancelPreviewInsertion();
     try {
       await commitSourceNames(orderResolvedLineupNames(resolvedNames));
@@ -637,7 +632,6 @@
   }
 
   async function openPreviewInsertion(index: number) {
-    cancelPreviewMove();
     insertIndex = Math.min(names.length, Math.max(0, index));
     insertName = '';
     insertError = '';
@@ -649,7 +643,6 @@
     if (insertIndex === null) return;
     try {
       const updated = insertLineupPreviewName(names, insertIndex, insertName);
-      cancelPreviewMove();
       cancelPreviewInsertion();
       void commitSourceNames(updated);
     } catch (reason) {
@@ -666,7 +659,6 @@
 
   function updatePreviewName(index: number, value: string) {
     cancelPreviewInsertion();
-    cancelPreviewMove();
     const updated = [...names];
     const name = value.trim();
     if (!name) {
@@ -679,91 +671,9 @@
 
   function removePreviewName(index: number) {
     cancelPreviewInsertion();
-    cancelPreviewMove();
     const updated = [...names];
     updated.splice(index, 1);
     void commitSourceNames(updated);
-  }
-
-  function cancelPreviewMove() {
-    previewMoveSourceIndex = null;
-    previewKeyboardIndex = null;
-  }
-
-  async function focusPreviewPosition(index: number) {
-    if (names.length === 0) return;
-    previewKeyboardIndex = Math.min(names.length, Math.max(0, index));
-    await tick();
-    document.querySelector<HTMLElement>(`[data-preview-position="${previewKeyboardIndex}"]`)
-      ?.focus({ preventScroll: true });
-    document.querySelector<HTMLElement>(`[data-preview-position="${previewKeyboardIndex}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
-  }
-
-  async function confirmPreviewMove(insertAt: number) {
-    if (previewMoveSourceIndex === null) return;
-    const source = previewMoveSourceIndex;
-    const updated = moveLineupPreviewName(names, source, insertAt);
-    const movedIndex = source < insertAt ? insertAt - 1 : insertAt;
-    cancelPreviewMove();
-    await commitSourceNames(updated);
-    await focusPreviewPosition(Math.min(updated.length - 1, movedIndex));
-  }
-
-  function selectOrConfirmPreviewMove(index: number) {
-    if (previewMoveSourceIndex === null) {
-      previewMoveSourceIndex = index;
-      previewKeyboardIndex = index;
-    } else {
-      void confirmPreviewMove(index);
-    }
-  }
-
-  function handlePreviewPositionKeydown(event: KeyboardEvent, index: number) {
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      event.preventDefault();
-      event.stopPropagation();
-      void focusPreviewPosition(index + (event.key === 'ArrowUp' ? -1 : 1));
-    } else if (event.code === 'Space') {
-      event.preventDefault();
-      event.stopPropagation();
-      selectOrConfirmPreviewMove(index);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      event.stopPropagation();
-    } else if (event.key === 'Escape' && previewMoveSourceIndex !== null) {
-      event.preventDefault();
-      event.stopPropagation();
-      previewMoveSourceIndex = null;
-    }
-  }
-
-  function handlePreviewEndKeydown(event: KeyboardEvent) {
-    if (previewMoveSourceIndex === null) return;
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      event.preventDefault();
-      event.stopPropagation();
-      void focusPreviewPosition(event.key === 'ArrowUp' ? names.length - 1 : 0);
-    } else if (event.code === 'Space') {
-      event.preventDefault();
-      event.stopPropagation();
-      void confirmPreviewMove(names.length);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      event.stopPropagation();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      previewMoveSourceIndex = null;
-      void focusPreviewPosition(names.length - 1);
-    }
-  }
-
-  function handlePreviewEndClick(event: MouseEvent) {
-    // 键盘触发的合成 click 已由 keydown 处理，避免确认移动后又打开添加框。
-    if (event.detail === 0) return;
-    if (previewMoveSourceIndex === null) void openPreviewInsertion(names.length);
-    else void confirmPreviewMove(names.length);
   }
 
   function toggleDesktopPanel(panel: DesktopPanel) {
@@ -1571,7 +1481,6 @@
 
   function clearAll() {
     clearLineupConfirmation = false;
-    cancelPreviewMove();
     sourceText = '';
     confirmedSourceText = '';
     resolutionRequest += 1;
@@ -1872,21 +1781,11 @@
                 </form>
               {/if}
               <div
-                class:keyboard-position={previewKeyboardIndex === index}
-                class:preview-move-source={previewMoveSourceIndex === index}
-                class:preview-move-target={previewMoveSourceIndex !== null && previewKeyboardIndex === index}
                 class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                 class="preview-row"
               >
                 <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
-                <button
-                  type="button"
-                  class="preview-move-handle"
-                  data-preview-position={index}
-                  aria-label={`${row.name}，空格选择移动，方向键选择插入位置`}
-                  on:focus={() => (previewKeyboardIndex = index)}
-                  on:keydown={(event) => handlePreviewPositionKeydown(event, index)}
-                >{String(index + 1).padStart(2, '0')}</button>
+                <span class="preview-position">{String(index + 1).padStart(2, '0')}</span>
                 <div class="preview-name">
                   <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
                   {#if desktopRuntime}
@@ -1919,13 +1818,9 @@
             {/if}
             <button
               type="button"
-              class:preview-move-target={previewMoveSourceIndex !== null && previewKeyboardIndex === previewRows.length}
               class="append-preview-user"
-              data-preview-position={previewRows.length}
-              on:focus={() => (previewKeyboardIndex = previewRows.length)}
-              on:keydown={handlePreviewEndKeydown}
-              on:click={handlePreviewEndClick}
-            >{previewMoveSourceIndex === null ? '＋ 添加到名单末尾' : '放到末尾'}</button>
+              on:click={() => openPreviewInsertion(names.length)}
+            >＋ 添加到名单末尾</button>
           </div>
         {:else}
           <div class="preview-empty">
@@ -2024,7 +1919,7 @@
 
     <aside class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" on:input={cancelPreviewMove}></textarea></label>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false"></textarea></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
         <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
@@ -2527,39 +2422,13 @@
     box-shadow: inset 2px 0 rgba(221, 151, 132, 0.5);
   }
 
-  .preview-row.keyboard-position {
-    outline: 1px solid rgba(231, 255, 114, 0.32);
-    outline-offset: 1px;
-  }
-
-  .preview-row.preview-move-source {
-    opacity: 0.56;
-  }
-
-  .preview-row.preview-move-target::before {
-    position: absolute;
-    right: 8px;
-    bottom: calc(100% + 2px);
-    left: 8px;
-    height: 2px;
-    border-radius: 999px;
-    background: var(--accent);
-    content: '';
-  }
-
-  .preview-move-handle {
+  .preview-position {
     padding: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
     color: var(--lineup-dim-on-dark);
-    cursor: pointer;
     font-family: var(--font-mono);
     font-size: calc(11px * var(--font-scale, 1));
     text-align: center;
   }
-
-  .preview-move-handle:focus-visible { color: var(--accent); }
 
   .preview-row > div { min-width: 0; }
 
@@ -2639,12 +2508,6 @@
     padding: 6px 11px;
     border-radius: 8px;
     font-size: calc(11px * var(--font-scale, 1));
-  }
-
-  .append-preview-user.preview-move-target {
-    border-color: rgba(231, 255, 114, 0.68);
-    background: rgba(231, 255, 114, 0.14);
-    color: var(--accent);
   }
 
   .preview-insert-form {
