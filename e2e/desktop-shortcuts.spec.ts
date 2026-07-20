@@ -53,6 +53,7 @@ test('点击排名或按 A 选择第一项，添加输入框不抢焦点', async
   await rankingToggle.click();
   await expect(firstCard).toBeFocused();
   await expect(addInput).not.toBeFocused();
+  await expect(page.getByRole('button', { name: '导入 JSON' })).toBeDisabled();
 
   await rankingToggle.click();
   await page.keyboard.press('a');

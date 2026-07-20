@@ -400,6 +400,7 @@
   }
 
   function openRankingImporter() {
+    if (rankedUsers.length > 0 || rankingImporting) return;
     rankingFileInput?.click();
   }
 
@@ -407,7 +408,7 @@
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
+    if (!file || rankedUsers.length > 0 || rankingImporting) return;
     if (file.name.split('.').pop()?.toLocaleLowerCase('zh-CN') !== 'json') {
       showImportError('排名导入失败', '排名同步只支持 JSON 文件');
       return;
@@ -421,7 +422,7 @@
 
   async function confirmRankingImport() {
     const users = pendingRankingImport;
-    if (!users || rankingImporting) return;
+    if (!users || rankedUsers.length > 0 || rankingImporting) return;
     rankingImporting = true;
     rankingError = '';
     try {
@@ -1530,7 +1531,13 @@
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
-                  <button type="button" on:click={openRankingImporter}>导入 JSON</button>
+                  <button
+                    type="button"
+                    class="ranking-import-button"
+                    title={rankedUsers.length > 0 ? '全部删除后才可导入' : '导入排名 JSON'}
+                    disabled={rankedUsers.length > 0 || rankingImporting}
+                    on:click={openRankingImporter}
+                  >导入 JSON</button>
                   <button type="button" class="delete-all-rankings" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</button>
                 </div>
                 {#if aliasLinkName !== null}
@@ -1982,7 +1989,7 @@
     <div class="delete-confirm-dialog ranking-import-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ranking-import-title" aria-describedby="ranking-import-detail" tabindex="-1">
       <span class="delete-confirm-icon">⇄</span>
       <h2 id="ranking-import-title">导入 {pendingRankingImport.length} 项排名？</h2>
-      <p id="ranking-import-detail">当前排名和别名会被文件内容完整替换。</p>
+      <p id="ranking-import-detail">文件内容将导入排名和别名。</p>
       <div>
         <button type="button" aria-keyshortcuts="N Escape" disabled={rankingImporting} on:click={() => (pendingRankingImport = null)}><span>取消</span></button>
         <button type="button" class="confirm-import" aria-keyshortcuts="Y Enter" disabled={rankingImporting} on:click={confirmRankingImport}><span>{rankingImporting ? '导入中…' : '确认'}</span></button>
@@ -2836,6 +2843,14 @@
     font-size: calc(11px * var(--font-scale, 1));
     font-weight: 850;
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  .ranking-transfer-actions .ranking-import-button:disabled {
+    border-color: rgba(166, 171, 158, 0.2);
+    background: linear-gradient(145deg, #252a25, #181b18);
+    color: #7d8379;
+    filter: grayscale(1);
+    box-shadow: none;
   }
 
   .ranking-transfer-actions button.delete-all-rankings {
