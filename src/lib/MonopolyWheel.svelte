@@ -8,18 +8,19 @@
   export let disabled = false;
   export let duration = 4000;
   export let centerLabel = '开始';
+  export let weightCellScale = 2;
   export let onSpin: () => void;
 
   // ── 棋盘几何 ────────────────────────────────────────────────────
-  // 根据选项总权重计算 16 到 40 之间最接近的 4 的倍数作为格子总数。
+  // 低权重时按倍率展开格子，高权重时限制权重带来的棋盘规模。
   const CS = 62;  // 格子尺寸（像素）
   const GAP = 5;  // 格子间距（像素）
   const SLOT = CS + GAP;
 
-  function totalCells(opts: WheelOption[]): number {
+  function totalCells(opts: WheelOption[], cellScale: number): number {
     if (opts.length === 0) return 16;
     const w = opts.reduce((s, o) => s + o.weight, 0);
-    const raw = Math.max(opts.length * 2, Math.min(w * 2, 40));
+    const raw = Math.max(8, opts.length * 2, Math.min(w * Math.max(1, cellScale), 40));
     return Math.ceil(raw / 4) * 4;
   }
 
@@ -122,7 +123,7 @@
   }
 
   // ── 响应式格子状态 ──────────────────────────────────────────────
-  $: N = totalCells(options);
+  $: N = totalCells(options, weightCellScale);
   $: dims = boardDims(N);
   $: nH = dims.nH;
   $: nV = dims.nV;

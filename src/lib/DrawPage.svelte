@@ -231,6 +231,10 @@
   $: displayedWheelOptions = mode === 'roulette'
     ? createRouletteWheelSlots(activeDrawOptions)
     : wheelOptions;
+  // 显式依赖 activeDrawOptions，确保俄罗斯模式命中后立即重建大富翁格子。
+  $: monopolyWheelOptions = mode === 'roulette'
+    ? currentDrawOptions(activeDrawOptions, wheelOptions)
+    : wheelOptions;
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -271,7 +275,6 @@
         if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
           animationStyle = parsed.animationStyle!;
         }
-        if (mode === 'roulette' && animationStyle === 'threeD') animationStyle = 'luxury';
         if (typeof parsed.durationSeconds === 'number') {
           durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
         }
@@ -913,7 +916,6 @@
 
   export function setMode(next: DrawMode) {
     if (isSpinning || mode === next) return;
-    if (next === 'roulette' && animationStyle === 'threeD') animationStyle = 'luxury';
     mode = next;
     rouletteHits = {};
     rouletteFinished = false;
@@ -995,15 +997,18 @@
       .filter((p) => p.weight > 0);
   }
 
-  function currentDrawOptions(): WheelOption[] {
-    if (mode !== 'roulette') return activeDrawOptions;
+  function currentDrawOptions(
+    currentSource: WheelOption[] = activeDrawOptions,
+    initialSource: WheelOption[] = wheelOptions,
+  ): WheelOption[] {
+    if (mode !== 'roulette') return currentSource;
     const applyModeWeight = (option: WheelOption) => (
       variant === 'caimi' && !option.isRetry
         ? { ...option, weight: caimiRouletteWeight(option.label, option.weight) }
         : option
     );
-    const currentOptions = activeDrawOptions.map(applyModeWeight);
-    const initialOptions = wheelOptions.map(applyModeWeight);
+    const currentOptions = currentSource.map(applyModeWeight);
+    const initialOptions = initialSource.map(applyModeWeight);
     const candidateTotal = (options: WheelOption[]) => options.reduce(
       (total, option) => total + (option.isRetry ? 0 : Math.max(0.01, Number(option.weight) || 0.01)),
       0,
@@ -1137,7 +1142,7 @@
     }
 
     const picked = pickWeighted(options);
-    const usesMonopoly = animationStyle === 'threeD' && mode !== 'roulette';
+    const usesMonopoly = animationStyle === 'threeD';
 
     if (usesMonopoly) {
       // 大富翁棋盘由组件根据候选项编号计算走格终点。
@@ -1863,17 +1868,15 @@
             <span class="motion-icon luxury-icon">✦</span>
             <strong>高级</strong>
           </button>
-          {#if mode !== 'roulette'}
-            <button
-              type="button"
-              class:active={animationStyle === 'threeD'}
-              disabled={isSpinning}
-              on:click={() => (animationStyle = 'threeD')}
-            >
-              <span class="motion-icon board-icon">⬡</span>
-              <strong>大富翁</strong>
-            </button>
-          {/if}
+          <button
+            type="button"
+            class:active={animationStyle === 'threeD'}
+            disabled={isSpinning}
+            on:click={() => (animationStyle = 'threeD')}
+          >
+            <span class="motion-icon board-icon">⬡</span>
+            <strong>大富翁</strong>
+          </button>
         </div>
       </section>
 
@@ -2082,18 +2085,19 @@
             <i aria-hidden="true"></i>
             <span>{isSpinning ? '旋转中' : '等待开始'}</span>
           </div>
-        {#if animationStyle === 'threeD' && mode !== 'roulette'}
-          <!-- 大富翁棋盘：俄罗斯模式降级到高级转盘 -->
+        {#if animationStyle === 'threeD'}
+          <!-- 俄罗斯模式按当前剩余生命和重来概率更新棋盘。 -->
           <MonopolyWheel
-            options={wheelOptions}
+            options={monopolyWheelOptions}
             targetOptionId={monopolyTargetId}
             duration={durationSeconds * 1000}
             spinning={isSpinning}
             disabled={spinDisabled}
             centerLabel={rouletteFinished ? '结束' : '开始'}
+            weightCellScale={mode === 'roulette' ? 4 : 2}
             onSpin={spin}
           />
-        {:else if animationStyle === 'luxury' || (animationStyle === 'threeD' && mode === 'roulette')}
+        {:else if animationStyle === 'luxury'}
           <LuxuryWheel
             options={displayedWheelOptions}
             {rotation}

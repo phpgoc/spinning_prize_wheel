@@ -42,6 +42,59 @@ test('大窗口会继续放大转盘并保留候选栏空间', async ({ page }) 
   expect(largeBox!.x + largeBox!.width).toBeLessThanOrEqual(sidebarBox!.x);
 });
 
+test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) => {
+  await importCandidates(page, ['甲', '乙', '丙']);
+  const monopolyButton = page.getByRole('button', { name: '大富翁' });
+
+  await monopolyButton.click();
+  await expect(page.getByRole('img', { name: '大富翁抽奖棋盘' })).toBeVisible();
+  await page.getByRole('button', { name: '俄罗斯轮盘' }).click();
+  await expect(monopolyButton).toHaveClass(/active/u);
+  await expect(page.getByRole('img', { name: '大富翁抽奖棋盘' })).toBeVisible();
+
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
+  await page.getByLabel('动画时长').fill('1');
+  await page.getByRole('button', { name: '开始抽奖' }).click();
+  await expect(page.locator('.wheel-status')).toContainText('旋转中');
+  await expect(page.locator('.wheel-status')).toContainText('等待开始', { timeout: 4_000 });
+  const eliminatedName = (await page.locator('.winner-reveal strong').textContent())?.trim();
+  expect(eliminatedName).toBeTruthy();
+  await expect.poll(() => page.locator('.cell-label').allTextContents()).not.toContain(eliminatedName);
+
+  await expect.poll(() => page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
+    return `${settings.mode}:${settings.animationStyle}`;
+  })).toBe('roulette:threeD');
+  await page.reload();
+  await expect(page.getByRole('button', { name: '俄罗斯轮盘' })).toHaveClass(/active/u);
+  await expect(page.getByRole('button', { name: '大富翁' })).toHaveClass(/active/u);
+  await expect(page.getByRole('img', { name: '大富翁抽奖棋盘' })).toBeVisible();
+});
+
+test('俄罗斯大富翁用格子数量明确区分 2:1 和 1:1 剩余生命', async ({ page }) => {
+  await importCandidates(page, ['甲', '乙']);
+  const firstWeight = page.getByRole('spinbutton', { name: '甲的权重' });
+  await firstWeight.fill('2');
+  await firstWeight.press('Tab');
+
+  await page.getByRole('button', { name: '俄罗斯轮盘' }).click();
+  await page.getByRole('button', { name: '大富翁' }).click();
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
+
+  const cells = page.locator('.cell-label');
+  const firstCells = cells.filter({ hasText: /^甲$/u });
+  const secondCells = cells.filter({ hasText: /^乙$/u });
+  await expect(cells).toHaveCount(12);
+  await expect(firstCells).toHaveCount(8);
+  await expect(secondCells).toHaveCount(4);
+
+  await firstWeight.fill('1');
+  await firstWeight.press('Tab');
+  await expect(cells).toHaveCount(8);
+  await expect(firstCells).toHaveCount(4);
+  await expect(secondCells).toHaveCount(4);
+});
+
 test('Web 不占用桌面 S 快捷键，全局方向键滚动当前折叠页', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 700 });
   const settings = page.locator('.accordion-item.open .accordion-content');
