@@ -197,6 +197,23 @@ test('对战复用分组排名组件并按排名生成固定签位', async ({ pa
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
 });
 
+test('桌面对战全屏会同步切换 Tauri 窗口', async ({ page }) => {
+  await openDesktopBattle(page);
+  const battleResult = page.locator('.battle-result');
+
+  await page.getByRole('button', { name: '全屏' }).click();
+  await expect(battleResult).toHaveClass(/battle-fullscreen/u);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.windowFullscreen
+  ))).toBe(true);
+
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(battleResult).not.toHaveClass(/battle-fullscreen/u);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.windowFullscreen
+  ))).toBe(false);
+});
+
 test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({ page, context }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);

@@ -52,6 +52,7 @@ export async function installTauriMock(
       battleTmpState: data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any,
       closeRequestedHandler: null as number | null,
       windowDestroyed: false,
+      windowFullscreen: false,
       invocations: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
     };
 
@@ -222,6 +223,10 @@ export async function installTauriMock(
       }
       if (cmd === 'plugin:window|destroy') {
         state.windowDestroyed = true;
+        return null;
+      }
+      if (cmd === 'plugin:window|set_fullscreen') {
+        state.windowFullscreen = Boolean(args.value);
         return null;
       }
       if (cmd === 'list_common_selections') return clone(state.commonSelections);

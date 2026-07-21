@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
   import {
@@ -181,6 +182,7 @@
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
   let battleFullscreen = false;
+  let battleFullscreenChanging = false;
   let bodyOverflowBeforeBattleFullscreen = '';
   let battleColorLoadedVariant: AppVariant | null = null;
   let battleColorPreset: BattleColorPresetSelection = 'classic';
@@ -287,7 +289,14 @@
   onMount(() => {
     mounted = true;
     return () => {
-      if (battleFullscreen) document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+      if (battleFullscreen) {
+        document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+        if (desktopRuntime) {
+          void getCurrentWindow().setFullscreen(false).catch((reason) => {
+            console.error('无法在离开对战页时退出窗口全屏', reason);
+          });
+        }
+      }
     };
   });
 
@@ -351,16 +360,24 @@
   }
 
   async function setBattleFullscreen(fullscreen: boolean) {
-    if (!battlePage || battleFullscreen === fullscreen) return;
-    if (fullscreen) {
-      bodyOverflowBeforeBattleFullscreen = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+    if (!battlePage || battleFullscreen === fullscreen || battleFullscreenChanging) return;
+    battleFullscreenChanging = true;
+    try {
+      if (desktopRuntime) await getCurrentWindow().setFullscreen(fullscreen);
+      if (fullscreen) {
+        bodyOverflowBeforeBattleFullscreen = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+      }
+      battleFullscreen = fullscreen;
+      await tick();
+      lineupResultElement?.focus({ preventScroll: true });
+    } catch (reason) {
+      error = messageFrom(reason, fullscreen ? '无法进入窗口全屏' : '无法退出窗口全屏');
+    } finally {
+      battleFullscreenChanging = false;
     }
-    battleFullscreen = fullscreen;
-    await tick();
-    lineupResultElement?.focus({ preventScroll: true });
   }
 
   function isTextEditingTarget(target: EventTarget | null): boolean {
@@ -2588,7 +2605,7 @@
       >
         {#if battlePage}
           <div class="battle-result-toolbar">
-            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
+            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
               <div class="battle-color-presets" role="group" aria-label="配色预设">
