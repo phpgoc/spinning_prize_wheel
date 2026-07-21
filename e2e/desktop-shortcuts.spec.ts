@@ -7,6 +7,12 @@ async function openDesktopLineup(page: Page) {
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
+async function openDesktopBattle(page: Page) {
+  await installTauriMock(page);
+  await page.goto('/#/battle');
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
+}
+
 async function confirmDesktopNames(page: Page, names: string[]) {
   const textarea = page.locator('.names-field textarea');
   await textarea.fill(names.join('\n'));
@@ -147,6 +153,27 @@ test('按排名顺序预览与按排名顺序分组共用可用状态', async ({
   await confirmDesktopNames(page, ['甲', '未录入']);
   await expect(sortPreview).toBeDisabled();
   await expect(groupByRank).toBeDisabled();
+});
+
+test('对战复用分组排名组件并按排名生成固定签位', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['丙', '甲', '乙']);
+  await expect(page.getByRole('button', { name: '甲', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '对战状态' })).toBeVisible();
+
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('radio', { name: '按排名' }).check();
+  const rankPreview = page.getByRole('button', { name: '按排名预览' });
+  await expect(rankPreview).toBeEnabled();
+  await rankPreview.click();
+  await expect.poll(() => page.locator('.preview-row input').evaluateAll((inputs) => (
+    inputs.map((input) => (input as HTMLInputElement).value)
+  ))).toEqual(['甲', '乙', '丙']);
+
+  await expect(page.locator('.battle-fixed-preview .fixed strong')).toHaveText(['甲', '乙']);
+  await page.getByRole('button', { name: /^执行/ }).click();
+  await expect(page.locator('.battle-round')).toHaveCount(2);
+  await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
 });
 
 test('抽奖和分组的删除全部历史都需要二次确认', async ({ page }) => {

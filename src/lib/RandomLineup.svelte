@@ -2,6 +2,17 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
+  import {
+    battleFixedSeedOptions,
+    createAvoidSameGroupPlan,
+    createFixedBattlePositions,
+    createSeededBattlePlan,
+    type BattleEntrySource,
+    type BattleFormat,
+    type BattleOrderMode,
+    type BattlePlan,
+    type BattlePosition,
+  } from './battle';
   import { downloadExcel, downloadFormattedJson } from './file-export';
   import {
     createLineupHistoryTransfer,
@@ -39,6 +50,7 @@
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';
+  export let purpose: 'grouping' | 'battle' = 'grouping';
 
   type LineupOrderMode = 'rank' | 'input';
   type DesktopPanel = 'ranking' | 'history';
@@ -126,7 +138,13 @@
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
   let hiddenLineupCellKeys = new Set<string>();
+  let battleFormat: BattleFormat = 'avoid-first-pair';
+  let battleOrderMode: BattleOrderMode = 'input';
+  let battleFixedSeedCount = 2;
+  let battlePlan: BattlePlan | null = null;
+  let battlePlanSignature = '';
 
+  $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
   $: sourceTextDirty = sourceText !== confirmedSourceText;
   $: namesSignature = names.join('\u0000');
@@ -178,6 +196,36 @@
   );
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
   $: canGenerateByRank = !sourceTextDirty && orderAvailability.rank;
+  $: battleFixedOptions = battleFixedSeedOptions(names.length);
+  $: if (battleFixedOptions.length > 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
+    battleFixedSeedCount = battleFixedOptions[0];
+  }
+  $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
+  $: battleOrderedPreviewNames = battleOrderMode === 'rank'
+    && desktopRuntime
+    && !resolvingNames
+    && unresolvedPreviewCount === 0
+      ? orderResolvedLineupNames(resolvedNames)
+      : names;
+  $: battleCanExecute = !sourceTextDirty && (
+    battleFormat === 'avoid-first-pair'
+      ? names.length >= 4 && names.length % 2 === 0
+      : battleOrderMode === 'rank' ? canGenerateByRank : canGenerateByInput
+  );
+  $: currentBattleSignature = [
+    namesSignature,
+    battleFormat,
+    battleOrderMode,
+    battleConfiguredFixedCount,
+    battleOrderMode === 'rank' ? desktopRankSignature : 'input',
+  ].join('|');
+  $: battleResultOutdated = battlePlan !== null && battlePlanSignature !== currentBattleSignature;
+  $: battleFixedPreviewPositions = battlePage
+    && battleFormat !== 'avoid-first-pair'
+    && battleOrderedPreviewNames.length >= 2
+      ? createFixedBattlePositions(battleOrderedPreviewNames, battleConfiguredFixedCount)
+      : [];
+  $: battleFixedPreviewMatches = pairBattlePositions(battleFixedPreviewPositions);
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
@@ -193,7 +241,10 @@
 
   async function initializeDesktop() {
     desktopInitialized = true;
-    await Promise.all([loadRankedUsers(), loadLineupHistories()]);
+    await Promise.all([
+      loadRankedUsers(),
+      battlePage ? Promise.resolve() : loadLineupHistories(),
+    ]);
     await resolveNames();
   }
 
@@ -325,6 +376,32 @@
       result = null;
       resultHistory = null;
       error = messageFrom(reason, '无法生成分组');
+    }
+  }
+
+  async function generateBattle() {
+    error = '';
+    if (!battleCanExecute) {
+      error = battleFormat === 'avoid-first-pair'
+        ? `同组不对战1对2需要已确认的偶数名单且至少 4 项，当前为 ${names.length} 项。`
+        : '请先确认名单并补齐排名关联';
+      return;
+    }
+    try {
+      const orderedNames = battleFormat === 'avoid-first-pair'
+        ? names
+        : orderedNamesForLineup(battleOrderMode);
+      battlePlan = battleFormat === 'avoid-first-pair'
+        ? createAvoidSameGroupPlan(orderedNames)
+        : createSeededBattlePlan(orderedNames, {
+          format: battleFormat,
+          orderMode: battleOrderMode,
+          fixedSeedCount: battleConfiguredFixedCount,
+        });
+      battlePlanSignature = currentBattleSignature;
+    } catch (reason) {
+      battlePlan = null;
+      error = messageFrom(reason, '无法生成对战');
     }
   }
 
@@ -1488,6 +1565,8 @@
     resolvingNames = false;
     result = null;
     resultHistory = null;
+    battlePlan = null;
+    battlePlanSignature = '';
     error = '';
     historyStatus = 'idle';
   }
@@ -1496,6 +1575,35 @@
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     lineupResultElement?.focus({ preventScroll: true });
     lineupResultElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function pairBattlePositions(positions: readonly BattlePosition[]): [BattlePosition, BattlePosition][] {
+    return Array.from({ length: positions.length / 2 }, (_, index) => [
+      positions[index * 2],
+      positions[index * 2 + 1],
+    ]);
+  }
+
+  function battleEntryLabel(entry: BattleEntrySource): string {
+    if (!entry) return '轮空';
+    if (entry.kind === 'participant') return entry.participant.name;
+    return `${entry.matchId} ${entry.kind === 'winner' ? '胜者' : '败者'}`;
+  }
+
+  function battleEntryDetail(entry: BattleEntrySource): string {
+    if (!entry || entry.kind !== 'participant') return '';
+    if (entry.participant.groupRank) {
+      return `第 ${entry.participant.groupIndex! + 1} 组 · 第 ${entry.participant.groupRank}`;
+    }
+    return `顺位 ${entry.participant.seed}`;
+  }
+
+  function battleEntryFixed(entry: BattleEntrySource): boolean {
+    return Boolean(
+      entry?.kind === 'participant'
+      && battlePlan
+      && entry.participant.seed <= battlePlan.fixedSeedCount,
+    );
   }
 
   function showImportError(title: string, detail: string) {
@@ -1515,10 +1623,10 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class="lineup-page" id="lineup">
-  <div class:desktop={desktopRuntime} class="lineup-workbench">
+<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'}>
+  <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
-      <aside class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
+      <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
@@ -1704,10 +1812,15 @@
 
         <section class:open={desktopPanel === 'history'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('history')}>
-            <span>分组历史</span><strong>最近 5 条</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
+            <span>{battlePage ? '对战状态' : '分组历史'}</span><strong>{battlePage ? '实时同步' : '最近 5 条'}</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
-            <div class="desktop-accordion-content history-panel">
+            {#if battlePage}
+              <div class="desktop-accordion-content history-panel battle-state-placeholder">
+                <p>执行对战后，这里会显示实时数据库状态。</p>
+              </div>
+            {:else}
+              <div class="desktop-accordion-content history-panel">
               <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importLineupHistoryFile} />
               <div class="history-dates">
                 <label><span>开始日期</span><input type="date" bind:value={historyStart} /></label>
@@ -1746,7 +1859,8 @@
                 <button type="button" class="history-delete-all" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</button>
               </div>
               {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
-            </div>
+              </div>
+            {/if}
           {/if}
         </section>
       </aside>
@@ -1755,7 +1869,7 @@
     <section class="lineup-center" aria-live="polite">
       <div class="preview-panel">
         <div class="result-heading">
-          <div><span>02</span><div><h2>名单预览</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
+          <div><span>02</span><div><h2>{battlePage ? '对战预览' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
             {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
@@ -1764,7 +1878,7 @@
         {#if previewRows.length > 0}
           <div class="preview-list">
             {#each previewRows as row, index}
-              {#if previewTierStarts.has(index)}
+              {#if !battlePage && previewTierStarts.has(index)}
                 <div class:first-tier={index === 0} class="preview-tier-divider" role="separator" aria-label={`第 ${Math.floor(index / Math.max(2, Number(groupCount) || 2)) + 1} 档`}>
                   <i></i><span>t{Math.floor(index / Math.max(2, Number(groupCount) || 2)) + 1}</span><i></i>
                 </div>
@@ -1844,12 +1958,19 @@
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
         {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
-          <div class="rank-order-lock" role="status">还有未关联项，按排名操作暂不可用；可以使用输入顺序分组。</div>
+          <div class="rank-order-lock" role="status">还有未关联项，按排名操作暂不可用；可以使用输入顺序{battlePage ? '执行' : '分组'}。</div>
         {/if}
 
-        <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+        {#if !battlePage}
+          <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+        {/if}
         <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
-          {#if desktopRuntime}
+          {#if battlePage}
+            {#if desktopRuntime && battleFormat !== 'avoid-first-pair' && battleOrderMode === 'rank'}
+              <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列对战预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名预览</button>
+            {/if}
+            <button type="button" class="generate-button battle-generate-button" disabled={!battleCanExecute} on:click={generateBattle}><span>{battlePlan && !battleResultOutdated ? '重新执行' : '执行'}</span><i>→</i></button>
+          {:else if desktopRuntime}
             <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列名单预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名分组' : '按排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
@@ -1860,6 +1981,50 @@
       </div>
 
       <div bind:this={lineupResultElement} class="lineup-result" tabindex="-1">
+        {#if battlePage}
+          <div class="result-heading">
+            <div><span>03</span><div><h2>对战</h2><p>{battlePlan ? `${battlePlan.participantCount} 项 · ${battleFormat === 'avoid-first-pair' ? '同组不对战1对2' : battleFormat === 'single-elimination' ? '单败' : '双败'} · ${battlePlan.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位会立即显示，其他位置执行时随机' : '点击上方执行后生成对战'}</p></div></div>
+          </div>
+          {#if battleResultOutdated}<div class="outdated-notice">名单、排名或配置已变化，请重新执行。</div>{/if}
+          {#if battlePlan}
+            <div class:outdated={battleResultOutdated} class="battle-bracket">
+              {#each battlePlan.rounds as round (round.id)}
+                <section class="battle-round">
+                  <h3>{round.label}</h3><span>{round.matches.length} 场</span>
+                  <div>
+                    {#each round.matches as match (match.id)}
+                      <article class="battle-match">
+                        <small>{match.id}</small>
+                        {#each match.entries as entry}
+                          <div class:fixed={battleEntryFixed(entry)} class:waiting={entry?.kind !== 'participant'}>
+                            <strong>{battleEntryLabel(entry)}</strong>
+                            {#if battleEntryDetail(entry)}<span>{battleEntryDetail(entry)}</span>{/if}
+                          </div>
+                        {/each}
+                      </article>
+                    {/each}
+                  </div>
+                </section>
+              {/each}
+            </div>
+          {:else if battleFixedPreviewMatches.length > 0}
+            <div class="battle-fixed-preview">
+              {#each battleFixedPreviewMatches as positions, index}
+                <article class="battle-match">
+                  <small>首轮 · 第 {index + 1} 场</small>
+                  {#each positions as position}
+                    <div class:fixed={position.fixed} class:waiting={!position.participant}>
+                      <strong>{position.participant?.name ?? '待随机'}</strong>
+                      <span>{position.fixed ? `顺位 ${position.participant?.seed} · 已固定` : `签位 ${position.seedNumber}`}</span>
+                    </div>
+                  {/each}
+                </article>
+              {/each}
+            </div>
+          {:else}
+            <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '名单前半为各组第 1，后半为对应组第 2' : '确认名单并选择固定位置'}</p></div>
+          {/if}
+        {:else}
         <div class="result-heading">
           <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
@@ -1914,17 +2079,53 @@
         {:else}
           <div class="empty-result"><div class="empty-grid"><i>A</i><i>B</i><i>C</i><i>D</i><i>E</i><i>F</i></div></div>
         {/if}
+        {/if}
       </div>
     </section>
 
-    <aside class="lineup-config">
+    <aside class:battle-config={battlePage} class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false"></textarea></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
         <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
       </div>
-      <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
+      {#if battlePage}
+        <fieldset class="battle-radio-group battle-format-group">
+          <legend>赛制</legend>
+          <label><input type="radio" name="battle-format" value="avoid-first-pair" bind:group={battleFormat} /><span>同组不对战1对2</span></label>
+          <label><input type="radio" name="battle-format" value="single-elimination" bind:group={battleFormat} /><span>单败</span></label>
+          <label><input type="radio" name="battle-format" value="double-elimination" bind:group={battleFormat} /><span>双败</span></label>
+        </fieldset>
+        {#if battleFormat !== 'avoid-first-pair'}
+          <fieldset class="battle-radio-group">
+            <legend>名单顺序</legend>
+            <label title={desktopRuntime ? '' : '网页版没有排名数据库'}><input type="radio" name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} /><span>按排名</span></label>
+            <label><input type="radio" name="battle-order" value="input" bind:group={battleOrderMode} /><span>按输入顺序</span></label>
+          </fieldset>
+          <fieldset class="battle-radio-group battle-fixed-group">
+            <legend>固定位置</legend>
+            {#each battleFixedOptions as count}
+              <label><input type="radio" name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount} /><span>前 {count} 固定</span></label>
+            {:else}
+              <div class="battle-radio-empty">确认至少 3 项后生成选项</div>
+            {/each}
+          </fieldset>
+        {/if}
+        <div class:valid={battleCanExecute} class="battle-count-status">
+          {#if sourceTextDirty}
+            修改名单后请先确认
+          {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
+            需要偶数名单且至少 4 项
+          {:else if battleCanExecute}
+            配置有效，可以执行
+          {:else}
+            至少需要 2 项
+          {/if}
+        </div>
+      {:else}
+        <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
+      {/if}
     </aside>
   </div>
 </main>
@@ -1933,8 +2134,8 @@
   <div class="delete-confirm-backdrop">
     <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-lineup-title" aria-describedby="clear-lineup-detail" tabindex="-1">
       <span class="delete-confirm-icon">!</span>
-      <h2 id="clear-lineup-title">同时清空名单预览？</h2>
-      <p id="clear-lineup-detail">名单、名单预览和当前分组结果都会清空。</p>
+      <h2 id="clear-lineup-title">同时清空{battlePage ? '对战' : '名单'}预览？</h2>
+      <p id="clear-lineup-detail">名单、{battlePage ? '对战预览和当前对战' : '名单预览和当前分组结果'}都会清空。</p>
       <div>
         <button type="button" aria-keyshortcuts="N Escape" on:click={() => (clearLineupConfirmation = false)}><span>取消</span></button>
         <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={clearAll}><span>确认</span></button>
@@ -2187,6 +2388,24 @@
   }
   .group-setting strong { font-family: var(--font-mono); font-size: calc(20px * var(--font-scale, 1)); font-weight: 800; }
 
+  .battle-radio-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin: 17px 0 0;
+    padding: 0;
+    border: 0;
+  }
+  .battle-format-group { grid-template-columns: minmax(0, 1fr); }
+  .battle-fixed-group { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
+  .battle-radio-group legend { width: 100%; margin-bottom: 7px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-group label { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid rgba(36, 37, 31, 0.13); border-radius: 8px; background: #f8f6f0; color: #34362f; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-group input { accent-color: #7d9134; }
+  .battle-radio-group label:has(input:disabled) { cursor: not-allowed; opacity: 0.48; }
+  .battle-radio-empty { grid-column: 1 / -1; padding: 9px 10px; border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: 8px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-count-status { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
+
   .lineup-error,
   .outdated-notice {
     margin-top: 10px;
@@ -2269,6 +2488,21 @@
 
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
+  .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
+  .battle-bracket.outdated { opacity: 0.45; }
+  .battle-round { flex: 0 0 min(235px, 74vw); }
+  .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
+  .battle-round > span { float: right; color: var(--lineup-dim-on-dark); font-size: calc(10px * var(--font-scale, 1)); }
+  .battle-round > div { display: grid; gap: 10px; margin-top: 9px; }
+  .battle-fixed-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 18px; }
+  .battle-match { min-width: 0; padding: 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 11px; background: rgba(255, 255, 255, 0.035); }
+  .battle-match > small { display: block; margin-bottom: 6px; color: var(--lineup-dim-on-dark); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > div { min-width: 0; padding: 8px 9px; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); }
+  .battle-match > div + div { margin-top: 5px; }
+  .battle-match > div.fixed { border-left-color: #e7ff72; background: rgba(231, 255, 114, 0.08); }
+  .battle-match > div.waiting { color: var(--lineup-dim-on-dark); }
+  .battle-match strong { display: block; overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
+  .battle-match span { display: block; margin-top: 2px; color: var(--lineup-dim-on-dark); font-size: calc(9px * var(--font-scale, 1)); }
   table {
     width: 100%;
     min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));
@@ -2357,6 +2591,8 @@
     color: var(--lineup-dim-on-dark);
     text-align: center;
   }
+  .battle-empty-result { gap: 8px; }
+  .battle-empty-result p { color: var(--lineup-dim-on-dark); font-size: calc(12px * var(--font-scale, 1)); text-align: center; }
   .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
   .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.2); border-radius: 9px; background: rgba(231, 255, 114, 0.055); color: #cbd877; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
 
@@ -2635,6 +2871,8 @@
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
   }
+  .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .battle-state-placeholder p { padding: 18px 8px; color: var(--lineup-dim-on-light); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.6; text-align: center; }
 
   .slow-reveal-setting {
     display: inline-flex;

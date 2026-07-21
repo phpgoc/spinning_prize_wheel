@@ -37,6 +37,7 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 33 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
 
   await expect(page.getByRole('radio', { name: '同组不对战1对2' })).toBeChecked();
   await expect(page.getByRole('group', { name: '名单顺序' })).toHaveCount(0);
@@ -57,6 +58,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '前 4 固定' }).check();
 
@@ -77,6 +79,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
 test('同组不对战按名单前后半区生成跨组的1对2', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill('A1\nB1\nC1\nD1\nA2\nB2\nC2\nD2');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('button', { name: /^执行/ }).click();
 
   const matches = page.locator('.battle-round .battle-match');
