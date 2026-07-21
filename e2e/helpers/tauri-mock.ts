@@ -10,6 +10,7 @@ export interface MockRankedUserInput {
 export interface MockTauriInitialData {
   drawHistories?: unknown[];
   lineupHistories?: unknown[];
+  battleTmpState?: unknown;
 }
 
 export const DEFAULT_RANKED_USERS: MockRankedUserInput[] = [
@@ -48,6 +49,7 @@ export async function installTauriMock(
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
+      battleTmpState: data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any,
       closeRequestedHandler: null as number | null,
       windowDestroyed: false,
       invocations: [] as Array<{ cmd: string; args: Record<string, unknown> }>,
@@ -73,6 +75,139 @@ export async function installTauriMock(
         && user.aliases.some((alias) => alias.name.toLocaleLowerCase('zh-CN') === key)
       ));
       if (duplicate) throw new Error('名称或别名已经存在');
+    };
+    const recomputeBattleTmp = (snapshot: any) => {
+      const winnerId = (match: any) => {
+        if (match.status !== 'completed') return null;
+        if (match.up === null || match.down === null) return match.up ?? match.down;
+        if (match.upResult === null || match.downResult === null || match.upResult === match.downResult) return null;
+        return match.upResult > match.downResult ? match.up : match.down;
+      };
+      const loserId = (match: any) => {
+        const winner = winnerId(match);
+        if (winner === null) return null;
+        return match.up === winner ? match.down : match.up;
+      };
+      const slotSource = (match: any, slot: 'up' | 'down') => {
+        const offset = slot === 'up' ? 0 : 1;
+        if (match.stage === 'pairing') return null;
+        if (match.stage === 'single' || match.stage === 'winner') {
+          if (match.level === 1) return null;
+          const prefix = match.stage === 'single' ? 'S' : 'W';
+          return {
+            matchId: `${prefix}${match.level - 1}-M${(match.position - 1) * 2 + offset + 1}`,
+            outcome: 'winner',
+          };
+        }
+        if (match.stage === 'loser') {
+          if (snapshot.bracketSize === 2 && match.level === 1) {
+            return slot === 'up' ? { matchId: 'W1-M1', outcome: 'loser' } : null;
+          }
+          if (match.level === 1) {
+            return {
+              matchId: `W1-M${(match.position - 1) * 2 + offset + 1}`,
+              outcome: 'loser',
+            };
+          }
+          if (match.level % 2 === 0) {
+            if (slot === 'up') {
+              return { matchId: `L${match.level - 1}-M${match.position}`, outcome: 'winner' };
+            }
+            const winnerLevel = match.level / 2 + 1;
+            const winnerMatchCount = snapshot.matches.filter((candidate: any) => (
+              candidate.stage === 'winner' && candidate.level === winnerLevel
+            )).length;
+            const crossedPosition = winnerMatchCount === 1
+              ? match.position
+              : match.position % 2 === 1 ? match.position + 1 : match.position - 1;
+            return { matchId: `W${winnerLevel}-M${crossedPosition}`, outcome: 'loser' };
+          }
+          return {
+            matchId: `L${match.level - 1}-M${(match.position - 1) * 2 + offset + 1}`,
+            outcome: 'winner',
+          };
+        }
+        if (match.level === 1) {
+          const winnerLevel = Math.max(...snapshot.matches
+            .filter((candidate: any) => candidate.stage === 'winner')
+            .map((candidate: any) => candidate.level));
+          const loserLevel = Math.max(...snapshot.matches
+            .filter((candidate: any) => candidate.stage === 'loser')
+            .map((candidate: any) => candidate.level));
+          return slot === 'up'
+            ? { matchId: `W${winnerLevel}-M1`, outcome: 'winner' }
+            : { matchId: `L${loserLevel}-M1`, outcome: 'winner' };
+        }
+        return { matchId: 'GF-M1', outcome: slot === 'up' ? 'winner' : 'loser' };
+      };
+      const sourceValue = (
+        staticValue: number | null,
+        source: { matchId: string; outcome: 'winner' | 'loser' } | null,
+      ) => {
+        if (!source) return { ready: true, value: staticValue };
+        const sourceMatch = snapshot.matches.find((match: any) => match.matchId === source.matchId);
+        if (!sourceMatch || (sourceMatch.status !== 'completed' && sourceMatch.status !== 'skipped')) {
+          return { ready: false, value: null };
+        }
+        if (sourceMatch.status === 'skipped') return { ready: true, value: null };
+        return { ready: true, value: source.outcome === 'winner' ? winnerId(sourceMatch) : loserId(sourceMatch) };
+      };
+      for (let iteration = 0; iteration < snapshot.matches.length * 3; iteration += 1) {
+        let changed = false;
+        for (const match of snapshot.matches) {
+          const before = [match.up, match.down, match.upResult, match.downResult, match.status].join('|');
+          let activation: 'active' | 'pending' | 'skipped' = 'active';
+          if (match.stage === 'final' && match.level === 2) {
+            const source = snapshot.matches.find((candidate: any) => candidate.matchId === 'GF-M1');
+            if (!source || source.status !== 'completed') {
+              activation = 'pending';
+            } else {
+              activation = source.down !== null && winnerId(source) === source.down ? 'active' : 'skipped';
+            }
+          }
+          if (activation !== 'active') {
+            if (slotSource(match, 'up')) match.up = null;
+            if (slotSource(match, 'down')) match.down = null;
+            match.upResult = null;
+            match.downResult = null;
+            match.status = activation;
+          } else {
+            const up = sourceValue(match.up, slotSource(match, 'up'));
+            const down = sourceValue(match.down, slotSource(match, 'down'));
+            const participantsChanged = match.up !== up.value || match.down !== down.value;
+            match.up = up.value;
+            match.down = down.value;
+            if (participantsChanged) {
+              match.upResult = null;
+              match.downResult = null;
+            }
+            if (!up.ready || !down.ready) {
+              match.upResult = null;
+              match.downResult = null;
+              match.status = 'pending';
+            } else if (match.up === null && match.down === null) {
+              match.upResult = null;
+              match.downResult = null;
+              match.status = 'skipped';
+            } else if (match.up === null || match.down === null) {
+              match.upResult = null;
+              match.downResult = null;
+              match.status = 'completed';
+            } else if (
+              match.upResult !== null
+              && match.downResult !== null
+              && match.upResult !== match.downResult
+            ) {
+              match.status = 'completed';
+            } else {
+              match.status = 'ready';
+            }
+          }
+          if (before !== [match.up, match.down, match.upResult, match.downResult, match.status].join('|')) changed = true;
+        }
+        if (!changed) break;
+      }
+      return snapshot;
     };
 
     const invoke = async (cmd: string, args: Record<string, any> = {}) => {
@@ -224,6 +359,30 @@ export async function installTauriMock(
       }
       if (cmd === 'clear_lineup_histories') {
         state.lineupHistories = [];
+        return null;
+      }
+      if (cmd === 'save_battle_tmp_state') {
+        state.battleTmpState = clone(args.state);
+        return null;
+      }
+      if (cmd === 'load_battle_tmp_state') {
+        return state.battleTmpState?.variant === args.variant ? clone(state.battleTmpState) : null;
+      }
+      if (cmd === 'update_battle_tmp_result') {
+        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) {
+          throw new Error('当前没有可更新的对战临时状态');
+        }
+        const snapshot = clone(state.battleTmpState);
+        const match = snapshot.matches.find((candidate: any) => candidate.matchId === args.matchId);
+        if (!match) throw new Error('找不到对战场次');
+        match.upResult = args.upResult;
+        match.downResult = args.downResult;
+        snapshot.updatedAt = args.updatedAt;
+        state.battleTmpState = recomputeBattleTmp(snapshot);
+        return clone(state.battleTmpState);
+      }
+      if (cmd === 'clear_battle_tmp_state') {
+        if (state.battleTmpState?.variant === args.variant) state.battleTmpState = null;
         return null;
       }
       if (cmd === 'open_database_folder' || cmd === 'open_download_folder') return null;

@@ -176,6 +176,66 @@ test('对战复用分组排名组件并按排名生成固定签位', async ({ pa
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
 });
 
+test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({ page, context }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.battleTmpState)).not.toBeNull();
+  const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
+  await expect(firstMatch).toContainText('位置 1 · 待比分');
+  const selectedName = (await firstMatch.locator('.battle-side strong').first().textContent())!;
+  await enterDesktopBattleScore(firstMatch, 4, 1);
+  await expect(firstMatch).toContainText('已完成');
+  await expect(page.locator('.single-bracket-final .battle-match')).toContainText(selectedName);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'update_battle_tmp_result').length
+  ))).toBe(2);
+
+  await page.getByRole('button', { name: /对战状态/u }).click();
+  await expect(page.locator('.battle-state-panel')).toContainText('所有赛程行已关系化保存');
+  await expect(page.locator('.battle-state-panel')).toContainText('3 行');
+  await page.getByRole('button', { name: 'Excel', exact: true }).click();
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file' || entry.cmd === 'export_text_file')
+      .map((entry: any) => entry.cmd)
+  ))).toEqual(['export_binary_file', 'export_text_file']);
+
+  const savedState = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+  const restoredPage = await context.newPage();
+  await installTauriMock(restoredPage, undefined, { battleTmpState: savedState });
+  await restoredPage.goto('/#/battle');
+  await expect(restoredPage.locator('.preview-row')).toHaveCount(4);
+  await expect(restoredPage.locator('.battle-round')).toHaveCount(2);
+  await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first()).toContainText('已完成');
+  await restoredPage.close();
+});
+
+async function enterDesktopBattleScore(match: Locator, up: number, down: number) {
+  const inputs = match.locator('input[type="number"]');
+  const page = match.page();
+  const invocationCount = () => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'update_battle_tmp_result').length
+  ));
+  const initialInvocationCount = await invocationCount();
+  await expect(inputs.nth(0)).toBeEnabled();
+  await inputs.nth(0).fill(String(up));
+  await inputs.nth(0).press('Tab');
+  await expect.poll(invocationCount).toBe(initialInvocationCount + 1);
+  await expect(inputs.nth(1)).toBeEnabled();
+  await inputs.nth(1).fill(String(down));
+  await inputs.nth(1).press('Tab');
+  await expect.poll(invocationCount).toBe(initialInvocationCount + 2);
+  await expect(inputs.nth(0)).toBeEnabled();
+}
+
 test('抽奖和分组的删除全部历史都需要二次确认', async ({ page }) => {
   const createdAt = new Date(2026, 6, 20, 12).getTime();
   const drawHistory = {

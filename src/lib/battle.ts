@@ -1,3 +1,5 @@
+import type { AppVariant } from './app-variant';
+
 export type BattleFormat = 'avoid-first-pair' | 'single-elimination' | 'double-elimination';
 export type BattleOrderMode = 'rank' | 'input';
 export type BattleBracket = 'pairing' | 'single' | 'winner' | 'loser' | 'final';
@@ -50,11 +52,178 @@ export interface BattlePlan {
   rounds: BattleRound[];
 }
 
+export type BattleTmpStatus = 'pending' | 'ready' | 'completed' | 'skipped';
+
+export interface BattleTmpParticipant {
+  id: number;
+  name: string;
+  sourceIndex: number;
+  seed: number;
+  groupIndex: number | null;
+  groupRank: 1 | 2 | null;
+}
+
+export interface BattleTmpMatch {
+  matchId: string;
+  stage: BattleBracket;
+  level: number;
+  position: number;
+  up: number | null;
+  down: number | null;
+  upResult: number | null;
+  downResult: number | null;
+  status: BattleTmpStatus;
+}
+
+export interface BattleTmpSnapshot {
+  version: 1;
+  rulesVersion: 1;
+  kind: 'battle-tmp';
+  variant: AppVariant;
+  updatedAt: number;
+  format: BattleFormat;
+  orderMode: BattleOrderMode;
+  participantCount: number;
+  bracketSize: number;
+  fixedSeedCount: number;
+  participants: BattleTmpParticipant[];
+  matches: BattleTmpMatch[];
+}
+
 export interface SeededBattleOptions {
   format: 'single-elimination' | 'double-elimination';
   orderMode: BattleOrderMode;
   fixedSeedCount: number;
   random?: () => number;
+}
+
+export function createBattleTmpSnapshot(
+  variant: AppVariant,
+  plan: BattlePlan,
+  updatedAt = Date.now(),
+): BattleTmpSnapshot {
+  const participants = plan.positions.flatMap((position) => position.participant ? [position.participant] : []);
+  const uniqueParticipants = [...new Map(participants.map((participant) => [
+    participant.sourceIndex,
+    participant,
+  ])).values()]
+    .sort((left, right) => left.sourceIndex - right.sourceIndex)
+    .map((participant): BattleTmpParticipant => ({
+      id: participant.sourceIndex + 1,
+      name: participant.name,
+      sourceIndex: participant.sourceIndex,
+      seed: participant.seed,
+      groupIndex: participant.groupIndex ?? null,
+      groupRank: participant.groupRank ?? null,
+    }));
+  const snapshot: BattleTmpSnapshot = {
+    version: 1,
+    rulesVersion: 1,
+    kind: 'battle-tmp',
+    variant,
+    updatedAt,
+    format: plan.format,
+    orderMode: plan.orderMode,
+    participantCount: plan.participantCount,
+    bracketSize: plan.bracketSize,
+    fixedSeedCount: plan.fixedSeedCount,
+    participants: uniqueParticipants,
+    matches: plan.rounds.flatMap((round) => round.matches.map((match) => {
+      const up = battleTmpParticipantId(match.entries[0]);
+      const down = battleTmpParticipantId(match.entries[1]);
+      return {
+        matchId: match.id,
+        stage: match.bracket,
+        level: match.round,
+        position: match.index + 1,
+        up,
+        down,
+        upResult: null,
+        downResult: null,
+        status: 'pending',
+      } satisfies BattleTmpMatch;
+    })),
+  };
+  return recomputeBattleTmpSnapshot(snapshot);
+}
+
+export function parseBattleTmpSnapshot(
+  value: unknown,
+  expectedVariant: AppVariant,
+): BattleTmpSnapshot {
+  if (
+    !isRecord(value)
+    || value.version !== 1
+    || value.rulesVersion !== 1
+    || value.kind !== 'battle-tmp'
+    || value.variant !== expectedVariant
+    || !Number.isSafeInteger(value.updatedAt)
+    || Number(value.updatedAt) <= 0
+    || !Array.isArray(value.participants)
+    || !Array.isArray(value.matches)
+  ) {
+    throw new Error('对战临时状态格式不正确');
+  }
+  return value as unknown as BattleTmpSnapshot;
+}
+
+export function updateBattleTmpResult(
+  snapshot: BattleTmpSnapshot,
+  matchId: string,
+  upResult: number | null,
+  downResult: number | null,
+  updatedAt = Date.now(),
+): BattleTmpSnapshot {
+  const next: BattleTmpSnapshot = {
+    ...snapshot,
+    updatedAt,
+    matches: snapshot.matches.map((match) => ({ ...match })),
+  };
+  const battleMatch = next.matches.find((match) => match.matchId === matchId);
+  if (!battleMatch) throw new Error('找不到对战场次');
+  if (![upResult, downResult].every((score) => (
+    score === null || Number.isSafeInteger(score) && score >= 0
+  ))) {
+    throw new Error('对战比分必须是非负整数');
+  }
+  if ((battleMatch.up === null && upResult !== null) || (battleMatch.down === null && downResult !== null)) {
+    throw new Error('等待上游的签位不能填写比分');
+  }
+  battleMatch.upResult = upResult;
+  battleMatch.downResult = downResult;
+  return recomputeBattleTmpSnapshot(next);
+}
+
+export function battleTmpWinnerId(match: BattleTmpMatch): number | null {
+  if (match.status !== 'completed') return null;
+  if (match.up === null || match.down === null) return match.up ?? match.down;
+  if (match.upResult === null || match.downResult === null || match.upResult === match.downResult) return null;
+  return match.upResult > match.downResult ? match.up : match.down;
+}
+
+export function battleTmpLoserId(match: BattleTmpMatch): number | null {
+  const winner = battleTmpWinnerId(match);
+  if (winner === null) return null;
+  return match.up === winner ? match.down : match.up;
+}
+
+export function battleTmpExcelRows(snapshot: BattleTmpSnapshot): (string | number)[][] {
+  const nameById = new Map(snapshot.participants.map((participant) => [participant.id, participant.name]));
+  return [
+    ['阶段', '层级', '位置', '上方', '上方比分', '下方', '下方比分', '胜者', '状态', '场次'],
+    ...snapshot.matches.map((match) => [
+      battleBracketLabel(match.stage),
+      match.level,
+      match.position,
+      match.up === null ? '' : nameById.get(match.up) ?? `#${match.up}`,
+      match.upResult ?? '',
+      match.down === null ? '' : nameById.get(match.down) ?? `#${match.down}`,
+      match.downResult ?? '',
+      battleTmpWinnerId(match) === null ? '' : nameById.get(battleTmpWinnerId(match)!) ?? `#${battleTmpWinnerId(match)}`,
+      match.status,
+      match.matchId,
+    ]),
+  ];
 }
 
 export function battleFixedSeedOptions(participantCount: number): number[] {
@@ -301,7 +470,10 @@ function createLoserRounds(winnerRounds: readonly BattleRound[], bracketSize: nu
       loserRoundNumber,
       droppingMatches.map((match, index) => [
         winnerSource(previous.matches[index].id),
-        loserSource(match.id),
+        // 相邻交换胜者组掉落位置，避免选手刚进入败者组就立刻重赛。
+        loserSource(droppingMatches.length === 1
+          ? match.id
+          : droppingMatches[index ^ 1].id),
       ]),
     );
     rounds.push(cross);
@@ -374,4 +546,160 @@ function shuffled<T>(values: readonly T[], random: () => number): T[] {
 
 function randomValue(random: () => number): number {
   return Math.max(0, Math.min(0.9999999999999999, Number(random()) || 0));
+}
+
+function battleBracketLabel(bracket: BattleBracket): string {
+  if (bracket === 'pairing') return '1对2';
+  if (bracket === 'single') return '单败';
+  if (bracket === 'winner') return '胜者组';
+  if (bracket === 'loser') return '败者组';
+  return '总决赛';
+}
+
+function battleTmpParticipantId(entry: BattleEntrySource): number | null {
+  return entry?.kind === 'participant' ? entry.participant.sourceIndex + 1 : null;
+}
+
+function recomputeBattleTmpSnapshot(snapshot: BattleTmpSnapshot): BattleTmpSnapshot {
+  for (let iteration = 0; iteration < snapshot.matches.length * 3; iteration += 1) {
+    let changed = false;
+    for (const match of snapshot.matches) {
+      const before = [match.up, match.down, match.upResult, match.downResult, match.status].join('|');
+      const activation = battleTmpActivation(snapshot, match);
+      if (activation === 'pending' || activation === 'skipped') {
+        if (battleTmpSlotSource(snapshot, match, 'up')) match.up = null;
+        if (battleTmpSlotSource(snapshot, match, 'down')) match.down = null;
+        match.upResult = null;
+        match.downResult = null;
+        match.status = activation;
+      } else {
+        const up = battleTmpSourceValue(snapshot, match.up, battleTmpSlotSource(snapshot, match, 'up'));
+        const down = battleTmpSourceValue(snapshot, match.down, battleTmpSlotSource(snapshot, match, 'down'));
+        const participantsChanged = match.up !== up.value || match.down !== down.value;
+        match.up = up.value;
+        match.down = down.value;
+        if (participantsChanged) {
+          match.upResult = null;
+          match.downResult = null;
+        }
+        if (!up.ready || !down.ready) {
+          match.upResult = null;
+          match.downResult = null;
+          match.status = 'pending';
+        } else if (match.up === null && match.down === null) {
+          // 双败遇到多个首轮轮空时，空场也必须向下游传播“无人晋级”。
+          match.upResult = null;
+          match.downResult = null;
+          match.status = 'skipped';
+        } else if (match.up === null || match.down === null) {
+          match.upResult = null;
+          match.downResult = null;
+          match.status = 'completed';
+        } else if (
+          match.upResult !== null
+          && match.downResult !== null
+          && match.upResult !== match.downResult
+        ) {
+          match.status = 'completed';
+        } else {
+          match.status = 'ready';
+        }
+      }
+      if (before !== [match.up, match.down, match.upResult, match.downResult, match.status].join('|')) changed = true;
+    }
+    if (!changed) break;
+  }
+  return snapshot;
+}
+
+function battleTmpActivation(
+  snapshot: BattleTmpSnapshot,
+  match: BattleTmpMatch,
+): 'active' | 'pending' | 'skipped' {
+  if (match.stage !== 'final' || match.level !== 2) return 'active';
+  const source = snapshot.matches.find((candidate) => candidate.matchId === 'GF-M1');
+  if (!source || source.status !== 'completed') return 'pending';
+  return source.down !== null && battleTmpWinnerId(source) === source.down ? 'active' : 'skipped';
+}
+
+function battleTmpSourceValue(
+  snapshot: BattleTmpSnapshot,
+  staticValue: number | null,
+  source: { matchId: string; outcome: 'winner' | 'loser' } | null,
+): { ready: boolean; value: number | null } {
+  if (!source) return { ready: true, value: staticValue };
+  const sourceMatch = snapshot.matches.find((match) => match.matchId === source.matchId);
+  if (!sourceMatch || (sourceMatch.status !== 'completed' && sourceMatch.status !== 'skipped')) {
+    return { ready: false, value: null };
+  }
+  if (sourceMatch.status === 'skipped') return { ready: true, value: null };
+  const participant = source.outcome === 'winner'
+    ? battleTmpWinnerId(sourceMatch)
+    : battleTmpLoserId(sourceMatch);
+  return { ready: participant !== null || sourceMatch.up === null || sourceMatch.down === null, value: participant };
+}
+
+/** 固定双败规则可由层级和位置恢复，不需要把来源冗余写入临时表。 */
+function battleTmpSlotSource(
+  snapshot: BattleTmpSnapshot,
+  match: BattleTmpMatch,
+  slot: 'up' | 'down',
+): { matchId: string; outcome: 'winner' | 'loser' } | null {
+  const offset = slot === 'up' ? 0 : 1;
+  if (match.stage === 'pairing') return null;
+  if (match.stage === 'single' || match.stage === 'winner') {
+    if (match.level === 1) return null;
+    const prefix = match.stage === 'single' ? 'S' : 'W';
+    return {
+      matchId: `${prefix}${match.level - 1}-M${(match.position - 1) * 2 + offset + 1}`,
+      outcome: 'winner',
+    };
+  }
+  if (match.stage === 'loser') {
+    if (snapshot.bracketSize === 2 && match.level === 1) {
+      return slot === 'up' ? { matchId: 'W1-M1', outcome: 'loser' } : null;
+    }
+    if (match.level === 1) {
+      return {
+        matchId: `W1-M${(match.position - 1) * 2 + offset + 1}`,
+        outcome: 'loser',
+      };
+    }
+    if (match.level % 2 === 0) {
+      if (slot === 'up') {
+        return { matchId: `L${match.level - 1}-M${match.position}`, outcome: 'winner' };
+      }
+      const winnerLevel = match.level / 2 + 1;
+      const winnerMatchCount = snapshot.matches.filter((candidate) => (
+        candidate.stage === 'winner' && candidate.level === winnerLevel
+      )).length;
+      const crossedPosition = winnerMatchCount === 1
+        ? match.position
+        : match.position % 2 === 1 ? match.position + 1 : match.position - 1;
+      return { matchId: `W${winnerLevel}-M${crossedPosition}`, outcome: 'loser' };
+    }
+    return {
+      matchId: `L${match.level - 1}-M${(match.position - 1) * 2 + offset + 1}`,
+      outcome: 'winner',
+    };
+  }
+  if (match.level === 1) {
+    const winnerLevel = Math.max(...snapshot.matches
+      .filter((candidate) => candidate.stage === 'winner')
+      .map((candidate) => candidate.level));
+    const loserLevel = Math.max(...snapshot.matches
+      .filter((candidate) => candidate.stage === 'loser')
+      .map((candidate) => candidate.level));
+    return slot === 'up'
+      ? { matchId: `W${winnerLevel}-M1`, outcome: 'winner' }
+      : { matchId: `L${loserLevel}-M1`, outcome: 'winner' };
+  }
+  return {
+    matchId: 'GF-M1',
+    outcome: slot === 'up' ? 'winner' : 'loser',
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

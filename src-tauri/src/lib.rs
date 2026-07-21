@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::{HashSet, VecDeque},
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -182,6 +183,48 @@ struct SavedLineup {
     created_at: u64,
     input: serde_json::Value,
     result: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct BattleTmpSnapshot {
+    version: u8,
+    rules_version: u8,
+    kind: String,
+    variant: String,
+    updated_at: u64,
+    format: String,
+    order_mode: String,
+    participant_count: usize,
+    bracket_size: usize,
+    fixed_seed_count: usize,
+    participants: Vec<BattleTmpParticipant>,
+    matches: Vec<BattleTmpMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct BattleTmpParticipant {
+    id: usize,
+    name: String,
+    source_index: usize,
+    seed: usize,
+    group_index: Option<usize>,
+    group_rank: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct BattleTmpMatch {
+    match_id: String,
+    stage: String,
+    level: usize,
+    position: usize,
+    up: Option<usize>,
+    down: Option<usize>,
+    up_result: Option<usize>,
+    down_result: Option<usize>,
+    status: String,
 }
 
 fn common_selection_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1498,6 +1541,913 @@ fn clear_lineup_histories(
     })
 }
 
+fn battle_tmp_table_exists(connection: &Connection) -> Result<bool, String> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM sqlite_master
+               WHERE type = 'table' AND name = 'battle_tmp'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("无法检查对战临时表：{error}"))
+}
+
+fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS battle_tmp (
+               id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+               variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
+               rules_version INTEGER NOT NULL CHECK (rules_version = 1),
+               updated_at INTEGER NOT NULL CHECK (updated_at > 0),
+               format TEXT NOT NULL CHECK (format IN ('avoid-first-pair', 'single-elimination', 'double-elimination')),
+               order_mode TEXT NOT NULL CHECK (order_mode IN ('rank', 'input')),
+               participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
+               bracket_size INTEGER NOT NULL CHECK (bracket_size >= participant_count),
+               fixed_seed_count INTEGER NOT NULL CHECK (fixed_seed_count >= 0 AND fixed_seed_count <= participant_count)
+             );
+             CREATE TABLE IF NOT EXISTS battle_tmp_participant (
+               state_id INTEGER NOT NULL REFERENCES battle_tmp(id) ON DELETE CASCADE,
+               participant_id INTEGER NOT NULL CHECK (participant_id > 0),
+               name TEXT NOT NULL,
+               source_index INTEGER NOT NULL CHECK (source_index >= 0),
+               seed INTEGER NOT NULL CHECK (seed > 0),
+               group_index INTEGER CHECK (group_index >= 0),
+               group_rank INTEGER CHECK (group_rank IN (1, 2)),
+               PRIMARY KEY (state_id, participant_id)
+             );
+             CREATE TABLE IF NOT EXISTS battle_tmp_match (
+               state_id INTEGER NOT NULL REFERENCES battle_tmp(id) ON DELETE CASCADE,
+               match_id TEXT NOT NULL,
+               stage TEXT NOT NULL CHECK (stage IN ('pairing', 'single', 'winner', 'loser', 'final')),
+               level INTEGER NOT NULL CHECK (level > 0),
+               position INTEGER NOT NULL CHECK (position > 0),
+               up INTEGER,
+               down INTEGER,
+               up_result INTEGER CHECK (up_result IS NULL OR up_result >= 0),
+               down_result INTEGER CHECK (down_result IS NULL OR down_result >= 0),
+               status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'completed', 'skipped')),
+               PRIMARY KEY (state_id, match_id),
+               UNIQUE (state_id, stage, level, position),
+               FOREIGN KEY (state_id, up) REFERENCES battle_tmp_participant(state_id, participant_id),
+               FOREIGN KEY (state_id, down) REFERENCES battle_tmp_participant(state_id, participant_id)
+             );",
+        )
+        .map_err(|error| format!("无法创建关系化对战临时表：{error}"))
+}
+
+fn validate_battle_tmp_snapshot(variant: &str, state: &BattleTmpSnapshot) -> Result<(), String> {
+    if state.kind != "battle-tmp"
+        || state.version != 1
+        || state.rules_version != 1
+        || state.variant != variant
+        || state.updated_at == 0
+        || !matches!(
+            state.format.as_str(),
+            "avoid-first-pair" | "single-elimination" | "double-elimination"
+        )
+        || !matches!(state.order_mode.as_str(), "rank" | "input")
+        || state.participant_count < 2
+        || state.participants.len() != state.participant_count
+        || state.bracket_size < state.participant_count
+        || state.fixed_seed_count > state.participant_count
+        || state.matches.is_empty()
+    {
+        return Err("对战临时状态格式不合法".to_string());
+    }
+
+    let mut participant_ids = HashSet::new();
+    let mut source_indexes = HashSet::new();
+    for participant in &state.participants {
+        if participant.id == 0
+            || participant.name.trim().is_empty()
+            || participant.seed == 0
+            || !participant_ids.insert(participant.id)
+            || !source_indexes.insert(participant.source_index)
+            || !matches!(participant.group_rank, None | Some(1) | Some(2))
+        {
+            return Err("对战临时状态参赛者不合法".to_string());
+        }
+    }
+
+    let match_ids = state
+        .matches
+        .iter()
+        .map(|battle_match| battle_match.match_id.as_str())
+        .collect::<HashSet<_>>();
+    let coordinates = state
+        .matches
+        .iter()
+        .map(|battle_match| {
+            (
+                battle_match.stage.as_str(),
+                battle_match.level,
+                battle_match.position,
+            )
+        })
+        .collect::<HashSet<_>>();
+    if match_ids.len() != state.matches.len() || coordinates.len() != state.matches.len() {
+        return Err("对战临时状态场次编号或位置重复".to_string());
+    }
+
+    for battle_match in &state.matches {
+        if battle_match.match_id.is_empty()
+            || battle_match.match_id
+                != expected_battle_tmp_match_id(
+                    &battle_match.stage,
+                    battle_match.level,
+                    battle_match.position,
+                )
+            || battle_match.level == 0
+            || battle_match.position == 0
+            || !matches!(
+                battle_match.stage.as_str(),
+                "pairing" | "single" | "winner" | "loser" | "final"
+            )
+            || !matches!(
+                battle_match.status.as_str(),
+                "pending" | "ready" | "completed" | "skipped"
+            )
+        {
+            return Err("对战临时状态场次不合法".to_string());
+        }
+        for participant_id in [battle_match.up, battle_match.down].into_iter().flatten() {
+            if !participant_ids.contains(&participant_id) {
+                return Err("对战临时状态引用了不存在的参赛者".to_string());
+            }
+        }
+        if (battle_match.up.is_none() && battle_match.up_result.is_some())
+            || (battle_match.down.is_none() && battle_match.down_result.is_some())
+        {
+            return Err("等待上游的签位不能填写比分".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn expected_battle_tmp_match_id(stage: &str, level: usize, position: usize) -> String {
+    match stage {
+        "pairing" => format!("P-R{level}-M{position}"),
+        "single" => format!("S{level}-M{position}"),
+        "winner" => format!("W{level}-M{position}"),
+        "loser" => format!("L{level}-M{position}"),
+        "final" if level == 1 => format!("GF-M{position}"),
+        "final" => format!("GF-RESET-M{position}"),
+        _ => String::new(),
+    }
+}
+
+fn save_battle_tmp_state_in(
+    connection: &Connection,
+    variant: &str,
+    state: &BattleTmpSnapshot,
+) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    validate_battle_tmp_snapshot(variant, state)?;
+    ensure_battle_tmp_tables(connection)?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("无法开始保存对战临时状态：{error}"))?;
+    transaction
+        .execute("DELETE FROM battle_tmp WHERE id = 1", [])
+        .map_err(|error| format!("无法替换旧对战临时状态：{error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO battle_tmp (
+               id, variant, rules_version, updated_at, format, order_mode,
+               participant_count, bracket_size, fixed_seed_count
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                variant,
+                state.rules_version,
+                db_u64(state.updated_at, "对战临时状态时间")?,
+                state.format,
+                state.order_mode,
+                db_usize(state.participant_count, "参赛人数")?,
+                db_usize(state.bracket_size, "签位数量")?,
+                db_usize(state.fixed_seed_count, "固定人数")?,
+            ],
+        )
+        .map_err(|error| format!("无法保存对战临时状态元数据：{error}"))?;
+    for participant in &state.participants {
+        transaction
+            .execute(
+                "INSERT INTO battle_tmp_participant (
+                   state_id, participant_id, name, source_index, seed, group_index, group_rank
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    db_usize(participant.id, "参赛者编号")?,
+                    participant.name,
+                    db_usize(participant.source_index, "参赛者来源位置")?,
+                    db_usize(participant.seed, "参赛者顺位")?,
+                    db_optional_usize(participant.group_index, "参赛者组号")?,
+                    participant.group_rank.map(i64::from),
+                ],
+            )
+            .map_err(|error| format!("无法保存对战参赛者：{error}"))?;
+    }
+    for battle_match in &state.matches {
+        transaction
+            .execute(
+                "INSERT INTO battle_tmp_match (
+                   state_id, match_id, stage, level, position, up, down,
+                   up_result, down_result, status
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    battle_match.match_id,
+                    battle_match.stage,
+                    db_usize(battle_match.level, "对战层级")?,
+                    db_usize(battle_match.position, "对战位置")?,
+                    db_optional_usize(battle_match.up, "上方参赛者")?,
+                    db_optional_usize(battle_match.down, "下方参赛者")?,
+                    db_optional_usize(battle_match.up_result, "上方比分")?,
+                    db_optional_usize(battle_match.down_result, "下方比分")?,
+                    battle_match.status,
+                ],
+            )
+            .map_err(|error| format!("无法保存对战场次：{error}"))?;
+    }
+    let topology = battle_tmp_topology_in(&transaction)?;
+    for battle_match in &state.matches {
+        for source in [
+            battle_tmp_slot_source(&topology, battle_match, true)?,
+            battle_tmp_slot_source(&topology, battle_match, false)?,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if load_battle_tmp_match_in(&transaction, &source.match_id)?.is_none() {
+                return Err(format!("固定路线缺少上游场次 {}", source.match_id));
+            }
+        }
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交对战临时状态：{error}"))
+}
+
+fn load_battle_tmp_state_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Option<BattleTmpSnapshot>, String> {
+    let variant = validate_variant(variant)?;
+    if !battle_tmp_table_exists(connection)? {
+        return Ok(None);
+    }
+    let metadata = connection
+        .query_row(
+            "SELECT rules_version, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count
+             FROM battle_tmp WHERE id = 1 AND variant = ?1",
+            params![variant],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| format!("无法读取对战临时状态：{error}"))?;
+    let Some((
+        rules_version,
+        updated_at,
+        format,
+        order_mode,
+        participant_count,
+        bracket_size,
+        fixed_seed_count,
+    )) = metadata
+    else {
+        return Ok(None);
+    };
+    let participants = load_battle_tmp_participants(connection)?;
+    let matches = load_battle_tmp_matches(connection)?;
+    Ok(Some(BattleTmpSnapshot {
+        version: 1,
+        rules_version: u8::try_from(rules_version)
+            .map_err(|_| "对战临时状态规则版本不合法".to_string())?,
+        kind: "battle-tmp".to_string(),
+        variant: variant.to_string(),
+        updated_at: u64::try_from(updated_at).map_err(|_| "对战临时状态时间不合法".to_string())?,
+        format,
+        order_mode,
+        participant_count: db_to_usize(participant_count, "参赛人数")?,
+        bracket_size: db_to_usize(bracket_size, "签位数量")?,
+        fixed_seed_count: db_to_usize(fixed_seed_count, "固定人数")?,
+        participants,
+        matches,
+    }))
+}
+
+fn load_battle_tmp_participants(
+    connection: &Connection,
+) -> Result<Vec<BattleTmpParticipant>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT participant_id, name, source_index, seed, group_index, group_rank
+             FROM battle_tmp_participant WHERE state_id = 1 ORDER BY participant_id",
+        )
+        .map_err(|error| format!("无法准备读取对战参赛者：{error}"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<i64>>(5)?,
+            ))
+        })
+        .map_err(|error| format!("无法读取对战参赛者：{error}"))?;
+    rows.map(|row| {
+        let (id, name, source_index, seed, group_index, group_rank) =
+            row.map_err(|error| format!("无法解析对战参赛者：{error}"))?;
+        Ok(BattleTmpParticipant {
+            id: db_to_usize(id, "参赛者编号")?,
+            name,
+            source_index: db_to_usize(source_index, "参赛者来源位置")?,
+            seed: db_to_usize(seed, "参赛者顺位")?,
+            group_index: db_optional_to_usize(group_index, "参赛者组号")?,
+            group_rank: group_rank
+                .map(|value| u8::try_from(value).map_err(|_| "参赛者组内名次不合法".to_string()))
+                .transpose()?,
+        })
+    })
+    .collect()
+}
+
+fn load_battle_tmp_matches(connection: &Connection) -> Result<Vec<BattleTmpMatch>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT match_id, stage, level, position, up, down, up_result, down_result, status
+             FROM battle_tmp_match
+             WHERE state_id = 1
+             ORDER BY CASE stage
+               WHEN 'pairing' THEN 0 WHEN 'single' THEN 1 WHEN 'winner' THEN 2
+               WHEN 'loser' THEN 3 ELSE 4 END,
+               level, position",
+        )
+        .map_err(|error| format!("无法准备读取对战场次：{error}"))?;
+    let rows = statement
+        .query_map([], battle_tmp_match_from_row)
+        .map_err(|error| format!("无法读取对战场次：{error}"))?;
+    rows.map(|row| row.map_err(|error| format!("无法解析对战场次：{error}")))
+        .collect()
+}
+
+fn battle_tmp_match_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BattleTmpMatch> {
+    Ok(BattleTmpMatch {
+        match_id: row.get(0)?,
+        stage: row.get(1)?,
+        level: usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX),
+        position: usize::try_from(row.get::<_, i64>(3)?).unwrap_or(usize::MAX),
+        up: row
+            .get::<_, Option<i64>>(4)?
+            .and_then(|value| usize::try_from(value).ok()),
+        down: row
+            .get::<_, Option<i64>>(5)?
+            .and_then(|value| usize::try_from(value).ok()),
+        up_result: row
+            .get::<_, Option<i64>>(6)?
+            .and_then(|value| usize::try_from(value).ok()),
+        down_result: row
+            .get::<_, Option<i64>>(7)?
+            .and_then(|value| usize::try_from(value).ok()),
+        status: row.get(8)?,
+    })
+}
+
+fn load_battle_tmp_match_in(
+    connection: &Connection,
+    match_id: &str,
+) -> Result<Option<BattleTmpMatch>, String> {
+    connection
+        .query_row(
+            "SELECT match_id, stage, level, position, up, down, up_result, down_result, status
+             FROM battle_tmp_match
+             WHERE state_id = 1 AND match_id = ?1",
+            params![match_id],
+            battle_tmp_match_from_row,
+        )
+        .optional()
+        .map_err(|error| format!("无法读取对战场次：{error}"))
+}
+
+#[derive(Clone, Copy)]
+enum BattleTmpSourceOutcome {
+    Winner,
+    Loser,
+}
+
+struct BattleTmpSource {
+    match_id: String,
+    outcome: BattleTmpSourceOutcome,
+}
+
+struct BattleTmpTopology {
+    bracket_size: usize,
+    single_max_level: usize,
+    winner_max_level: usize,
+    loser_max_level: usize,
+}
+
+fn battle_tmp_topology_in(connection: &Connection) -> Result<BattleTmpTopology, String> {
+    connection
+        .query_row(
+            "SELECT bracket_size,
+                    COALESCE(MAX(CASE WHEN battle_tmp_match.stage = 'single' THEN level END), 0),
+                    COALESCE(MAX(CASE WHEN battle_tmp_match.stage = 'winner' THEN level END), 0),
+                    COALESCE(MAX(CASE WHEN battle_tmp_match.stage = 'loser' THEN level END), 0)
+             FROM battle_tmp
+             LEFT JOIN battle_tmp_match ON battle_tmp_match.state_id = battle_tmp.id
+             WHERE battle_tmp.id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .map_err(|error| format!("无法读取对战固定路线：{error}"))
+        .and_then(
+            |(bracket_size, single_max_level, winner_max_level, loser_max_level)| {
+                Ok(BattleTmpTopology {
+                    bracket_size: db_to_usize(bracket_size, "签位数量")?,
+                    single_max_level: db_to_usize(single_max_level, "单败最大层级")?,
+                    winner_max_level: db_to_usize(winner_max_level, "胜者组最大层级")?,
+                    loser_max_level: db_to_usize(loser_max_level, "败者组最大层级")?,
+                })
+            },
+        )
+}
+
+fn battle_tmp_slot_source(
+    topology: &BattleTmpTopology,
+    battle_match: &BattleTmpMatch,
+    up_slot: bool,
+) -> Result<Option<BattleTmpSource>, String> {
+    let slot_offset = usize::from(!up_slot);
+    let source = match battle_match.stage.as_str() {
+        "pairing" => None,
+        "single" | "winner" if battle_match.level == 1 => None,
+        "single" | "winner" => {
+            let prefix = if battle_match.stage == "single" {
+                "S"
+            } else {
+                "W"
+            };
+            Some(BattleTmpSource {
+                match_id: format!(
+                    "{}{level}-M{}",
+                    prefix,
+                    (battle_match.position - 1) * 2 + slot_offset + 1,
+                    level = battle_match.level - 1,
+                ),
+                outcome: BattleTmpSourceOutcome::Winner,
+            })
+        }
+        "loser" if topology.bracket_size == 2 && battle_match.level == 1 => {
+            up_slot.then(|| BattleTmpSource {
+                match_id: "W1-M1".to_string(),
+                outcome: BattleTmpSourceOutcome::Loser,
+            })
+        }
+        "loser" if battle_match.level == 1 => Some(BattleTmpSource {
+            match_id: format!("W1-M{}", (battle_match.position - 1) * 2 + slot_offset + 1),
+            outcome: BattleTmpSourceOutcome::Loser,
+        }),
+        "loser" if battle_match.level % 2 == 0 && up_slot => Some(BattleTmpSource {
+            match_id: format!("L{}-M{}", battle_match.level - 1, battle_match.position),
+            outcome: BattleTmpSourceOutcome::Winner,
+        }),
+        "loser" if battle_match.level % 2 == 0 => {
+            let winner_level = battle_match.level / 2 + 1;
+            let winner_match_count = (topology.bracket_size >> winner_level).max(1);
+            let crossed_position = if winner_match_count == 1 {
+                battle_match.position
+            } else if battle_match.position % 2 == 1 {
+                battle_match.position + 1
+            } else {
+                battle_match.position - 1
+            };
+            Some(BattleTmpSource {
+                match_id: format!("W{winner_level}-M{crossed_position}"),
+                outcome: BattleTmpSourceOutcome::Loser,
+            })
+        }
+        "loser" => Some(BattleTmpSource {
+            match_id: format!(
+                "L{}-M{}",
+                battle_match.level - 1,
+                (battle_match.position - 1) * 2 + slot_offset + 1
+            ),
+            outcome: BattleTmpSourceOutcome::Winner,
+        }),
+        "final" if battle_match.level == 1 && up_slot => Some(BattleTmpSource {
+            match_id: format!("W{}-M1", topology.winner_max_level),
+            outcome: BattleTmpSourceOutcome::Winner,
+        }),
+        "final" if battle_match.level == 1 => Some(BattleTmpSource {
+            match_id: format!("L{}-M1", topology.loser_max_level),
+            outcome: BattleTmpSourceOutcome::Winner,
+        }),
+        "final" if battle_match.level == 2 => Some(BattleTmpSource {
+            match_id: "GF-M1".to_string(),
+            outcome: if up_slot {
+                BattleTmpSourceOutcome::Winner
+            } else {
+                BattleTmpSourceOutcome::Loser
+            },
+        }),
+        _ => return Err("对战场次层级不符合固定路线".to_string()),
+    };
+    Ok(source)
+}
+
+fn battle_tmp_source_value_in(
+    connection: &Connection,
+    static_value: Option<usize>,
+    source: Option<&BattleTmpSource>,
+) -> Result<(bool, Option<usize>), String> {
+    let Some(source) = source else {
+        return Ok((true, static_value));
+    };
+    let source_match = load_battle_tmp_match_in(connection, &source.match_id)?
+        .ok_or_else(|| "对战场次引用了不存在的上游".to_string())?;
+    if source_match.status == "skipped" {
+        return Ok((true, None));
+    }
+    if source_match.status != "completed" {
+        return Ok((false, None));
+    }
+    match source.outcome {
+        BattleTmpSourceOutcome::Winner => Ok((true, battle_tmp_winner(&source_match)?)),
+        BattleTmpSourceOutcome::Loser => Ok((true, battle_tmp_loser(&source_match)?)),
+    }
+}
+
+fn battle_tmp_winner(battle_match: &BattleTmpMatch) -> Result<Option<usize>, String> {
+    if battle_match.status != "completed" {
+        return Ok(None);
+    }
+    if battle_match.up.is_none() || battle_match.down.is_none() {
+        return Ok(battle_match.up.or(battle_match.down));
+    }
+    match (battle_match.up_result, battle_match.down_result) {
+        (Some(up_result), Some(down_result)) if up_result > down_result => Ok(battle_match.up),
+        (Some(up_result), Some(down_result)) if down_result > up_result => Ok(battle_match.down),
+        _ => Err("已完成的对战场次缺少有效比分".to_string()),
+    }
+}
+
+fn battle_tmp_loser(battle_match: &BattleTmpMatch) -> Result<Option<usize>, String> {
+    let Some(winner) = battle_tmp_winner(battle_match)? else {
+        return Ok(None);
+    };
+    Ok(if battle_match.up == Some(winner) {
+        battle_match.down
+    } else {
+        battle_match.up
+    })
+}
+
+fn recompute_battle_tmp_match_in(
+    connection: &Connection,
+    topology: &BattleTmpTopology,
+    match_id: &str,
+) -> Result<bool, String> {
+    let current = load_battle_tmp_match_in(connection, match_id)?
+        .ok_or_else(|| "找不到需要重算的对战场次".to_string())?;
+    let mut next = current.clone();
+    let up_source = battle_tmp_slot_source(topology, &current, true)?;
+    let down_source = battle_tmp_slot_source(topology, &current, false)?;
+
+    let activation = if current.stage == "final" && current.level == 2 {
+        let source = load_battle_tmp_match_in(connection, "GF-M1")?
+            .ok_or_else(|| "对战场次引用了不存在的激活来源".to_string())?;
+        if source.status != "completed" {
+            "pending"
+        } else if source.down.is_some() && battle_tmp_winner(&source)? == source.down {
+            "active"
+        } else {
+            "skipped"
+        }
+    } else {
+        "active"
+    };
+
+    if activation != "active" {
+        if up_source.is_some() {
+            next.up = None;
+        }
+        if down_source.is_some() {
+            next.down = None;
+        }
+        next.up_result = None;
+        next.down_result = None;
+        next.status = activation.to_string();
+    } else {
+        let (up_ready, up) =
+            battle_tmp_source_value_in(connection, current.up, up_source.as_ref())?;
+        let (down_ready, down) =
+            battle_tmp_source_value_in(connection, current.down, down_source.as_ref())?;
+        let participants_changed = next.up != up || next.down != down;
+        next.up = up;
+        next.down = down;
+        if participants_changed {
+            next.up_result = None;
+            next.down_result = None;
+        }
+        if !up_ready || !down_ready {
+            next.up_result = None;
+            next.down_result = None;
+            next.status = "pending".to_string();
+        } else if up.is_none() && down.is_none() {
+            // 空场也表示来源已经确定，必须继续把空值传播给下游。
+            next.up_result = None;
+            next.down_result = None;
+            next.status = "skipped".to_string();
+        } else if up.is_none() || down.is_none() {
+            next.up_result = None;
+            next.down_result = None;
+            next.status = "completed".to_string();
+        } else if matches!(
+            (next.up_result, next.down_result),
+            (Some(up_result), Some(down_result)) if up_result != down_result
+        ) {
+            next.status = "completed".to_string();
+        } else {
+            next.status = "ready".to_string();
+        }
+    }
+
+    if next == current {
+        return Ok(false);
+    }
+    connection
+        .execute(
+            "UPDATE battle_tmp_match
+             SET up = ?1, down = ?2, up_result = ?3, down_result = ?4, status = ?5
+             WHERE state_id = 1 AND match_id = ?6",
+            params![
+                db_optional_usize(next.up, "上方参赛者")?,
+                db_optional_usize(next.down, "下方参赛者")?,
+                db_optional_usize(next.up_result, "上方比分")?,
+                db_optional_usize(next.down_result, "下方比分")?,
+                next.status,
+                match_id,
+            ],
+        )
+        .map_err(|error| format!("无法更新下游对战场次：{error}"))?;
+    Ok(true)
+}
+
+fn battle_tmp_dependents_in(
+    connection: &Connection,
+    topology: &BattleTmpTopology,
+    source_match_id: &str,
+) -> Result<Vec<String>, String> {
+    let source = load_battle_tmp_match_in(connection, source_match_id)?
+        .ok_or_else(|| "找不到需要传播的对战场次".to_string())?;
+    let mut candidates = match source.stage.as_str() {
+        "pairing" => Vec::new(),
+        "single" if source.level < topology.single_max_level => vec![format!(
+            "S{}-M{}",
+            source.level + 1,
+            (source.position + 1) / 2
+        )],
+        "single" => Vec::new(),
+        "winner" => {
+            let winner_target = if source.level < topology.winner_max_level {
+                format!("W{}-M{}", source.level + 1, (source.position + 1) / 2)
+            } else {
+                "GF-M1".to_string()
+            };
+            let loser_target = if source.level == 1 {
+                format!("L1-M{}", (source.position + 1) / 2)
+            } else {
+                let loser_level = source.level * 2 - 2;
+                let winner_match_count = (topology.bracket_size >> source.level).max(1);
+                let crossed_position = if winner_match_count == 1 {
+                    source.position
+                } else if source.position % 2 == 1 {
+                    source.position + 1
+                } else {
+                    source.position - 1
+                };
+                format!("L{loser_level}-M{crossed_position}")
+            };
+            vec![winner_target, loser_target]
+        }
+        "loser" if source.level == topology.loser_max_level => vec!["GF-M1".to_string()],
+        "loser" if source.level % 2 == 1 => {
+            vec![format!("L{}-M{}", source.level + 1, source.position)]
+        }
+        "loser" => vec![format!(
+            "L{}-M{}",
+            source.level + 1,
+            (source.position + 1) / 2
+        )],
+        "final" if source.level == 1 => vec!["GF-RESET-M1".to_string()],
+        "final" => Vec::new(),
+        _ => return Err("对战场次阶段不符合固定路线".to_string()),
+    };
+    candidates.sort();
+    candidates.dedup();
+    for candidate in &candidates {
+        if load_battle_tmp_match_in(connection, candidate)?.is_none() {
+            return Err(format!("固定路线缺少下游场次 {candidate}"));
+        }
+    }
+    Ok(candidates)
+}
+
+fn update_battle_tmp_result_in(
+    connection: &Connection,
+    variant: &str,
+    match_id: &str,
+    up_result: Option<usize>,
+    down_result: Option<usize>,
+    updated_at: u64,
+) -> Result<BattleTmpSnapshot, String> {
+    let variant = validate_variant(variant)?;
+    if updated_at == 0 || !battle_tmp_table_exists(connection)? {
+        return Err("当前没有可更新的对战临时状态".to_string());
+    }
+    let current_variant = connection
+        .query_row("SELECT variant FROM battle_tmp WHERE id = 1", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(|error| format!("无法读取对战临时状态版本：{error}"))?;
+    if current_variant.as_deref() != Some(variant) {
+        return Err("当前没有可更新的对战临时状态".to_string());
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("无法开始更新对战结果：{error}"))?;
+    let selected = load_battle_tmp_match_in(&transaction, match_id)?
+        .ok_or_else(|| "找不到对战场次".to_string())?;
+    if matches!(selected.status.as_str(), "pending" | "skipped") {
+        return Err("当前场次尚不能填写赛果".to_string());
+    }
+    if (selected.up.is_none() && up_result.is_some())
+        || (selected.down.is_none() && down_result.is_some())
+    {
+        return Err("等待上游的签位不能填写比分".to_string());
+    }
+    transaction
+        .execute(
+            "UPDATE battle_tmp_match SET up_result = ?1, down_result = ?2
+             WHERE state_id = 1 AND match_id = ?3",
+            params![
+                db_optional_usize(up_result, "上方比分")?,
+                db_optional_usize(down_result, "下方比分")?,
+                match_id,
+            ],
+        )
+        .map_err(|error| format!("无法更新对战结果：{error}"))?;
+
+    let match_count = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM battle_tmp_match WHERE state_id = 1",
+            [],
+            |row| row.get::<_, usize>(0),
+        )
+        .map_err(|error| format!("无法统计对战场次：{error}"))?;
+    let topology = battle_tmp_topology_in(&transaction)?;
+    let mut queue = VecDeque::from([match_id.to_string()]);
+    let mut processed = 0usize;
+    while let Some(current_match_id) = queue.pop_front() {
+        processed += 1;
+        if processed > match_count.saturating_mul(8).max(8) {
+            return Err("对战场次来源形成循环，无法更新赛果".to_string());
+        }
+        let changed = recompute_battle_tmp_match_in(&transaction, &topology, &current_match_id)?;
+        if changed || current_match_id == match_id {
+            queue.extend(battle_tmp_dependents_in(
+                &transaction,
+                &topology,
+                &current_match_id,
+            )?);
+        }
+    }
+    transaction
+        .execute(
+            "UPDATE battle_tmp SET updated_at = ?1 WHERE id = 1",
+            params![db_u64(updated_at, "对战临时状态时间")?],
+        )
+        .map_err(|error| format!("无法更新对战临时状态时间：{error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交对战结果：{error}"))?;
+    load_battle_tmp_state_in(connection, variant)?
+        .ok_or_else(|| "更新后无法读取对战临时状态".to_string())
+}
+
+fn clear_battle_tmp_state_in(connection: &Connection, variant: &str) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    if !battle_tmp_table_exists(connection)? {
+        return Ok(());
+    }
+    connection
+        .execute(
+            "DELETE FROM battle_tmp WHERE id = 1 AND variant = ?1",
+            params![variant],
+        )
+        .map_err(|error| format!("无法清空对战临时状态：{error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn save_battle_tmp_state(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    state: BattleTmpSnapshot,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        save_battle_tmp_state_in(connection, &variant, &state).map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
+fn load_battle_tmp_state(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<Option<BattleTmpSnapshot>, String> {
+    with_app_database(&app, &database, |connection| {
+        load_battle_tmp_state_in(connection, &variant).map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
+fn update_battle_tmp_result(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    match_id: String,
+    up_result: Option<usize>,
+    down_result: Option<usize>,
+    updated_at: u64,
+) -> Result<BattleTmpSnapshot, String> {
+    with_app_database(&app, &database, |connection| {
+        update_battle_tmp_result_in(
+            connection,
+            &variant,
+            &match_id,
+            up_result,
+            down_result,
+            updated_at,
+        )
+        .map_err(database_file_error)
+    })
+}
+
+fn db_usize(value: usize, label: &str) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| format!("{label}不合法"))
+}
+
+fn db_u64(value: u64, label: &str) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| format!("{label}不合法"))
+}
+
+fn db_optional_usize(value: Option<usize>, label: &str) -> Result<Option<i64>, String> {
+    value.map(|item| db_usize(item, label)).transpose()
+}
+
+fn db_to_usize(value: i64, label: &str) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| format!("{label}不合法"))
+}
+
+fn db_optional_to_usize(value: Option<i64>, label: &str) -> Result<Option<usize>, String> {
+    value.map(|item| db_to_usize(item, label)).transpose()
+}
+
+#[tauri::command]
+fn clear_battle_tmp_state(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        clear_battle_tmp_state_in(connection, &variant).map_err(database_file_error)
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1523,6 +2473,10 @@ pub fn run() {
             import_lineup_history,
             delete_lineup_history,
             clear_lineup_histories,
+            save_battle_tmp_state,
+            load_battle_tmp_state,
+            update_battle_tmp_result,
+            clear_battle_tmp_state,
             open_database_folder,
             open_download_folder,
             export_text_file,
@@ -2025,6 +2979,312 @@ mod tests {
         assert_eq!(histories.len(), 2);
         assert!(histories.iter().any(|history| history.id == old.id));
         assert!(histories.iter().any(|history| history.id == valid.id));
+    }
+
+    fn battle_tmp_test_participants(count: usize) -> Vec<BattleTmpParticipant> {
+        (1..=count)
+            .map(|id| BattleTmpParticipant {
+                id,
+                name: format!("选手{id}"),
+                source_index: id - 1,
+                seed: id,
+                group_index: None,
+                group_rank: None,
+            })
+            .collect()
+    }
+
+    fn battle_tmp_test_match(
+        match_id: &str,
+        level: usize,
+        position: usize,
+        up: Option<usize>,
+        down: Option<usize>,
+    ) -> BattleTmpMatch {
+        BattleTmpMatch {
+            match_id: match_id.to_string(),
+            stage: "single".to_string(),
+            level,
+            position,
+            up,
+            down,
+            up_result: None,
+            down_result: None,
+            status: if up.is_some() && down.is_some() {
+                "ready".to_string()
+            } else {
+                "pending".to_string()
+            },
+        }
+    }
+
+    fn single_battle_tmp_test_snapshot(variant: &str) -> BattleTmpSnapshot {
+        let final_match = battle_tmp_test_match("S2-M1", 2, 1, None, None);
+        BattleTmpSnapshot {
+            version: 1,
+            rules_version: 1,
+            kind: "battle-tmp".to_string(),
+            variant: variant.to_string(),
+            updated_at: 1_700_000_000_000,
+            format: "single-elimination".to_string(),
+            order_mode: "input".to_string(),
+            participant_count: 4,
+            bracket_size: 4,
+            fixed_seed_count: 2,
+            participants: battle_tmp_test_participants(4),
+            matches: vec![
+                battle_tmp_test_match("S1-M1", 1, 1, Some(1), Some(2)),
+                battle_tmp_test_match("S1-M2", 1, 2, Some(3), Some(4)),
+                final_match,
+            ],
+        }
+    }
+
+    fn double_battle_tmp_test_snapshot() -> BattleTmpSnapshot {
+        let mut winner = battle_tmp_test_match("W1-M1", 1, 1, Some(1), Some(2));
+        winner.stage = "winner".to_string();
+
+        let mut loser = battle_tmp_test_match("L1-M1", 1, 1, None, None);
+        loser.stage = "loser".to_string();
+
+        let mut grand_final = battle_tmp_test_match("GF-M1", 1, 1, None, None);
+        grand_final.stage = "final".to_string();
+
+        let mut reset = battle_tmp_test_match("GF-RESET-M1", 2, 1, None, None);
+        reset.stage = "final".to_string();
+
+        BattleTmpSnapshot {
+            version: 1,
+            rules_version: 1,
+            kind: "battle-tmp".to_string(),
+            variant: "standard".to_string(),
+            updated_at: 1_700_000_000_000,
+            format: "double-elimination".to_string(),
+            order_mode: "input".to_string(),
+            participant_count: 2,
+            bracket_size: 2,
+            fixed_seed_count: 0,
+            participants: battle_tmp_test_participants(2),
+            matches: vec![winner, loser, grand_final, reset],
+        }
+    }
+
+    #[test]
+    fn battle_tmp_is_created_lazily_and_replaced_as_one_global_state() {
+        let connection = test_database();
+        assert!(!battle_tmp_table_exists(&connection).expect("检查对战临时表"));
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "standard").expect("读取空对战状态"),
+            None
+        );
+
+        let standard = single_battle_tmp_test_snapshot("standard");
+        save_battle_tmp_state_in(&connection, "standard", &standard).expect("保存普通版对战状态");
+        assert!(battle_tmp_table_exists(&connection).expect("检查已创建的对战临时表"));
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "standard").expect("读取普通版对战状态"),
+            Some(standard.clone())
+        );
+        let columns = connection
+            .prepare("PRAGMA table_info(battle_tmp)")
+            .expect("读取对战临时表结构")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("查询对战临时表字段")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("解析对战临时表字段");
+        assert!(!columns.iter().any(|column| column == "state_json"));
+        let match_columns = connection
+            .prepare("PRAGMA table_info(battle_tmp_match)")
+            .expect("读取对战场次表结构")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("查询对战场次表字段")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("解析对战场次表字段");
+        assert_eq!(
+            match_columns,
+            vec![
+                "state_id",
+                "match_id",
+                "stage",
+                "level",
+                "position",
+                "up",
+                "down",
+                "up_result",
+                "down_result",
+                "status"
+            ]
+        );
+
+        let mut caimi = single_battle_tmp_test_snapshot("caimi");
+        caimi.updated_at += 1;
+        save_battle_tmp_state_in(&connection, "caimi", &caimi).expect("保存猜蜜版对战状态");
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "standard").expect("确认旧状态已被替换"),
+            None
+        );
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "caimi").expect("确认当前状态存在"),
+            Some(caimi.clone())
+        );
+        clear_battle_tmp_state_in(&connection, "standard").expect("其他版本不能误删当前状态");
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "caimi").unwrap(),
+            Some(caimi)
+        );
+        clear_battle_tmp_state_in(&connection, "caimi").expect("清空当前对战状态");
+        assert_eq!(
+            load_battle_tmp_state_in(&connection, "caimi").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn battle_tmp_result_updates_only_propagate_to_dependent_matches() {
+        let connection = test_database();
+        let snapshot = single_battle_tmp_test_snapshot("standard");
+        save_battle_tmp_state_in(&connection, "standard", &snapshot).expect("保存单败对战状态");
+
+        update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "S1-M1",
+            Some(4),
+            Some(1),
+            1_700_000_000_001,
+        )
+        .expect("填写第一场赛果");
+        let pending_final = load_battle_tmp_match_in(&connection, "S2-M1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(pending_final.up, Some(1));
+        assert_eq!(pending_final.down, None);
+        assert_eq!(pending_final.status, "pending");
+
+        update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "S1-M2",
+            Some(4),
+            Some(1),
+            1_700_000_000_002,
+        )
+        .expect("填写第二场赛果");
+        let ready_final = load_battle_tmp_match_in(&connection, "S2-M1")
+            .unwrap()
+            .unwrap();
+        assert_eq!((ready_final.up, ready_final.down), (Some(1), Some(3)));
+        assert_eq!(ready_final.status, "ready");
+
+        update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "S2-M1",
+            Some(4),
+            Some(1),
+            1_700_000_000_003,
+        )
+        .expect("填写决赛赛果");
+        let changed = update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "S1-M1",
+            Some(1),
+            Some(4),
+            1_700_000_000_004,
+        )
+        .expect("修改上游赛果");
+        let changed_final = changed
+            .matches
+            .iter()
+            .find(|battle_match| battle_match.match_id == "S2-M1")
+            .unwrap();
+        assert_eq!((changed_final.up, changed_final.down), (Some(2), Some(3)));
+        assert_eq!(
+            (changed_final.up_result, changed_final.down_result),
+            (None, None)
+        );
+        assert_eq!(changed_final.status, "ready");
+        assert_eq!(
+            changed
+                .matches
+                .iter()
+                .find(|battle_match| battle_match.match_id == "S1-M2")
+                .unwrap()
+                .up_result,
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn double_battle_tmp_propagates_losers_and_conditionally_activates_reset() {
+        let connection = test_database();
+        let snapshot = double_battle_tmp_test_snapshot();
+        save_battle_tmp_state_in(&connection, "standard", &snapshot).expect("保存双败对战状态");
+
+        let after_winner = update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "W1-M1",
+            Some(4),
+            Some(1),
+            1_700_000_000_001,
+        )
+        .expect("填写胜者组赛果");
+        let loser_match = after_winner
+            .matches
+            .iter()
+            .find(|battle_match| battle_match.match_id == "L1-M1")
+            .unwrap();
+        assert_eq!(loser_match.up, Some(2));
+        assert_eq!(
+            (loser_match.up_result, loser_match.down_result),
+            (None, None)
+        );
+        assert_eq!(loser_match.status, "completed");
+        let grand_final = after_winner
+            .matches
+            .iter()
+            .find(|battle_match| battle_match.match_id == "GF-M1")
+            .unwrap();
+        assert_eq!((grand_final.up, grand_final.down), (Some(1), Some(2)));
+        assert_eq!(grand_final.status, "ready");
+
+        let no_reset = update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "GF-M1",
+            Some(4),
+            Some(1),
+            1_700_000_000_002,
+        )
+        .expect("胜者组选手赢得总决赛");
+        assert_eq!(
+            no_reset
+                .matches
+                .iter()
+                .find(|battle_match| battle_match.match_id == "GF-RESET-M1")
+                .unwrap()
+                .status,
+            "skipped"
+        );
+
+        let reset = update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "GF-M1",
+            Some(1),
+            Some(4),
+            1_700_000_000_003,
+        )
+        .expect("败者组选手赢得总决赛");
+        let reset_match = reset
+            .matches
+            .iter()
+            .find(|battle_match| battle_match.match_id == "GF-RESET-M1")
+            .unwrap();
+        assert_eq!((reset_match.up, reset_match.down), (Some(2), Some(1)));
+        assert_eq!(reset_match.status, "ready");
     }
 
     #[test]

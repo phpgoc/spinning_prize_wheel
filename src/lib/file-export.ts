@@ -63,6 +63,11 @@ export async function downloadExcel(
   return downloadBinaryFile(prefix, 'xlsx', bytes, EXCEL_MIME);
 }
 
+/** 下载已经排版完成的 XLSX，供签表等需要合并单元格的导出使用。 */
+export function downloadExcelBytes(prefix: string, bytes: Uint8Array): Promise<string> {
+  return downloadBinaryFile(prefix, 'xlsx', bytes, EXCEL_MIME);
+}
+
 export function downloadFormattedJson(prefix: string, value: unknown): Promise<string> {
   return downloadTextFile(
     prefix,
