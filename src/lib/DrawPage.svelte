@@ -2527,7 +2527,7 @@
           <div class="history-actions sidebar-history-actions">
             <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</button>
             <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</button>
-            <button type="button" on:click={openDrawDownloadFolder}>打开下载文件夹</button>
+            <button type="button" on:click={openDrawDownloadFolder}>打开下载</button>
             <button type="button" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</button>
           </div>
         {/if}
