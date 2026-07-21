@@ -214,6 +214,42 @@ test('桌面对战全屏会同步切换 Tauri 窗口', async ({ page }) => {
   ))).toBe(false);
 });
 
+test('桌面对战经过三次确认后直接清空临时表', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).not.toBeNull();
+
+  const clearBattle = page.getByRole('button', { name: '清空对战' });
+  await clearBattle.click();
+  await expect(page.getByRole('heading', { name: '清空当前对战？' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.battle-match')).not.toHaveCount(0);
+
+  await clearBattle.click();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '再次确认清空？' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '最后确认清空？' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).not.toBeNull();
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('.names-field textarea')).toHaveValue('');
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).toBeNull();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'clear_battle_tmp_state').length
+  ))).toBe(1);
+});
+
 test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({ page, context }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);

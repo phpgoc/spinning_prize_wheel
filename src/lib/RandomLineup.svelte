@@ -166,7 +166,8 @@
   let rankingImporting = false;
   let historyImporting = false;
   let importErrorDialog: { title: string; detail: string } | null = null;
-  let clearLineupConfirmation = false;
+  let clearLineupConfirmation: 0 | 1 | 2 | 3 = 0;
+  let clearingBattleTmp = false;
   let lineupResultElement: HTMLElement | null = null;
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
   let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
@@ -1607,10 +1608,10 @@
     if (clearLineupConfirmation) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
-        clearLineupConfirmation = false;
+        clearLineupConfirmation = 0;
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
-        clearAll();
+        void confirmClearAll();
       }
       return;
     }
@@ -1925,11 +1926,32 @@
   }
 
   function requestClearAll() {
-    if (sourceText || confirmedSourceText || battleTmpSnapshot) clearLineupConfirmation = true;
+    if (sourceText || confirmedSourceText || battleTmpSnapshot) clearLineupConfirmation = 1;
   }
 
-  function clearAll() {
-    clearLineupConfirmation = false;
+  async function confirmClearAll() {
+    if (clearingBattleTmp) return;
+    if (battlePage && clearLineupConfirmation < 3) {
+      clearLineupConfirmation = (clearLineupConfirmation + 1) as 2 | 3;
+      return;
+    }
+    await clearAll();
+  }
+
+  async function clearAll() {
+    if (desktopRuntime && battlePage) {
+      clearingBattleTmp = true;
+      try {
+        await invoke('clear_battle_tmp_state', { variant });
+      } catch (reason) {
+        battleSyncStatus = 'error';
+        error = messageFrom(reason, '无法清空对战临时状态');
+        return;
+      } finally {
+        clearingBattleTmp = false;
+      }
+    }
+    clearLineupConfirmation = 0;
     sourceText = '';
     confirmedSourceText = '';
     resolutionRequest += 1;
@@ -1943,7 +1965,6 @@
     battleSyncStatus = 'idle';
     error = '';
     historyStatus = 'idle';
-    if (desktopRuntime && battlePage) void clearPersistedBattleTmp();
   }
 
   function focusLineupResult() {
@@ -1957,15 +1978,6 @@
       positions[index * 2],
       positions[index * 2 + 1],
     ]);
-  }
-
-  async function clearPersistedBattleTmp() {
-    try {
-      await invoke('clear_battle_tmp_state', { variant });
-    } catch (reason) {
-      battleSyncStatus = 'error';
-      error = messageFrom(reason, '无法清空对战临时状态');
-    }
   }
 
   function groupBattleTmpMatches(snapshot: BattleTmpSnapshot | null): {
@@ -2752,7 +2764,7 @@
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false"></textarea></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
-        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
+        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText && !battleTmpSnapshot} on:click={requestClearAll}>{battlePage ? '清空对战' : '清空'}</button>
       </div>
       {#if !battlePage}
         <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
@@ -2765,11 +2777,19 @@
   <div class="delete-confirm-backdrop">
     <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-lineup-title" aria-describedby="clear-lineup-detail" tabindex="-1">
       <span class="delete-confirm-icon">!</span>
-      <h2 id="clear-lineup-title">同时清空{battlePage ? '对战' : '名单'}预览？</h2>
-      <p id="clear-lineup-detail">名单、{battlePage ? '对战预览和当前对战' : '名单预览和当前分组结果'}都会清空。</p>
+      <h2 id="clear-lineup-title">{battlePage
+        ? clearLineupConfirmation === 1
+          ? '清空当前对战？'
+          : clearLineupConfirmation === 2
+            ? '再次确认清空？'
+            : '最后确认清空？'
+        : '同时清空名单预览？'}</h2>
+      <p id="clear-lineup-detail">{battlePage
+        ? `名单、签表和比分都会清空${desktopRuntime ? '，并直接删除桌面对战临时表' : ''}。`
+        : '名单、名单预览和当前分组结果都会清空。'}</p>
       <div>
-        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (clearLineupConfirmation = false)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={clearAll}><span>确认</span></button>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingBattleTmp} on:click={() => (clearLineupConfirmation = 0)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingBattleTmp} on:click={confirmClearAll}><span>{battlePage && clearLineupConfirmation < 3 ? `确认 ${clearLineupConfirmation}/3` : '确认清空'}</span></button>
       </div>
     </div>
   </div>
