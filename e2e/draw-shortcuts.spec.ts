@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 async function importCandidates(page: Page, names: string[]) {
   await page.keyboard.press('w');
@@ -250,6 +251,9 @@ test('统计栏快捷键增减上限并开始连续抽奖', async ({ page }) => 
 
 test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '统计 0' }).click();
+  await expect(page.getByRole('button', { name: 'Excel', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'JSON', exact: true })).toBeDisabled();
   await page.getByLabel('动画时长').fill('1');
   await page.keyboard.press('Escape');
 
@@ -261,6 +265,12 @@ test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽�
   await page.keyboard.press('e');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/转盘统计.*\.json$/u);
+  const exported = JSON.parse(await readFile((await download.path())!, 'utf8')) as Array<{
+    name: string;
+    count: number;
+  }>;
+  expect(exported.reduce((total, row) => total + row.count, 0)).toBe(1);
+  expect(exported.some((row) => row.name === '重来一次')).toBe(false);
 
   await page.keyboard.press('m');
   const reward = page.getByLabel('奖励金额');

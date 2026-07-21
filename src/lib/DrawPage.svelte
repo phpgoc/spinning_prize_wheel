@@ -1567,33 +1567,22 @@
   }
 
   async function exportCurrentStatsExcel() {
-    if (records.length === 0) return;
+    if (validCompleted === 0) return;
     const rows: (string | number)[][] = [
       ['候选项', '权重', '中奖次数', '中奖金额'],
       ...currentStats.map((stat) => [stat.name, stat.weight, stat.count, stat.rewardTotal]),
     ];
-    if (retryTotal > 0 || retryEnabled) {
-      rows.push(['重来一次', retryEnabled ? retryWeight : '', retryTotal, 0]);
-    }
     await downloadExcel('转盘统计', rows);
   }
 
   function exportCurrentStatsJson() {
-    if (records.length === 0) return;
+    if (validCompleted === 0) return;
     const statistics = currentStats.map(({ name, weight, count, rewardTotal }) => ({
       name,
       weight,
       count,
       rewardTotal,
     }));
-    if (retryTotal > 0 || retryEnabled) {
-      statistics.push({
-        name: '重来一次',
-        weight: retryEnabled ? retryWeight : 0,
-        count: retryTotal,
-        rewardTotal: 0,
-      });
-    }
     downloadFormattedJson('转盘统计', statistics);
   }
 
@@ -2355,8 +2344,8 @@
             </div>
 
             <div class="side-stats-actions">
-              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsExcel}>Excel</button>
-              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsJson}>JSON</button>
+              <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</button>
+              <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</button>
               <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空统计</button>
             </div>
           {/if}
