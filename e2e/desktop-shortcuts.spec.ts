@@ -187,7 +187,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await expect(lineupHistoryPanel.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
   await lineupHistoryPanel.locator('.history-view').first().click();
   await expect(page.locator('.lineup-result tbody tr')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'CSV', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /删除 .* 的分组历史/u }).first().click();
   await page.keyboard.press('Enter');

@@ -415,9 +415,32 @@ fn export_text_file(
     content: String,
 ) -> Result<String, String> {
     let extension = match extension.as_str() {
-        "csv" | "json" => extension,
-        _ => return Err("只支持导出 CSV 或 JSON 文件".to_string()),
+        "json" => extension,
+        _ => return Err("文本导出只支持 JSON 文件".to_string()),
     };
+    write_export_file(&app, &prefix, &extension, content.as_bytes())
+}
+
+#[tauri::command]
+fn export_binary_file(
+    app: AppHandle,
+    prefix: String,
+    extension: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let extension = match extension.as_str() {
+        "xlsx" => extension,
+        _ => return Err("二进制导出只支持 Excel 文件".to_string()),
+    };
+    write_export_file(&app, &prefix, &extension, &bytes)
+}
+
+fn write_export_file(
+    app: &AppHandle,
+    prefix: &str,
+    extension: &str,
+    content: &[u8],
+) -> Result<String, String> {
     let prefix = sanitize_export_prefix(&prefix);
     let directory = app
         .path()
@@ -432,7 +455,7 @@ fn export_text_file(
         u8::from(now.month()),
         now.day()
     );
-    let path = available_export_path(&directory, &base_name, &extension);
+    let path = available_export_path(&directory, &base_name, extension);
     fs::write(&path, content).map_err(|error| format!("无法写入导出文件：{error}"))?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -1502,7 +1525,8 @@ pub fn run() {
             clear_lineup_histories,
             open_database_folder,
             open_download_folder,
-            export_text_file
+            export_text_file,
+            export_binary_file
         ])
         .run(tauri::generate_context!())
         .expect("无法启动转盘");

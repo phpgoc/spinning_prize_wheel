@@ -33,7 +33,7 @@
     filterDrawHistories,
     singleDrawHistoryStats,
   } from './draw-history';
-  import { downloadCsv, downloadFormattedJson } from './file-export';
+  import { downloadExcel, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
   import {
@@ -655,17 +655,17 @@
     }, { completed: 0, retries: 0, rewardTotal: 0 });
   }
 
-  async function exportDrawHistoriesCsv() {
+  async function exportDrawHistoriesExcel() {
     if (filteredDrawHistories.length === 0) return;
     const rows = aggregateDrawHistories(filteredDrawHistories);
     drawHistoryError = '';
     try {
-      await downloadCsv('转盘历史查询', [
+      await downloadExcel('转盘历史查询', [
         ['名字', '参与次数', '中奖次数', '中奖金额'],
         ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
       ]);
     } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 CSV');
+      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 Excel');
     }
   }
 
@@ -679,16 +679,16 @@
     }
   }
 
-  async function exportDrawHistoryCsv(draw: SavedDraw) {
+  async function exportDrawHistoryExcel(draw: SavedDraw) {
     const rows = singleDrawHistoryStats(draw);
     drawHistoryError = '';
     try {
-      await downloadCsv('抽奖历史', [
+      await downloadExcel('抽奖历史', [
         ['名字', '权重', '中奖次数', '中奖金额'],
         ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
       ]);
     } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 CSV');
+      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 Excel');
     }
   }
 
@@ -1566,7 +1566,7 @@
     };
   }
 
-  function exportCurrentStatsCsv() {
+  async function exportCurrentStatsExcel() {
     if (records.length === 0) return;
     const rows: (string | number)[][] = [
       ['候选项', '权重', '中奖次数', '中奖金额'],
@@ -1575,7 +1575,7 @@
     if (retryTotal > 0 || retryEnabled) {
       rows.push(['重来一次', retryEnabled ? retryWeight : '', retryTotal, 0]);
     }
-    downloadCsv('转盘统计', rows);
+    await downloadExcel('转盘统计', rows);
   }
 
   function exportCurrentStatsJson() {
@@ -2355,7 +2355,7 @@
             </div>
 
             <div class="side-stats-actions">
-              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsCsv}>CSV</button>
+              <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsExcel}>Excel</button>
               <button type="button" disabled={records.length === 0} on:click={exportCurrentStatsJson}>JSON</button>
               <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空统计</button>
             </div>
@@ -2525,7 +2525,7 @@
                   <div class="draw-history-bottom">
                     <p title={draw.prizes.map((prize) => prize.name).join('、')}>{draw.prizes.map((prize) => prize.name).join('、') || '空名单'}</p>
                     <div class="draw-history-export-actions">
-                      <button type="button" on:click={() => exportDrawHistoryCsv(draw)}>CSV</button>
+                      <button type="button" on:click={() => exportDrawHistoryExcel(draw)}>Excel</button>
                       <button type="button" on:click={() => exportDrawHistoryJson(draw)}>JSON</button>
                     </div>
                   </div>
@@ -2535,7 +2535,7 @@
 
           {/if}
           <div class="history-actions sidebar-history-actions">
-            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesCsv}>汇总 CSV</button>
+            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</button>
             <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</button>
             <button type="button" on:click={openDrawDownloadFolder}>打开下载文件夹</button>
             <button type="button" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</button>

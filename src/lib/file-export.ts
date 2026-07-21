@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import ExcelJS from 'exceljs';
 
-export type CsvCell = string | number | boolean | null | undefined;
+export type ExcelCell = string | number | boolean | null | undefined;
 
 export interface ExportCompletedNotice {
   location: string;
@@ -9,6 +10,7 @@ export interface ExportCompletedNotice {
 
 type ExportNoticeListener = (notice: ExportCompletedNotice) => void;
 
+const EXCEL_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const exportNoticeListeners = new Set<ExportNoticeListener>();
 
 export function subscribeExportCompleted(listener: ExportNoticeListener): () => void {
@@ -20,20 +22,49 @@ function publishExportCompleted(notice: ExportCompletedNotice) {
   for (const listener of exportNoticeListeners) listener(notice);
 }
 
-/** 生成带 UTF-8 BOM 的 CSV，保证 Windows Excel 直接打开时中文不乱码。 */
-export function createCsv(rows: readonly (readonly CsvCell[])[]): string {
-  const content = rows
-    .map((row) => row.map((cell) => escapeCsvCell(cell)).join(','))
-    .join('\r\n');
-  return `\uFEFF${content}`;
+/** 生成标准 XLSX 工作簿，桌面版和网页版共用同一份二进制内容。 */
+export async function createExcelWorkbook(
+  rows: readonly (readonly ExcelCell[])[],
+  sheetName = '数据',
+): Promise<Uint8Array> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '转盘';
+  const worksheet = workbook.addWorksheet(normalizeSheetName(sheetName), {
+    views: [{ state: 'frozen', ySplit: rows.length > 0 ? 1 : 0 }],
+  });
+  worksheet.addRows(rows.map((row) => [...row]));
+
+  if (rows.length > 0) {
+    const header = worksheet.getRow(1);
+    header.font = { bold: true, color: { argb: 'FF24251F' } };
+    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EFBC' } };
+    header.alignment = { vertical: 'middle' };
+  }
+
+  worksheet.columns.forEach((column) => {
+    let width = 10;
+    column.eachCell?.({ includeEmpty: true }, (cell) => {
+      const value = cell.value === null || cell.value === undefined ? '' : String(cell.value);
+      width = Math.max(width, Math.min(40, Array.from(value).length + 2));
+    });
+    column.width = width;
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Uint8Array(buffer);
 }
 
-export function downloadCsv(prefix: string, rows: readonly (readonly CsvCell[])[]): Promise<string> {
-  return downloadFile(prefix, 'csv', createCsv(rows), 'text/csv;charset=utf-8');
+export async function downloadExcel(
+  prefix: string,
+  rows: readonly (readonly ExcelCell[])[],
+  sheetName = prefix,
+): Promise<string> {
+  const bytes = await createExcelWorkbook(rows, sheetName);
+  return downloadBinaryFile(prefix, 'xlsx', bytes, EXCEL_MIME);
 }
 
 export function downloadFormattedJson(prefix: string, value: unknown): Promise<string> {
-  return downloadFile(
+  return downloadTextFile(
     prefix,
     'json',
     JSON.stringify(value, null, 2),
@@ -41,25 +72,47 @@ export function downloadFormattedJson(prefix: string, value: unknown): Promise<s
   );
 }
 
-function escapeCsvCell(value: CsvCell): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+function normalizeSheetName(value: string): string {
+  const normalized = value.trim().replace(/[\\/?*:[\]]/g, '_').slice(0, 31);
+  return normalized || '数据';
 }
 
-async function downloadFile(
+async function downloadTextFile(
   prefix: string,
   extension: string,
   content: string,
   type: string,
 ): Promise<string> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+  if (isDesktopRuntime()) {
     const location = await invoke<string>('export_text_file', { prefix, extension, content });
     publishExportCompleted({ location, desktop: true });
     return location;
   }
+  return downloadBrowserBlob(prefix, extension, new Blob([content], { type }));
+}
 
+async function downloadBinaryFile(
+  prefix: string,
+  extension: string,
+  bytes: Uint8Array,
+  type: string,
+): Promise<string> {
+  if (isDesktopRuntime()) {
+    const location = await invoke<string>('export_binary_file', {
+      prefix,
+      extension,
+      bytes: Array.from(bytes),
+    });
+    publishExportCompleted({ location, desktop: true });
+    return location;
+  }
+  const content = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return downloadBrowserBlob(prefix, extension, new Blob([content], { type }));
+}
+
+function downloadBrowserBlob(prefix: string, extension: string, blob: Blob): string {
   const filename = `${prefix}-${new Date().toISOString().slice(0, 10)}.${extension}`;
-  const url = URL.createObjectURL(new Blob([content], { type }));
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -69,4 +122,8 @@ async function downloadFile(
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
   publishExportCompleted({ location: filename, desktop: false });
   return filename;
+}
+
+function isDesktopRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }

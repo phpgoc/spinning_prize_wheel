@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
-  import { downloadCsv, downloadFormattedJson } from './file-export';
+  import { downloadExcel, downloadFormattedJson } from './file-export';
   import {
     createLineupHistoryTransfer,
     parseLineupHistoryTransfer,
@@ -362,11 +362,11 @@
     }
   }
 
-  async function exportLineupCsv() {
+  async function exportLineupExcel() {
     if (!result) return;
     error = '';
     try {
-      await downloadCsv('分组结果', [
+      await downloadExcel('分组结果', [
         ['档位', ...result.groupNames.map((group) => `${group}组`)],
         ...result.tiers.map((tier, tierIndex) => [
           `t${tierIndex + 1}`,
@@ -374,7 +374,7 @@
         ]),
       ]);
     } catch (reason) {
-      error = messageFrom(reason, '无法导出分组结果 CSV');
+      error = messageFrom(reason, '无法导出分组结果 Excel');
     }
   }
 
@@ -1867,7 +1867,7 @@
               {#if hiddenLineupCellCount > 0}
                 <button type="button" class="result-export-button reveal-all-button" on:click={revealAllLineupCells}>显示全部</button>
               {/if}
-              <button type="button" class="result-export-button" on:click={exportLineupCsv}>CSV</button>
+              <button type="button" class="result-export-button" on:click={exportLineupExcel}>Excel</button>
               <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
               {#if desktopRuntime}
                 <div class="history-save-control">

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 async function confirmNames(page: Page, names: string[]) {
   const textarea = page.locator('.names-field textarea');
@@ -96,4 +97,18 @@ test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) =>
   await expect(resultRows.nth(1).locator('.slow-reveal-cell')).toHaveCount(3);
   await page.getByRole('button', { name: '显示全部' }).click();
   await expect(page.locator('.slow-reveal-cell')).toHaveCount(0);
+});
+
+test('Web 分组导出真正的 XLSX 文件', async ({ page }) => {
+  await confirmNames(page, ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']);
+  await page.getByRole('button', { name: '开始分组' }).click();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Excel', exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^分组结果-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const bytes = await readFile(path!);
+  expect(Array.from(bytes.subarray(0, 2))).toEqual([0x50, 0x4b]);
 });

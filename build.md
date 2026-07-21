@@ -171,7 +171,7 @@ bun run test:e2e:tauri
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-`test:e2e:web` 会启动本地网页并测试四个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
+`test:e2e:web` 会启动本地网页并测试六个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
 任意一条命令失败时，应先处理错误再发布产物。
 
@@ -180,6 +180,10 @@ cargo test --manifest-path src-tauri/Cargo.toml
 桌面程序使用 Rust 官方 MSVC ABI 编译，但 `.cargo/config.toml` 会把 C 运行库静态链接进 EXE。因此 Visual Studio Build Tools 只在编译电脑上需要，最终用户不需要另装 VC++ Redistributable。
 
 SQLite 使用 `rusqlite bundled`，SQLite 源码会分别编译进普通版和猜蜜版，不依赖 `sqlite3.dll`。两个程序仍然共用同一个排名和别名数据库文件，抽奖与分组历史按版本分开保存。
+
+Excel 使用纯 JavaScript 的 `exceljs` 生成标准 XLSX。网页版在浏览器中直接生成和下载，桌面版生成同样的二进制后交给 Tauri 写入下载目录；构建时 Excel writer 会进入 Vite 前端资源，再由 Tauri 嵌入应用，不需要 Excel、Node.js 或额外 DLL。引入 Excel 后，普通版单文件 Web 脚本从约 905 KB 增加到 1,844 KB，gzip 从约 511 KB 增加到 770 KB，压缩传输增量约 259 KB。
+
+当前两项依赖都保持随程序打包。SQLite 改成动态链接需要额外准备与 CPU 架构匹配的 `sqlite3.dll`，配置安装器、加载路径和双程序升级，Windows 也不保证系统自带可供应用链接的 SQLite，实施成本中等而收益只是一部分 EXE 体积。Excel writer 是 JavaScript 资源，不适用静态库/动态库切换；把它外置只会增加资源完整性和离线加载维护成本。因此 0.2.0 不采用动态库或外置 writer。
 
 ## 10. 常见问题
 
