@@ -152,6 +152,7 @@
   let battleFormat: BattleFormat = 'avoid-first-pair';
   let battleOrderMode: BattleOrderMode = 'input';
   let battleFixedSeedCount = 2;
+  let battleDoubleGrandFinal = false;
   let battlePlanSignature = '';
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
@@ -237,6 +238,7 @@
     battleFormat,
     battleOrderMode,
     battleConfiguredFixedCount,
+    battleFormat === 'double-elimination' && battleDoubleGrandFinal ? 'double-final' : 'single-final',
     battleOrderMode === 'rank' ? desktopRankSignature : 'input',
   ].join('|');
   $: battleResultOutdated = battleTmpSnapshot !== null && battlePlanSignature !== currentBattleSignature;
@@ -476,6 +478,7 @@
           format: battleFormat,
           orderMode: battleOrderMode,
           fixedSeedCount: battleConfiguredFixedCount,
+          doubleGrandFinal: battleDoubleGrandFinal,
         });
       lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
@@ -629,6 +632,7 @@
       battleFormat = state.format;
       battleOrderMode = state.orderMode;
       battleFixedSeedCount = state.fixedSeedCount;
+      battleDoubleGrandFinal = state.matches.some((match) => match.matchId === 'GF-RESET-M1');
       const restoredNames = [...state.participants]
         .sort((left, right) => left.sourceIndex - right.sourceIndex)
         .map((participant) => participant.name)
@@ -2463,6 +2467,9 @@
               <label><input type="radio" name="battle-format" value="avoid-first-pair" bind:group={battleFormat} /><span>同组不对战1对2</span></label>
               <label><input type="radio" name="battle-format" value="single-elimination" bind:group={battleFormat} /><span>单败</span></label>
               <label><input type="radio" name="battle-format" value="double-elimination" bind:group={battleFormat} /><span>双败</span></label>
+              {#if battleFormat === 'double-elimination'}
+                <label class="battle-double-final-option"><input type="checkbox" bind:checked={battleDoubleGrandFinal} /><span>双总决赛</span></label>
+              {/if}
             </fieldset>
             {#if battleFormat !== 'avoid-first-pair'}
               <fieldset class="battle-radio-group">
@@ -2948,6 +2955,7 @@
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
   .battle-preview-settings { margin-top: 18px; padding-top: 2px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
   .battle-preview-settings .battle-format-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .battle-preview-settings .battle-double-final-option { grid-column: 3; }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
   .battle-preview-settings .battle-count-status { border: 1px solid rgba(218, 91, 63, 0.18); background: rgba(218, 91, 63, 0.08); color: #e1a092; }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }

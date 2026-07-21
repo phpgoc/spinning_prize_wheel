@@ -2265,12 +2265,17 @@ fn battle_tmp_dependents_in(
     };
     candidates.sort();
     candidates.dedup();
-    for candidate in &candidates {
-        if load_battle_tmp_match_in(connection, candidate)?.is_none() {
+    let mut existing_candidates = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if load_battle_tmp_match_in(connection, &candidate)?.is_none() {
+            if source.stage == "final" && source.level == 1 && candidate == "GF-RESET-M1" {
+                continue;
+            }
             return Err(format!("固定路线缺少下游场次 {candidate}"));
         }
+        existing_candidates.push(candidate);
     }
-    Ok(candidates)
+    Ok(existing_candidates)
 }
 
 fn update_battle_tmp_result_in(
@@ -3285,6 +3290,49 @@ mod tests {
             .unwrap();
         assert_eq!((reset_match.up, reset_match.down), (Some(2), Some(1)));
         assert_eq!(reset_match.status, "ready");
+    }
+
+    #[test]
+    fn double_battle_tmp_without_reset_finishes_at_grand_final() {
+        let connection = test_database();
+        let mut snapshot = double_battle_tmp_test_snapshot();
+        snapshot
+            .matches
+            .retain(|battle_match| battle_match.match_id != "GF-RESET-M1");
+        save_battle_tmp_state_in(&connection, "standard", &snapshot)
+            .expect("保存未启用第二场总决赛的双败状态");
+
+        update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "W1-M1",
+            Some(4),
+            Some(1),
+            1_700_000_000_001,
+        )
+        .expect("填写胜者组赛果");
+        let completed = update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "GF-M1",
+            Some(1),
+            Some(4),
+            1_700_000_000_002,
+        )
+        .expect("第一场总决赛直接产生冠军");
+        assert!(completed
+            .matches
+            .iter()
+            .all(|battle_match| battle_match.match_id != "GF-RESET-M1"));
+        assert_eq!(
+            completed
+                .matches
+                .iter()
+                .find(|battle_match| battle_match.match_id == "GF-M1")
+                .unwrap()
+                .status,
+            "completed"
+        );
     }
 
     #[test]

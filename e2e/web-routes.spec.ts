@@ -134,8 +134,10 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   expect(finalBox!.x + finalBox!.width).toBeLessThan(rightBox!.x);
 
   await page.getByRole('radio', { name: '双败' }).check();
+  const doubleGrandFinal = page.getByRole('checkbox', { name: '双总决赛' });
+  await expect(doubleGrandFinal).not.toBeChecked();
   await page.getByRole('button', { name: /^执行/ }).click();
-  await expect(page.locator('.battle-round')).toHaveCount(9);
+  await expect(page.locator('.battle-round')).toHaveCount(8);
   await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
   const doubleScroll = page.locator('.double-battle-scroll');
   const winnerSection = page.locator('.double-winner-section');
@@ -185,8 +187,13 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(firstWinnerMatch.locator('input[type="number"]').first()).toBeFocused();
   await firstWinnerMatch.locator('input[type="number"]').first().press('ArrowRight');
   await expect(page.locator('.double-battle-bracket input:focus')).toHaveCount(1);
-  await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '总决赛', exact: true })).toHaveCount(1);
+
+  await doubleGrandFinal.check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+  await expect(page.locator('.battle-round')).toHaveCount(9);
+  await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
 });
 
 test('16 人双败逐列向分界线收拢', async ({ page }) => {

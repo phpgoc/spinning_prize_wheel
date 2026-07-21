@@ -225,9 +225,10 @@ function battleChampionId(snapshot: BattleTmpSnapshot): number | null {
     return final ? battleTmpWinnerId(final) : null;
   }
   const reset = snapshot.matches.find((match) => match.stage === 'final' && match.level === 2);
+  const grandFinal = snapshot.matches.find((match) => match.stage === 'final' && match.level === 1);
+  if (!reset) return grandFinal ? battleTmpWinnerId(grandFinal) : null;
   if (reset?.status === 'completed') return battleTmpWinnerId(reset);
   if (reset?.status !== 'skipped') return null;
-  const grandFinal = snapshot.matches.find((match) => match.stage === 'final' && match.level === 1);
   return grandFinal ? battleTmpWinnerId(grandFinal) : null;
 }
 

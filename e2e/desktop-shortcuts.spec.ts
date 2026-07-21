@@ -238,6 +238,39 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await restoredPage.close();
 });
 
+test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page, context }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '双败' }).check();
+  const doubleGrandFinal = page.getByRole('checkbox', { name: '双总决赛' });
+  await expect(doubleGrandFinal).not.toBeChecked();
+  await page.getByRole('button', { name: /^执行/ }).click();
+
+  const singleFinalState = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+  expect(singleFinalState.matches.some((match: any) => match.matchId === 'GF-RESET-M1')).toBe(false);
+  const restoredSingleFinal = await context.newPage();
+  await installTauriMock(restoredSingleFinal, undefined, { battleTmpState: singleFinalState });
+  await restoredSingleFinal.goto('/#/battle');
+  await expect(restoredSingleFinal.getByRole('checkbox', { name: '双总决赛' })).not.toBeChecked();
+  await expect(restoredSingleFinal.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
+  await restoredSingleFinal.close();
+
+  await doubleGrandFinal.check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+  const doubleFinalState = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+  expect(doubleFinalState.matches.some((match: any) => match.matchId === 'GF-RESET-M1')).toBe(true);
+  const restoredDoubleFinal = await context.newPage();
+  await installTauriMock(restoredDoubleFinal, undefined, { battleTmpState: doubleFinalState });
+  await restoredDoubleFinal.goto('/#/battle');
+  await expect(restoredDoubleFinal.getByRole('checkbox', { name: '双总决赛' })).toBeChecked();
+  await expect(restoredDoubleFinal.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
+  await restoredDoubleFinal.close();
+});
+
 async function enterDesktopBattleScore(match: Locator, up: number, down: number) {
   const inputs = match.locator('input[type="number"]');
   const page = match.page();

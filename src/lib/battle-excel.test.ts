@@ -45,6 +45,20 @@ describe('对战签表 Excel', () => {
     expect(values).toContain('总决赛');
     expect(worksheet.model.merges.length).toBeGreaterThan(15);
   });
+
+  test('未启用第二场总决赛时第一场结果直接产生冠军', async () => {
+    let snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(2), {
+      format: 'double-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 0,
+      random: () => 0.25,
+    }), 1_700_000_000_000);
+    snapshot = updateBattleTmpResult(snapshot, 'W1-M1', 4, 1, 1_700_000_000_001);
+    snapshot = updateBattleTmpResult(snapshot, 'GF-M1', 4, 1, 1_700_000_000_002);
+
+    const workbook = await loadWorkbook(await createBattleBracketWorkbook(snapshot));
+    expect(worksheetValues(workbook.getWorksheet('对战签表')!)).toContain('冠军');
+  });
 });
 
 async function loadWorkbook(bytes: Uint8Array) {

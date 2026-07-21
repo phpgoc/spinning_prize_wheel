@@ -99,6 +99,7 @@ export interface SeededBattleOptions {
   format: 'single-elimination' | 'double-elimination';
   orderMode: BattleOrderMode;
   fixedSeedCount: number;
+  doubleGrandFinal?: boolean;
   random?: () => number;
 }
 
@@ -351,7 +352,7 @@ export function createSeededBattlePlan(
     bracketSize,
     fixedSeedCount: options.fixedSeedCount,
     positions,
-    rounds: createEliminationRounds(options.format, positions),
+    rounds: createEliminationRounds(options.format, positions, options.doubleGrandFinal ?? false),
   };
 }
 
@@ -488,6 +489,7 @@ function createParticipants(names: readonly string[]): BattleParticipant[] {
 function createEliminationRounds(
   format: 'single-elimination' | 'double-elimination',
   positions: readonly BattlePosition[],
+  doubleGrandFinal: boolean,
 ): BattleRound[] {
   const winnerRounds = createWinnerRounds(format, positions);
   if (format === 'single-elimination') return winnerRounds;
@@ -498,6 +500,7 @@ function createEliminationRounds(
     winnerSource(winnerFinal.id),
     winnerSource(loserFinal.id),
   ]]);
+  if (!doubleGrandFinal) return [...winnerRounds, ...loserRounds, grandFinal];
   const resetFinal = createRound('GF-RESET', '总决赛（必要时重赛）', 'final', 2, [[
     winnerSource(grandFinal.matches[0].id),
     loserSource(grandFinal.matches[0].id),

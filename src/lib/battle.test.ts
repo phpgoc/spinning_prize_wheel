@@ -161,11 +161,28 @@ describe('对战签位', () => {
     });
   });
 
-  test('双败包含胜者组、败者组、总决赛和必要时重赛', () => {
+  test('双败默认只生成一场总决赛', () => {
     const plan = createSeededBattlePlan(names(8), {
       format: 'double-elimination',
       orderMode: 'input',
       fixedSeedCount: 2,
+      random: () => 0,
+    });
+    expect(plan.rounds.map((round) => `${round.id}:${round.matches.length}`)).toEqual([
+      'W1:4', 'W2:2', 'W3:1',
+      'L1:2', 'L2:2', 'L3:1', 'L4:1',
+      'GF:1',
+    ]);
+    const state = createBattleTmpSnapshot('standard', plan, 1_700_000_000_000);
+    expect(state.matches.some((match) => match.matchId === 'GF-RESET-M1')).toBe(false);
+  });
+
+  test('双败可以生成必要时启用的第二场总决赛', () => {
+    const plan = createSeededBattlePlan(names(8), {
+      format: 'double-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 2,
+      doubleGrandFinal: true,
       random: () => 0,
     });
     expect(plan.rounds.map((round) => `${round.id}:${round.matches.length}`)).toEqual([
@@ -237,6 +254,7 @@ describe('对战签位', () => {
       format: 'double-elimination',
       orderMode: 'input',
       fixedSeedCount: 2,
+      doubleGrandFinal: true,
       random: () => 0.25,
     }), 1_700_000_000_000);
     state = completeReadyMatches(state, (match) => match.stage !== 'final');
