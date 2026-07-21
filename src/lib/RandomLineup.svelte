@@ -2320,7 +2320,7 @@
               {/each}
             </div>
           {:else}
-            <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '名单前半为各组第 1，后半为对应组第 2' : '确认名单并选择固定位置'}</p></div>
+            <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '名单每相邻两项为一组，依次为第 1 和第 2' : '确认名单并选择固定位置'}</p></div>
           {/if}
         {:else}
         <div class="result-heading">

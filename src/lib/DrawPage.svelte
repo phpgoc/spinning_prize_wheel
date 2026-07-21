@@ -1523,10 +1523,6 @@
     return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(amount);
   }
 
-  function clearCurrentDraw() {
-    void startNewDraw();
-  }
-
   async function openImporter() {
     if (guardCandidateChanges()) return;
     exitCandidateKeyboard();
@@ -1790,7 +1786,7 @@
     if (shortcutKey === 'w') {
       void openImporter();
     } else if (shortcutKey === 'e') {
-      exportCurrentStatsJson();
+      void exportCurrentStatsExcel();
     } else if (shortcutKey === 'r') {
       void startNewDraw(true);
     } else if (shortcutKey === 't') {
@@ -2346,7 +2342,12 @@
             <div class="side-stats-actions">
               <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</button>
               <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</button>
-              <button type="button" disabled={records.length === 0 || continuousRunning} on:click={clearCurrentDraw}>清空统计</button>
+              <button
+                type="button"
+                title={desktopRuntime ? '在资源管理器中打开下载目录' : '网页版由浏览器管理下载目录'}
+                disabled={!desktopRuntime}
+                on:click={openDrawDownloadFolder}
+              >打开下载文件夹</button>
             </div>
           {/if}
         </aside>

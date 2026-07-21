@@ -29,6 +29,7 @@ html {
   min-width: 320px;
   min-height: 100%;
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -1904,7 +1905,9 @@ kbd {
 
 .sidebar-history-actions {
   position: sticky;
+  display: grid;
   bottom: -24px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 9px -18px -24px;
   padding: 10px 18px 13px;
   background: linear-gradient(transparent, #f3f0e8 25%);
@@ -2818,7 +2821,7 @@ kbd {
 
 .side-stats-actions {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-top: 10px;
 }
@@ -2838,18 +2841,6 @@ kbd {
 .side-stats-actions button:hover:not(:disabled) {
   border-color: #7f923f;
   background: #e9f2c9;
-}
-
-.side-stats-actions button:last-child {
-  border-color: #c5a49d;
-  background: #fbf0ed;
-  color: #7e3c31;
-}
-
-.side-stats-actions button:last-child:hover:not(:disabled) {
-  border-color: #b85b49;
-  background: #f7ded8;
-  color: #6d2419;
 }
 
 @media (max-width: 1000px) {

@@ -27,6 +27,16 @@ test('旧分组地址仍可兼容打开', async ({ page }) => {
   await expect(page.locator('.lineup-page')).toBeVisible();
 });
 
+test('抽奖、分组和对战切换时头部保持在同一位置', async ({ page }) => {
+  const positions: number[] = [];
+  for (const route of ['/#/draw', '/#/grouping', '/#/battle']) {
+    await page.goto(route);
+    const box = await page.locator('.topbar-controls').boundingBox();
+    positions.push(box!.x + box!.width / 2);
+  }
+  expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(1);
+});
+
 test('网页版对战页不显示桌面专用排名和历史栏', async ({ page }) => {
   await page.goto('/#/battle');
   await expect(page.locator('.battle-sidebar')).toHaveCount(0);
@@ -74,9 +84,19 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   ]);
   await page.getByRole('button', { name: /^执行/ }).click();
   await expect(page.locator('.single-battle-bracket')).toBeVisible();
-  await expect(page.locator('.single-bracket-side.left')).toBeVisible();
-  await expect(page.locator('.single-bracket-side.right')).toBeVisible();
-  await expect(page.locator('.single-bracket-final .battle-match')).toHaveCount(1);
+  const leftBracket = page.locator('.single-bracket-side.left');
+  const finalBracket = page.locator('.single-bracket-final');
+  const rightBracket = page.locator('.single-bracket-side.right');
+  await expect(leftBracket).toBeVisible();
+  await expect(rightBracket).toBeVisible();
+  await expect(finalBracket.locator('.battle-match')).toHaveCount(1);
+  const [leftBox, finalBox, rightBox] = await Promise.all([
+    leftBracket.boundingBox(),
+    finalBracket.boundingBox(),
+    rightBracket.boundingBox(),
+  ]);
+  expect(leftBox!.x + leftBox!.width).toBeLessThan(finalBox!.x);
+  expect(finalBox!.x + finalBox!.width).toBeLessThan(rightBox!.x);
 
   await page.getByRole('radio', { name: '双败' }).check();
   await page.getByRole('button', { name: /^执行/ }).click();
@@ -84,16 +104,22 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.getByRole('heading', { name: '总决赛（必要时重赛）' })).toBeVisible();
 });
 
-test('同组不对战按名单前后半区生成跨组的1对2', async ({ page }) => {
+test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ page }) => {
   await page.goto('/#/battle');
-  await page.locator('.battle-config textarea').fill('A1\nB1\nC1\nD1\nA2\nB2\nC2\nD2');
+  await page.locator('.battle-config textarea').fill('A1\nA2\nB1\nB2\nC1\nC2\nD1\nD2');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('button', { name: /^执行/ }).click();
 
   const matches = page.locator('.battle-round .battle-match');
   await expect(matches).toHaveCount(4);
-  await expect(matches.first()).toContainText('第 1 组 · 第 1');
-  await expect(matches.first()).toContainText(/第 [234] 组 · 第 2/);
+  const matchTexts = await matches.allTextContents();
+  for (const matchText of matchTexts) {
+    const entries = [...matchText.matchAll(/第 (\d+) 组 · 第 ([12])/gu)]
+      .map((match) => ({ group: Number(match[1]), rank: Number(match[2]) }));
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.rank)).toEqual([1, 2]);
+    expect(entries[0].group).not.toBe(entries[1].group);
+  }
 });
 
 test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {

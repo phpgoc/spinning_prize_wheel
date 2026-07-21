@@ -245,19 +245,11 @@ function setBattleWinner(
 }
 
 describe('同组不对战1对2', () => {
-  test('每个第 1 只匹配其他组的第 2', () => {
+  test('每场都是随机签位的跨组第 1 对第 2', () => {
     const plan = createAvoidSameGroupPlan([
-      'A1', 'B1', 'C1', 'D1',
-      'A2', 'B2', 'C2', 'D2',
-    ], () => 0);
-    expect(plan.rounds[0].matches.map((match) => match.entries.map((entry) => (
-      entry?.kind === 'participant' ? entry.participant.name : null
-    )))).toEqual([
-      ['A1', 'B2'],
-      ['B1', 'C2'],
-      ['C1', 'D2'],
-      ['D1', 'A2'],
-    ]);
+      'A1', 'A2', 'B1', 'B2',
+      'C1', 'C2', 'D1', 'D2',
+    ], seededRandom(7));
     expect(plan.rounds[0].matches.every((match) => {
       const [first, second] = match.entries;
       return first?.kind === 'participant'
@@ -266,9 +258,39 @@ describe('同组不对战1对2', () => {
         && second.participant.groupRank === 2
         && first.participant.groupIndex !== second.participant.groupIndex;
     })).toBe(true);
+    expect(plan.positions.map((position) => position.participant?.name)).toEqual(
+      plan.rounds[0].matches.flatMap((match) => match.entries.map((entry) => (
+        entry?.kind === 'participant' ? entry.participant.name : undefined
+      ))),
+    );
+    expect(plan.positions.every((position) => !position.fixed)).toBe(true);
+  });
+
+  test('每个第 1 都能随机到不同场次并始终位于上方', () => {
+    const inputs = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'];
+    const positionsByName = new Map(['A1', 'B1', 'C1', 'D1'].map((name) => [name, new Set<number>()]));
+    for (let seed = 1; seed <= 64; seed += 1) {
+      const plan = createAvoidSameGroupPlan(inputs, seededRandom(seed));
+      for (const position of plan.positions) {
+        const seen = positionsByName.get(position.participant!.name);
+        if (seen) seen.add(position.index);
+      }
+    }
+    for (const positions of positionsByName.values()) {
+      expect(new Set([...positions].map((position) => position % 2))).toEqual(new Set([0]));
+      expect(new Set([...positions].map((position) => Math.floor(position / 2))).size).toBeGreaterThan(1);
+    }
   });
 
   test('奇数名单会被拒绝', () => {
     expect(() => createAvoidSameGroupPlan(names(5))).toThrow('需要偶数名单');
   });
 });
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    return state / 0x1_0000_0000;
+  };
+}

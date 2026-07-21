@@ -58,6 +58,27 @@ test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page 
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
 });
 
+test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto('/#/draw');
+  await page.getByRole('button', { name: '统计 0' }).click();
+
+  const actions = page.locator('.side-stats-actions button');
+  await expect(actions).toHaveCount(3);
+  await expect(actions).toHaveText(['Excel', 'JSON', '打开下载文件夹']);
+  const widths = await actions.evaluateAll((buttons) => (
+    buttons.map((button) => button.getBoundingClientRect().width)
+  ));
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
+
+  await page.getByRole('button', { name: '打开下载文件夹' }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations.some(
+      (invocation: any) => invocation.cmd === 'open_download_folder',
+    )
+  ))).toBe(true);
+});
+
 test('开启自动保存后关闭窗口会等当前旋转结束并归档', async ({ page }) => {
   await installTauriMock(page);
   await page.goto('/#/draw');
@@ -260,6 +281,12 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
 
   await page.goto('/#/draw');
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
+  const drawHistoryActions = page.locator('.sidebar-history-actions button');
+  await expect(drawHistoryActions).toHaveCount(4);
+  const drawHistoryActionWidths = await drawHistoryActions.evaluateAll((buttons) => (
+    buttons.map((button) => button.getBoundingClientRect().width)
+  ));
+  expect(Math.max(...drawHistoryActionWidths) - Math.min(...drawHistoryActionWidths)).toBeLessThan(1);
   await page.getByRole('button', { name: '清空历史' }).click();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: '真的清空全部抽奖历史？' })).toBeVisible();

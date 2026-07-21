@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import ExcelJS from 'exceljs';
 import { readFile } from 'node:fs/promises';
 
 async function importCandidates(page: Page, names: string[]) {
@@ -249,7 +250,7 @@ test('统计栏快捷键增减上限并开始连续抽奖', async ({ page }) => 
   await expect(page.getByRole('button', { name: '停止连续抽奖' })).toBeVisible();
 });
 
-test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽奖', async ({ page }) => {
+test('空格执行抽奖，E 导出统计 Excel，输入框内空格不触发抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   await page.getByRole('button', { name: '统计 0' }).click();
   await expect(page.getByRole('button', { name: 'Excel', exact: true })).toBeDisabled();
@@ -264,13 +265,14 @@ test('空格执行抽奖，E 导出统计 JSON，输入框内空格不触发抽�
   const downloadPromise = page.waitForEvent('download');
   await page.keyboard.press('e');
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/转盘统计.*\.json$/u);
-  const exported = JSON.parse(await readFile((await download.path())!, 'utf8')) as Array<{
-    name: string;
-    count: number;
-  }>;
-  expect(exported.reduce((total, row) => total + row.count, 0)).toBe(1);
-  expect(exported.some((row) => row.name === '重来一次')).toBe(false);
+  expect(download.suggestedFilename()).toMatch(/转盘统计.*\.xlsx$/u);
+  const exported = await readFile((await download.path())!);
+  expect(exported.subarray(0, 2).toString()).toBe('PK');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(exported);
+  const worksheet = workbook.worksheets[0];
+  expect(worksheet.getColumn(1).values).not.toContain('重来一次');
+  expect(worksheet.getColumn(3).values).toContain(1);
 
   await page.keyboard.press('m');
   const reward = page.getByLabel('奖励金额');

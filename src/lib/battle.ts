@@ -334,7 +334,7 @@ function fixedPositionsForParticipants(
   return positions;
 }
 
-/** 前半名单视为各组第 1，后半视为相同顺序的各组第 2。 */
+/** 名单每相邻两项为一组，依次视为该组第 1 和第 2。 */
 export function createAvoidSameGroupPlan(
   names: readonly string[],
   random: () => number = Math.random,
@@ -344,25 +344,28 @@ export function createAvoidSameGroupPlan(
     throw new Error('同组不对战1对2需要偶数名单，且至少包含 2 个组');
   }
   const groupCount = participants.length / 2;
-  const firstPlaces = participants.slice(0, groupCount).map((participant, groupIndex) => ({
+  const firstPlaces = participants.filter((_, index) => index % 2 === 0).map((participant, groupIndex) => ({
     ...participant,
     groupIndex,
     groupRank: 1 as const,
   }));
-  const secondPlaces = participants.slice(groupCount).map((participant, groupIndex) => ({
+  const secondPlaces = participants.filter((_, index) => index % 2 === 1).map((participant, groupIndex) => ({
     ...participant,
     groupIndex,
     groupRank: 2 as const,
   }));
-  const offset = 1 + Math.floor(randomValue(random) * (groupCount - 1));
-  const matches = firstPlaces.map((participant, index): BattleMatch => ({
+  const firstOrder = shuffled(firstPlaces, random);
+  const secondOrder = matchOtherGroupSeconds(firstOrder, secondPlaces, random);
+  // 每场上方固定为第 1、下方固定为异组第 2；具体哪位第 1 落在哪一场仍然随机。
+  const positionParticipants = firstOrder.flatMap((first, index) => [first, secondOrder[index]]);
+  const matches = Array.from({ length: groupCount }, (_, index): BattleMatch => ({
     id: `P-R1-M${index + 1}`,
     bracket: 'pairing',
     round: 1,
     index,
     entries: [
-      { kind: 'participant', participant },
-      { kind: 'participant', participant: secondPlaces[(index + offset) % groupCount] },
+      { kind: 'participant', participant: positionParticipants[index * 2] },
+      { kind: 'participant', participant: positionParticipants[index * 2 + 1] },
     ],
   }));
 
@@ -373,11 +376,11 @@ export function createAvoidSameGroupPlan(
     participantCount: participants.length,
     bracketSize: participants.length,
     fixedSeedCount: 0,
-    positions: participants.map((participant, index) => ({
+    positions: positionParticipants.map((participant, index) => ({
       index,
       seedNumber: index + 1,
-      participant: index < groupCount ? firstPlaces[index] : secondPlaces[index - groupCount],
-      fixed: true,
+      participant,
+      fixed: false,
     })),
     rounds: [{
       id: 'pairing-1',
@@ -387,6 +390,40 @@ export function createAvoidSameGroupPlan(
       matches,
     }],
   };
+}
+
+/** 随机寻找完整的跨组匹配；增广路径会处理最后两人只剩唯一合法选择的情况。 */
+function matchOtherGroupSeconds(
+  firstPlaces: readonly (BattleParticipant & { groupIndex: number; groupRank: 1 })[],
+  secondPlaces: readonly (BattleParticipant & { groupIndex: number; groupRank: 2 })[],
+  random: () => number,
+): (BattleParticipant & { groupIndex: number; groupRank: 2 })[] {
+  const candidates = firstPlaces.map((first) => shuffled(
+    secondPlaces.filter((second) => second.groupIndex !== first.groupIndex),
+    random,
+  ));
+  const ownerBySecondGroup = new Map<number, number>();
+  const selected = Array<(BattleParticipant & { groupIndex: number; groupRank: 2 }) | undefined>(
+    firstPlaces.length,
+  );
+
+  function assign(firstIndex: number, visitedSecondGroups: Set<number>): boolean {
+    for (const second of candidates[firstIndex]) {
+      if (visitedSecondGroups.has(second.groupIndex)) continue;
+      visitedSecondGroups.add(second.groupIndex);
+      const previousOwner = ownerBySecondGroup.get(second.groupIndex);
+      if (previousOwner !== undefined && !assign(previousOwner, visitedSecondGroups)) continue;
+      ownerBySecondGroup.set(second.groupIndex, firstIndex);
+      selected[firstIndex] = second;
+      return true;
+    }
+    return false;
+  }
+
+  for (let firstIndex = 0; firstIndex < firstPlaces.length; firstIndex += 1) {
+    if (!assign(firstIndex, new Set())) throw new Error('无法生成跨组的1对2签位');
+  }
+  return selected as (BattleParticipant & { groupIndex: number; groupRank: 2 })[];
 }
 
 function createParticipants(names: readonly string[]): BattleParticipant[] {
