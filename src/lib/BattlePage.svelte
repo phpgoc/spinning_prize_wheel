@@ -1,28 +1,37 @@
 <script lang="ts">
   import { parseOptionText } from './parse-options';
   import type { AppVariant } from './app-variant';
+  import {
+    battleFixedSeedOptions,
+    createAvoidSameGroupPlan,
+    createFixedBattlePositions,
+    createSeededBattlePlan,
+    type BattleEntrySource,
+    type BattleFormat,
+    type BattleOrderMode,
+    type BattlePlan,
+    type BattlePosition,
+  } from './battle';
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';
 
-  type BattleMode = 'avoid-first-pair' | 'single-elimination' | 'double-elimination';
-  type BattleOrderMode = 'rank' | 'input';
-
   let sourceText = '';
   let confirmedNames: string[] = [];
-  let started = false;
+  let plan: BattlePlan | null = null;
+  let planSignature = '';
   let error = '';
   let rankingOpen = true;
   let historyOpen = false;
-  let battleMode: BattleMode = 'avoid-first-pair';
-  let orderMode: BattleOrderMode = desktopRuntime ? 'rank' : 'input';
+  let battleMode: BattleFormat = 'avoid-first-pair';
+  let orderMode: BattleOrderMode = 'input';
   let fixedSeedCount = 2;
 
   $: names = parseOptionText(sourceText);
   $: participantCount = names.length;
   $: validParticipantCount = participantCount >= 2;
   $: sourceDirty = sourceText !== confirmedNames.join('\n');
-  $: fixedSeedOptions = createFixedSeedOptions(participantCount);
+  $: fixedSeedOptions = battleFixedSeedOptions(participantCount);
   $: if (fixedSeedOptions.length > 0 && !fixedSeedOptions.includes(fixedSeedCount)) {
     fixedSeedCount = fixedSeedOptions[0];
   }
@@ -31,29 +40,81 @@
     : battleMode === 'single-elimination'
       ? '单败'
       : '双败';
-
-  function createFixedSeedOptions(count: number): number[] {
-    const options: number[] = [];
-    for (let value = 2; value < count; value *= 2) options.push(value);
-    return options;
-  }
+  $: configuredFixedSeedCount = fixedSeedOptions.length > 0 ? fixedSeedCount : 0;
+  $: canExecute = battleMode === 'avoid-first-pair'
+    ? participantCount >= 4 && participantCount % 2 === 0
+    : validParticipantCount;
+  $: configurationSignature = [
+    names.join('\u0000'),
+    battleMode,
+    orderMode,
+    configuredFixedSeedCount,
+  ].join('|');
+  $: planOutdated = plan !== null && planSignature !== configurationSignature;
+  $: fixedPreviewPositions = battleMode !== 'avoid-first-pair' && validParticipantCount
+    ? createFixedBattlePositions(names, configuredFixedSeedCount)
+    : [];
+  $: fixedPreviewMatches = pairPositions(fixedPreviewPositions);
 
   function startBattle() {
     error = '';
-    if (!validParticipantCount) {
-      error = `至少需要 2 名参赛者，当前为 ${participantCount} 项。`;
+    if (!canExecute) {
+      error = battleMode === 'avoid-first-pair'
+        ? `同组不对战1对2需要偶数名单且至少 4 项，当前为 ${participantCount} 项。`
+        : `至少需要 2 名参赛者，当前为 ${participantCount} 项。`;
       return;
     }
     confirmedNames = [...names];
     sourceText = confirmedNames.join('\n');
-    started = true;
+    try {
+      plan = battleMode === 'avoid-first-pair'
+        ? createAvoidSameGroupPlan(confirmedNames)
+        : createSeededBattlePlan(confirmedNames, {
+          format: battleMode,
+          orderMode,
+          fixedSeedCount: configuredFixedSeedCount,
+        });
+      planSignature = configurationSignature;
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason);
+    }
   }
 
   function clearInput() {
     sourceText = '';
     confirmedNames = [];
-    started = false;
+    plan = null;
+    planSignature = '';
     error = '';
+  }
+
+  function pairPositions(positions: readonly BattlePosition[]): [BattlePosition, BattlePosition][] {
+    return Array.from({ length: positions.length / 2 }, (_, index) => [
+      positions[index * 2],
+      positions[index * 2 + 1],
+    ]);
+  }
+
+  function entryLabel(entry: BattleEntrySource): string {
+    if (!entry) return '轮空';
+    if (entry.kind === 'participant') return entry.participant.name;
+    return `${entry.matchId} ${entry.kind === 'winner' ? '胜者' : '败者'}`;
+  }
+
+  function entryDetail(entry: BattleEntrySource): string {
+    if (!entry || entry.kind !== 'participant') return '';
+    if (entry.participant.groupRank) {
+      return `第 ${entry.participant.groupIndex! + 1} 组 · 第 ${entry.participant.groupRank}`;
+    }
+    return `顺位 ${entry.participant.seed}`;
+  }
+
+  function entryFixed(entry: BattleEntrySource): boolean {
+    return Boolean(
+      entry?.kind === 'participant'
+      && plan
+      && entry.participant.seed <= plan.fixedSeedCount,
+    );
   }
 </script>
 
@@ -103,13 +164,52 @@
 
       <div class="battle-panel battle-result">
         <div class="battle-heading">
-          <div><span>03</span><div><h2>对战</h2><p>{started ? `${battleModeLabel} · 对战区域已准备` : '点击右侧执行后生成对战'}</p></div></div>
+          <div><span>03</span><div><h2>对战</h2><p>{plan ? `${battleModeLabel} · ${plan.participantCount} 项` : fixedPreviewMatches.length > 0 ? '固定签位会立即显示，其他位置执行时随机' : '点击右侧执行后生成对战'}</p></div></div>
         </div>
-        <div class="battle-result-placeholder">
-          <div class="battle-match-mark"><i>A</i><b>VS</b><i>B</i></div>
-          <strong>{started ? '对战结果将在这里展示' : '等待开始对战'}</strong>
-          <span>当前为页面骨架</span>
-        </div>
+        {#if plan}
+          {#if planOutdated}<div class="battle-outdated">名单或配置已变化，请重新执行。</div>{/if}
+          <div class:outdated={planOutdated} class="battle-bracket">
+            {#each plan.rounds as round (round.id)}
+              <section class="battle-round">
+                <h3>{round.label}</h3>
+                <span>{round.matches.length} 场</span>
+                <div>
+                  {#each round.matches as match (match.id)}
+                    <article class="battle-match">
+                      <small>{match.id}</small>
+                      {#each match.entries as entry}
+                        <div class:fixed={entryFixed(entry)} class:waiting={entry?.kind !== 'participant'}>
+                          <strong>{entryLabel(entry)}</strong>
+                          {#if entryDetail(entry)}<span>{entryDetail(entry)}</span>{/if}
+                        </div>
+                      {/each}
+                    </article>
+                  {/each}
+                </div>
+              </section>
+            {/each}
+          </div>
+        {:else if fixedPreviewMatches.length > 0}
+          <div class="battle-fixed-preview">
+            {#each fixedPreviewMatches as positions, index}
+              <article class="battle-match">
+                <small>首轮 · 第 {index + 1} 场</small>
+                {#each positions as position}
+                  <div class:fixed={position.fixed} class:waiting={!position.participant}>
+                    <strong>{position.participant?.name ?? '待随机'}</strong>
+                    <span>{position.fixed ? `顺位 ${position.participant?.seed} · 已固定` : `签位 ${position.seedNumber}`}</span>
+                  </div>
+                {/each}
+              </article>
+            {/each}
+          </div>
+        {:else}
+          <div class="battle-result-placeholder">
+            <div class="battle-match-mark"><i>A</i><b>VS</b><i>B</i></div>
+            <strong>等待执行对战</strong>
+            <span>{battleMode === 'avoid-first-pair' ? '名单前半为各组第 1，后半为对应组第 2' : '输入名单并选择固定位置'}</span>
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -126,6 +226,8 @@
       <div class:valid={validParticipantCount} class:invalid={participantCount > 0 && !validParticipantCount} class="battle-count-status" role="status">
         {#if participantCount === 0}
           等待输入名单
+        {:else if battleMode === 'avoid-first-pair' && !canExecute}
+          该赛制需要偶数名单且至少 4 项（当前 {participantCount} 项）
         {:else if validParticipantCount}
           人数符合要求，可以开始
         {:else}
@@ -159,8 +261,8 @@
       {#if error}<div class="battle-error" role="alert">{error}</div>{/if}
       <div class="battle-input-actions">
         <button type="button" class="clear-battle" disabled={participantCount === 0} on:click={clearInput}>清空</button>
-        <button type="button" class="start-battle" disabled={!validParticipantCount || (!sourceDirty && started)} on:click={startBattle}>
-          {started && !sourceDirty ? '已执行' : '执行'} <i>→</i>
+        <button type="button" class="start-battle" disabled={!canExecute} on:click={startBattle}>
+          {plan && !planOutdated && !sourceDirty ? '重新执行' : '执行'} <i>→</i>
         </button>
       </div>
     </aside>
@@ -250,6 +352,22 @@
   .battle-match-mark { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .battle-match-mark i { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid rgba(231, 255, 114, 0.45); border-radius: 10px; color: #e7ff72; font-family: var(--font-mono); font-size: 19px; font-style: normal; }
   .battle-match-mark b { color: var(--battle-dim-on-dark); font-family: var(--font-mono); font-size: 12px; }
+  .battle-outdated { margin-top: 15px; padding: 9px 11px; border-radius: 8px; background: rgba(218, 91, 63, 0.14); color: #ffd3c9; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
+  .battle-bracket.outdated { opacity: 0.45; }
+  .battle-round { flex: 0 0 min(235px, 74vw); }
+  .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
+  .battle-round > span { float: right; color: var(--battle-dim-on-dark); font-size: calc(10px * var(--font-scale, 1)); }
+  .battle-round > div { display: grid; gap: 10px; margin-top: 9px; }
+  .battle-fixed-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 18px; }
+  .battle-match { min-width: 0; padding: 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 11px; background: rgba(255, 255, 255, 0.035); }
+  .battle-match > small { display: block; margin-bottom: 6px; color: var(--battle-dim-on-dark); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > div { min-width: 0; padding: 8px 9px; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); }
+  .battle-match > div + div { margin-top: 5px; }
+  .battle-match > div.fixed { border-left-color: #e7ff72; background: rgba(231, 255, 114, 0.08); }
+  .battle-match > div.waiting { color: var(--battle-dim-on-dark); }
+  .battle-match strong { display: block; overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
+  .battle-match span { display: block; margin-top: 2px; color: var(--battle-dim-on-dark); font-size: calc(9px * var(--font-scale, 1)); }
 
   .battle-config { align-self: start; padding: 22px; background: #efede6; color: #24251f; }
   .battle-config .battle-heading > div > span { color: #626d1f; }
