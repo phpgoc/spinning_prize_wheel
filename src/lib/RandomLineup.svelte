@@ -144,6 +144,7 @@
   let clearLineupConfirmation = false;
   let lineupResultElement: HTMLElement | null = null;
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
+  let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
   let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
@@ -476,6 +477,7 @@
           orderMode: battleOrderMode,
           fixedSeedCount: battleConfiguredFixedCount,
         });
+      lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
       battlePlanSignature = currentBattleSignature;
       if (desktopRuntime) {
@@ -1456,6 +1458,41 @@
   }
 
   function handleLineupKeydown(event: KeyboardEvent) {
+    const target = event.target;
+    const battleFocusActive = battlePage
+      && target instanceof Node
+      && Boolean(lineupResultElement?.contains(target));
+    const key = event.key.toLowerCase();
+    if (
+      battlePage
+      && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+      && (target === document.body || target === lineupResultElement)
+      && moveFromLastConfirmedBattleScore(event)
+    ) return;
+    if (
+      battleFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && key === 'f'
+    ) {
+      event.preventDefault();
+      void setBattleFullscreen(!battleFullscreen);
+      return;
+    }
+    if (
+      battleFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && ['i', 'j', 'k', 'l'].includes(key)
+    ) {
+      event.preventDefault();
+      scrollBattleByKey(key);
+      return;
+    }
     if (
       battlePage
       && event.target === lineupResultElement
@@ -1466,12 +1503,7 @@
         ?.focus({ preventScroll: true });
       return;
     }
-    if (battleFullscreen && event.key === 'Escape') {
-      event.preventDefault();
-      void setBattleFullscreen(false);
-      return;
-    }
-    const target = event.target;
+    if (battleFullscreen && battleFocusActive) return;
     if (target === sourceTextarea && isMultilineTextConfirm(event)) {
       event.preventDefault();
       void confirmSourceText();
@@ -1490,8 +1522,6 @@
       return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    const key = event.key.toLowerCase();
-
     if (importErrorDialog) {
       if (event.key === 'Escape' || event.key === 'Enter') {
         event.preventDefault();
@@ -1685,13 +1715,20 @@
     }
   }
 
-  function handleDoubleBattleScrollKeydown(event: KeyboardEvent) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    event.stopPropagation();
-    const scroller = event.currentTarget as HTMLElement;
-    scroller.scrollBy({
-      left: (event.key === 'ArrowLeft' ? -1 : 1) * Math.max(280, scroller.clientWidth * 0.7),
+  function scrollBattleByKey(key: string) {
+    if (!lineupResultElement) return;
+    if (key === 'j' || key === 'l') {
+      const scroller = lineupResultElement.querySelector<HTMLElement>(
+        '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
+      );
+      scroller?.scrollBy({
+        left: (key === 'j' ? -1 : 1) * Math.max(280, scroller.clientWidth * 0.7),
+        behavior: 'smooth',
+      });
+      return;
+    }
+    lineupResultElement.scrollBy({
+      top: (key === 'i' ? -1 : 1) * Math.max(240, lineupResultElement.clientHeight * 0.65),
       behavior: 'smooth',
     });
   }
@@ -1707,9 +1744,9 @@
       [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
       event.key,
     );
-    if (!target) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!target) return;
     target.focus({ preventScroll: true });
     target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }
@@ -1745,6 +1782,27 @@
       .sort((left, right) => left.distance - right.distance)[0]?.candidate ?? null;
   }
 
+  function moveFromLastConfirmedBattleScore(event: KeyboardEvent): boolean {
+    const remembered = lastConfirmedBattleScore;
+    if (!remembered) return false;
+    const inputs = [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input')];
+    const current = inputs.find((input) => (
+      input.dataset.battleMatchId === remembered.matchId
+      && input.dataset.battleSide === remembered.side
+    ));
+    if (!current) {
+      lastConfirmedBattleScore = null;
+      return false;
+    }
+    event.preventDefault();
+    const enabledInputs = inputs.filter((input) => !input.disabled);
+    const next = closestBattleElement(current, enabledInputs, event.key);
+    const target = next ?? (!current.disabled ? current : enabledInputs[0]);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    return true;
+  }
+
   function handleBattleScoreFocus(event: FocusEvent) {
     const target = event.currentTarget as HTMLInputElement;
     battleScoreFocusValues.set(target, target.value);
@@ -1769,6 +1827,7 @@
       event.stopPropagation();
       if (target.value.trim() === '') target.value = '0';
       battleScoreFocusValues.set(target, target.value);
+      lastConfirmedBattleScore = { matchId: match.matchId, side };
       void updateBattleScore(match, side, event);
       return;
     }
@@ -1805,6 +1864,7 @@
     result = null;
     resultHistory = null;
     battleTmpSnapshot = null;
+    lastConfirmedBattleScore = null;
     battlePlanSignature = '';
     battleSyncStatus = 'idle';
     error = '';
@@ -1857,6 +1917,23 @@
       ...group,
       label: battleTmpColumnLabel(group.stage, group.matches[0].level, group.matches.length),
     }));
+  }
+
+  function battleTmpConvergencePercent(
+    groups: { matches: BattleTmpMatch[] }[],
+    round: { matches: BattleTmpMatch[] },
+    stage: 'winner' | 'loser',
+  ): number {
+    const index = groups.indexOf(round);
+    const lastIndex = groups.length - 1;
+    if (index <= 0 || lastIndex <= 0) return 0;
+    const keepFirstPairAligned = stage === 'loser'
+      && groups[0].matches.length > 1
+      && groups[0].matches.length === groups[1]?.matches.length;
+    const startIndex = keepFirstPairAligned ? 1 : 0;
+    if (index <= startIndex) return 0;
+    const targetPercent = stage === 'winner' ? 45 : 40;
+    return Math.round((index - startIndex) / Math.max(1, lastIndex - startIndex) * targetPercent);
   }
 
   function createSingleBattleLayout(snapshot: BattleTmpSnapshot | null): {
@@ -2033,7 +2110,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'up')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
       class:fixed={battleTmpParticipantFixed(match.down)}
@@ -2042,7 +2119,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'down')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
 {/snippet}
@@ -2468,7 +2545,7 @@
       >
         {#if battlePage}
           <div class="battle-result-toolbar">
-            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
+            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
               <label><span>背景框</span><input type="color" aria-label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} /></label>
@@ -2508,11 +2585,11 @@
             {:else if battleTmpSnapshot.format === 'double-elimination'}
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-              <div class="double-battle-scroll" tabindex="0" role="application" aria-label="双败横向签表" aria-keyshortcuts="ArrowLeft ArrowRight" on:keydown={handleDoubleBattleScrollKeydown}>
+              <div class="double-battle-scroll" tabindex="0" role="application" aria-label="双败横向签表" aria-keyshortcuts="I J K L">
                 <div class:outdated={battleResultOutdated} class="double-battle-bracket">
                   <div class="double-battle-groups">
-                    <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: ${levelIndex * 32}px`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
-                    <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: -${levelIndex * 32}px`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
+                    <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: ${battleTmpConvergencePercent(battleTmpWinnerGroups, round, 'winner')}%`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
+                    <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: -${battleTmpConvergencePercent(battleTmpLoserGroups, round, 'loser')}%`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
                   </div>
                   <section class="double-final-section"><h3>总决赛</h3><div class="battle-bracket">{#each battleTmpFinalGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
                 </div>
@@ -3070,21 +3147,33 @@
   .single-bracket-side.right .battle-match > * { direction: ltr; }
   .double-battle-scroll { margin-top: 18px; outline: 0; overflow: auto; scroll-behavior: smooth; }
   .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 rgba(231, 255, 114, 0.34); }
-  .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; align-items: center; gap: clamp(42px, 5vw, 86px); transition: opacity 180ms ease; }
-  .double-battle-groups { display: grid; gap: clamp(28px, 4vh, 54px); }
+  .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: clamp(42px, 5vw, 86px); row-gap: clamp(34px, 5vh, 62px); transition: opacity 180ms ease; }
+  .double-battle-groups { display: contents; }
   .double-stage-section,
   .double-final-section { display: flex; min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); flex-direction: column; }
+  .double-stage-section { padding: 0; border: 0; background: transparent; }
   .double-stage-section > h3,
   .double-final-section > h3 { color: var(--accent); font-size: calc(15px * var(--font-scale, 1)); }
   .double-battle-bracket .battle-bracket { gap: clamp(32px, 4vw, 68px); margin-top: 10px; overflow: visible; align-items: stretch; }
-  .double-stage-section > .battle-bracket { min-height: clamp(360px, 42vh, 650px); padding: 92px 0; }
-  .double-final-section { align-self: center; }
+  .double-stage-section > .battle-bracket { min-height: 0; }
+  .double-winner-section { grid-column: 1; grid-row: 1; }
+  .double-loser-section { grid-column: 1; grid-row: 2; }
+  .double-final-section { grid-column: 2; grid-row: 2; align-self: start; transform: translateY(-50%); }
   .double-final-section > .battle-bracket { min-height: 180px; align-items: center; }
   .double-battle-bracket .battle-round { display: flex; flex-direction: column; }
   .double-battle-bracket .battle-round > div { flex: 1; align-content: space-around; }
   .double-winner-section .battle-round > div,
   .double-loser-section .battle-round > div { transform: translateY(var(--battle-level-offset)); }
-  .battle-fullscreen .double-stage-section > .battle-bracket { min-height: clamp(480px, 54vh, 820px); padding-top: 132px; padding-bottom: 132px; }
+  .double-battle-bracket .battle-match { padding: 6px; }
+  .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
+  .double-battle-bracket .battle-match > div { padding: 4px 6px; }
+  .double-battle-bracket .battle-match > div + div { margin-top: 2px; }
+  .double-battle-bracket .battle-match > .battle-side { gap: 6px; }
+  .double-battle-bracket .battle-side input { min-height: 30px; }
+  .battle-fullscreen .result-heading { justify-content: flex-end; }
+  .battle-fullscreen .result-heading > div:first-child { display: none; }
+  .battle-fullscreen .battle-result-toolbar { margin-bottom: 8px; }
+  .battle-fullscreen .double-battle-scroll { margin-top: 10px; }
   .battle-round { flex: 0 0 min(235px, 74vw); }
   .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
   .battle-round > div { display: grid; gap: 10px; margin-top: 9px; }

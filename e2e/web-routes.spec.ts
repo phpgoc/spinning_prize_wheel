@@ -68,6 +68,8 @@ test('对战可以全屏返回并持久化四类颜色', async ({ page }) => {
   expect(fullscreenBox!.height).toBe(page.viewportSize()!.height);
 
   await page.keyboard.press('Escape');
+  await expect(battleResult).toHaveClass(/battle-fullscreen/u);
+  await page.keyboard.press('f');
   await expect(battleResult).not.toHaveClass(/battle-fullscreen/u);
   await page.reload();
   await expect(page.getByLabel('背景框颜色')).toHaveValue('#123456');
@@ -136,19 +138,41 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.locator('.battle-round')).toHaveCount(9);
   await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
   const doubleScroll = page.locator('.double-battle-scroll');
-  const doubleGroups = page.locator('.double-battle-groups');
+  const winnerSection = page.locator('.double-winner-section');
   const finalSection = page.locator('.double-final-section');
-  const [groupsBox, doubleFinalBox] = await Promise.all([doubleGroups.boundingBox(), finalSection.boundingBox()]);
-  expect(doubleFinalBox!.x).toBeGreaterThan(groupsBox!.x + groupsBox!.width);
+  const loserSection = page.locator('.double-loser-section');
+  const [winnerSectionBox, loserSectionBox, doubleFinalBox] = await Promise.all([
+    winnerSection.boundingBox(), loserSection.boundingBox(), finalSection.boundingBox(),
+  ]);
+  expect(doubleFinalBox!.x).toBeGreaterThan(winnerSectionBox!.x + winnerSectionBox!.width);
+  expect(Math.abs(doubleFinalBox!.y + doubleFinalBox!.height / 2 - loserSectionBox!.y)).toBeLessThan(2);
   await expect(page.locator('.double-battle-bracket')).not.toContainText(/顺位|W\d+-M\d+|L\d+-M\d+/u);
   await expect(page.locator('.double-winner-section .battle-round').nth(0).getByRole('heading')).toHaveText('1/4');
   await expect(page.locator('.double-winner-section .battle-round').nth(1).getByRole('heading')).toHaveText('半决赛');
   await expect(page.locator('.double-winner-section .battle-round').nth(2).getByRole('heading')).toHaveText('决赛');
+  expect(await page.locator('.double-winner-section .battle-round').evaluateAll((rounds) => rounds.map((round) => round.getAttribute('style')))).toEqual([
+    '--battle-level-offset: 0%;',
+    '--battle-level-offset: 23%;',
+    '--battle-level-offset: 45%;',
+  ]);
+  expect(await page.locator('.double-loser-section .battle-round').evaluateAll((rounds) => rounds.map((round) => round.getAttribute('style')))).toEqual([
+    '--battle-level-offset: -0%;',
+    '--battle-level-offset: -0%;',
+    '--battle-level-offset: -20%;',
+    '--battle-level-offset: -40%;',
+  ]);
+  const winnerCenters = await battleRoundMatchCenters(page.locator('.double-winner-section .battle-round'));
+  const loserCenters = await battleRoundMatchCenters(page.locator('.double-loser-section .battle-round'));
+  expect(winnerCenters[1]).toBeGreaterThan(winnerCenters[0]);
+  expect(winnerCenters[2]).toBeGreaterThan(winnerCenters[1]);
+  expect(Math.abs(loserCenters[1] - loserCenters[0])).toBeLessThan(2);
+  expect(loserCenters[2]).toBeLessThan(loserCenters[1]);
+  expect(loserCenters[3]).toBeLessThan(loserCenters[2]);
   await expect(page.locator('[data-battle-stage="winner"][data-battle-level="2"][data-battle-position="1"]'))
     .toContainText('W1 P1');
   await doubleScroll.focus();
   const scrollBefore = await doubleScroll.evaluate((element) => element.scrollLeft);
-  await doubleScroll.press('ArrowRight');
+  await doubleScroll.press('l');
   await expect.poll(() => doubleScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(scrollBefore);
   const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
   await firstWinnerMatch.focus();
@@ -197,6 +221,9 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await firstInputs.nth(1).fill('1');
   await firstInputs.nth(1).press('Enter');
   await expect(matches.nth(0).locator('.battle-side.winner')).toHaveCount(1);
+  await firstInputs.nth(1).evaluate((input) => (input as HTMLInputElement).blur());
+  await page.keyboard.press('ArrowUp');
+  await expect(firstInputs.nth(0)).toBeFocused();
 
   const secondInputs = matches.nth(1).locator('input[type="number"]');
   await secondInputs.nth(1).focus();
@@ -268,4 +295,14 @@ async function enterBattleScore(match: import('@playwright/test').Locator, up: n
   await expect(inputs.nth(1)).toBeEnabled();
   await inputs.nth(1).fill(String(down));
   await inputs.nth(1).press('Tab');
+}
+
+async function battleRoundMatchCenters(rounds: import('@playwright/test').Locator): Promise<number[]> {
+  return rounds.evaluateAll((elements) => elements.map((round) => {
+    const matches = [...round.querySelectorAll('.battle-match')];
+    return matches.reduce((sum, match) => {
+      const box = match.getBoundingClientRect();
+      return sum + box.top + box.height / 2;
+    }, 0) / matches.length;
+  }));
 }
