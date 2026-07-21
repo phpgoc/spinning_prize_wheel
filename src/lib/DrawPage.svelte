@@ -1704,6 +1704,28 @@
       return;
     }
 
+    const weightInput = target instanceof HTMLInputElement && target.closest('.weight-control')
+      ? target
+      : null;
+    if (
+      candidateKeyboardActive
+      && weightInput
+      && !modifier
+      && !event.shiftKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.preventDefault();
+      const prizeId = weightInput.closest<HTMLElement>('[data-prize-id]')?.dataset.prizeId;
+      if (prizeId) selectedPrizeId = prizeId;
+      weightInput.blur();
+      if (event.altKey) {
+        adjustSelectedPrizeWeight(event.key === 'ArrowUp' ? 1 : -1);
+      } else {
+        movePrizeSelection(event.key === 'ArrowUp' ? -1 : 1);
+      }
+      return;
+    }
+
     if (event.key === 'Escape') {
       if (candidateKeyboardActive) {
         event.preventDefault();

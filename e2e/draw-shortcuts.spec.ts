@@ -243,6 +243,24 @@ test('X 进入候选后覆盖方向、权重、编辑、新增、停用、删除
   await expect(page.locator('.prize-row.selected')).toHaveCount(0);
 });
 
+test('权重输入框内 Alt 加上下修改权重，普通上下移动候选', async ({ page }) => {
+  await importCandidates(page, ['甲', '乙', '丙']);
+  const rows = page.locator('[data-prize-id]');
+  const firstWeight = page.getByRole('spinbutton', { name: '甲的权重' });
+
+  await firstWeight.focus();
+  await firstWeight.press('Alt+ArrowUp');
+  await expect(firstWeight).toHaveValue('2');
+  await page.keyboard.press('ArrowDown');
+  await expect(rows.nth(1)).toHaveClass(/selected/u);
+
+  const secondWeight = page.getByRole('spinbutton', { name: '乙的权重' });
+  await secondWeight.focus();
+  await secondWeight.press('ArrowDown');
+  await expect(secondWeight).toHaveValue('1');
+  await expect(rows.nth(2)).toHaveClass(/selected/u);
+});
+
 test('A/F 管理常用候选，Z 切换快捷键，数字设置可确认或取消', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   await page.getByRole('button', { name: '＋ 保存为常用候选' }).click();
@@ -311,6 +329,7 @@ test('统计栏快捷键增减上限并开始连续抽奖', async ({ page }) => 
 
 test('空格执行抽奖，E 导出统计 Excel，输入框内空格不触发抽奖', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
   await page.getByRole('button', { name: '统计 0' }).click();
   await expect(page.getByRole('button', { name: 'Excel', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'JSON', exact: true })).toBeDisabled();
