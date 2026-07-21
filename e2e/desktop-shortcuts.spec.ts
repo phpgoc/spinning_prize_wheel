@@ -205,10 +205,10 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
 
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.battleTmpState)).not.toBeNull();
   const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
-  await expect(firstMatch).toContainText('位置 1 · 待比分');
+  await expect(firstMatch).toContainText('S1 P1');
   const selectedName = (await firstMatch.locator('.battle-side strong').first().textContent())!;
   await enterDesktopBattleScore(firstMatch, 4, 1);
-  await expect(firstMatch).toContainText('已完成');
+  await expect(firstMatch.locator('.battle-side.winner')).toHaveCount(1);
   await expect(page.locator('.single-bracket-final .battle-match')).toContainText(selectedName);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.invocations
@@ -234,7 +234,7 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await restoredPage.goto('/#/battle');
   await expect(restoredPage.locator('.preview-row')).toHaveCount(4);
   await expect(restoredPage.locator('.battle-round')).toHaveCount(2);
-  await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first()).toContainText('已完成');
+  await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first().locator('.battle-side.winner')).toHaveCount(1);
   await restoredPage.close();
 });
 

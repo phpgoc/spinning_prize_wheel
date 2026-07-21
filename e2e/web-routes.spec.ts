@@ -135,7 +135,32 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('button', { name: /^执行/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(9);
   await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '总决赛（必要时重赛）' })).toBeVisible();
+  const doubleScroll = page.locator('.double-battle-scroll');
+  const doubleGroups = page.locator('.double-battle-groups');
+  const finalSection = page.locator('.double-final-section');
+  const [groupsBox, doubleFinalBox] = await Promise.all([doubleGroups.boundingBox(), finalSection.boundingBox()]);
+  expect(doubleFinalBox!.x).toBeGreaterThan(groupsBox!.x + groupsBox!.width);
+  await expect(page.locator('.double-battle-bracket')).not.toContainText(/顺位|W\d+-M\d+|L\d+-M\d+/u);
+  await expect(page.locator('.double-winner-section .battle-round').nth(0).getByRole('heading')).toHaveText('1/4');
+  await expect(page.locator('.double-winner-section .battle-round').nth(1).getByRole('heading')).toHaveText('半决赛');
+  await expect(page.locator('.double-winner-section .battle-round').nth(2).getByRole('heading')).toHaveText('决赛');
+  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="2"][data-battle-position="1"]'))
+    .toContainText('W1 P1');
+  await doubleScroll.focus();
+  const scrollBefore = await doubleScroll.evaluate((element) => element.scrollLeft);
+  await doubleScroll.press('ArrowRight');
+  await expect.poll(() => doubleScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(scrollBefore);
+  const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
+  await firstWinnerMatch.focus();
+  await firstWinnerMatch.press('ArrowDown');
+  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="2"]:focus')).toHaveCount(1);
+  await page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="2"]:focus').press('ArrowUp');
+  await expect(firstWinnerMatch).toBeFocused();
+  await firstWinnerMatch.press('ArrowRight');
+  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="2"]:focus')).toHaveCount(1);
+  await page.locator('[data-battle-stage="winner"][data-battle-level="2"]:focus').press('ArrowLeft');
+  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="1"]:focus')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
 });
 
 test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ page }) => {
@@ -146,13 +171,12 @@ test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ pag
 
   const matches = page.locator('.battle-round .battle-match');
   await expect(matches).toHaveCount(4);
-  const matchTexts = await matches.allTextContents();
-  for (const matchText of matchTexts) {
-    const entries = [...matchText.matchAll(/第 (\d+) 组 · 第 ([12])/gu)]
-      .map((match) => ({ group: Number(match[1]), rank: Number(match[2]) }));
+  for (let index = 0; index < await matches.count(); index += 1) {
+    const entries = await matches.nth(index).locator('.battle-side strong').allTextContents();
     expect(entries).toHaveLength(2);
-    expect(entries.map((entry) => entry.rank)).toEqual([1, 2]);
-    expect(entries[0].group).not.toBe(entries[1].group);
+    expect(entries[0]).toMatch(/1$/u);
+    expect(entries[1]).toMatch(/2$/u);
+    expect(entries[0][0]).not.toBe(entries[1][0]);
   }
 });
 
@@ -168,18 +192,17 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   const firstWinner = (await firstRoundMatches.nth(0).locator('.battle-side strong').first().textContent())!;
   await enterBattleScore(firstRoundMatches.nth(0), 4, 1);
   await expect(finalMatch).toContainText(firstWinner);
-  await expect(finalMatch).toContainText('等待上游');
+  await expect(finalMatch).toContainText('S1 P2');
 
   const secondMatchInputs = firstRoundMatches.nth(1).locator('input[type="number"]');
   await secondMatchInputs.nth(1).fill('1');
   await secondMatchInputs.nth(1).press('Tab');
   await expect(secondMatchInputs.nth(0)).toHaveValue('4');
-  await expect(finalMatch).toContainText('待比分');
+  await expect(finalMatch.locator('input[type="number"]').first()).toBeEnabled();
   await enterBattleScore(finalMatch, 4, 1);
-  await expect(finalMatch).toContainText('已完成');
+  await expect(finalMatch.locator('.battle-side.winner')).toHaveCount(1);
 
   await enterBattleScore(firstRoundMatches.nth(0), 1, 4);
-  await expect(finalMatch).toContainText('待比分');
   await expect(finalMatch.locator('.battle-side.winner')).toHaveCount(0);
 
   const jsonDownloadPromise = page.waitForEvent('download');

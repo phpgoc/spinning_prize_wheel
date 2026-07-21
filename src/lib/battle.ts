@@ -90,6 +90,11 @@ export interface BattleTmpSnapshot {
   matches: BattleTmpMatch[];
 }
 
+export interface BattleTmpSlotOrigin {
+  matchId: string;
+  outcome: 'winner' | 'loser';
+}
+
 export interface SeededBattleOptions {
   format: 'single-elimination' | 'double-elimination';
   orderMode: BattleOrderMode;
@@ -228,6 +233,14 @@ export function battleTmpScoresWithMagicFill(
   if (side === 'up') downResult = winningScore;
   else upResult = winningScore;
   return { upResult, downResult };
+}
+
+export function battleTmpSlotOrigin(
+  snapshot: BattleTmpSnapshot,
+  match: BattleTmpMatch,
+  slot: 'up' | 'down',
+): BattleTmpSlotOrigin | null {
+  return battleTmpSlotSource(snapshot, match, slot);
 }
 
 export function battleTmpWinnerId(match: BattleTmpMatch): number | null {

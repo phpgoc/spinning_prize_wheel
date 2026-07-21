@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   battleFixedSeedOptions,
   battleTmpScoresWithMagicFill,
+  battleTmpSlotOrigin,
   battleTmpExcelRows,
   createAvoidSameGroupPlan,
   createBattleTmpSnapshot,
@@ -205,6 +206,11 @@ describe('对战签位', () => {
     expect(state.matches.find((match) => match.matchId === 'L1-M1')).toMatchObject({
       up: losers[0],
       down: losers[1],
+    });
+    const winnerSecond = state.matches.find((match) => match.matchId === 'W2-M1')!;
+    expect(battleTmpSlotOrigin(state, winnerSecond, 'up')).toEqual({
+      matchId: 'W1-M1',
+      outcome: 'winner',
     });
   });
 
