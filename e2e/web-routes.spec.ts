@@ -153,13 +153,11 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
   await firstWinnerMatch.focus();
   await firstWinnerMatch.press('ArrowDown');
-  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="2"]:focus')).toHaveCount(1);
-  await page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="2"]:focus').press('ArrowUp');
-  await expect(firstWinnerMatch).toBeFocused();
-  await firstWinnerMatch.press('ArrowRight');
-  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="2"]:focus')).toHaveCount(1);
-  await page.locator('[data-battle-stage="winner"][data-battle-level="2"]:focus').press('ArrowLeft');
-  await expect(page.locator('[data-battle-stage="winner"][data-battle-level="1"]:focus')).toHaveCount(1);
+  await expect(firstWinnerMatch.locator('input[type="number"]').last()).toBeFocused();
+  await firstWinnerMatch.locator('input[type="number"]').last().press('ArrowUp');
+  await expect(firstWinnerMatch.locator('input[type="number"]').first()).toBeFocused();
+  await firstWinnerMatch.locator('input[type="number"]').first().press('ArrowRight');
+  await expect(page.locator('.double-battle-bracket input:focus')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
 });
 
@@ -178,6 +176,45 @@ test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ pag
     expect(entries[1]).toMatch(/2$/u);
     expect(entries[0][0]).not.toBe(entries[1][0]);
   }
+});
+
+test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取消', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+
+  const matches = page.locator('.single-bracket-side .battle-match');
+  const firstInputs = matches.nth(0).locator('input[type="number"]');
+  await page.locator('.battle-result').focus();
+  await page.locator('.battle-result').press('ArrowRight');
+  await expect(firstInputs.nth(0)).toBeFocused();
+  await firstInputs.nth(0).fill('4');
+  await firstInputs.nth(0).press('ArrowDown');
+  await expect(firstInputs.nth(1)).toBeFocused();
+  await expect(firstInputs.nth(0)).toHaveValue('4');
+  await firstInputs.nth(1).fill('1');
+  await firstInputs.nth(1).press('Enter');
+  await expect(matches.nth(0).locator('.battle-side.winner')).toHaveCount(1);
+
+  const secondInputs = matches.nth(1).locator('input[type="number"]');
+  await secondInputs.nth(1).focus();
+  await secondInputs.nth(1).press('Enter');
+  await expect(secondInputs.nth(0)).toHaveValue('4');
+  await expect(secondInputs.nth(1)).toHaveValue('0');
+  await secondInputs.nth(1).focus();
+  await secondInputs.nth(1).press('Alt+ArrowUp');
+  await expect(secondInputs.nth(1)).toHaveValue('1');
+  await secondInputs.nth(1).press('Alt+ArrowDown');
+  await expect(secondInputs.nth(1)).toHaveValue('0');
+
+  await page.getByRole('button', { name: '全屏' }).click();
+  await secondInputs.nth(1).focus();
+  await secondInputs.nth(1).fill('2');
+  await secondInputs.nth(1).press('Escape');
+  await expect(secondInputs.nth(1)).toHaveValue('0');
+  await expect(page.locator('.battle-result')).toHaveClass(/battle-fullscreen/u);
 });
 
 test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {

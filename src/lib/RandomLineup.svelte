@@ -143,6 +143,7 @@
   let importErrorDialog: { title: string; detail: string } | null = null;
   let clearLineupConfirmation = false;
   let lineupResultElement: HTMLElement | null = null;
+  const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
   let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
@@ -1455,6 +1456,16 @@
   }
 
   function handleLineupKeydown(event: KeyboardEvent) {
+    if (
+      battlePage
+      && event.target === lineupResultElement
+      && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+    ) {
+      event.preventDefault();
+      document.querySelector<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')
+        ?.focus({ preventScroll: true });
+      return;
+    }
     if (battleFullscreen && event.key === 'Escape') {
       event.preventDefault();
       void setBattleFullscreen(false);
@@ -1691,13 +1702,30 @@
       || isTextEditingTarget(event.target)
     ) return;
     const current = event.currentTarget as HTMLElement;
+    const target = closestBattleElement(
+      current,
+      [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
+      event.key,
+    );
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }
+
+  function closestBattleElement<T extends HTMLElement>(
+    current: HTMLElement,
+    candidates: T[],
+    key: string,
+  ): T | null {
     const currentRect = current.getBoundingClientRect();
     const currentCenter = {
       x: currentRect.left + currentRect.width / 2,
       y: currentRect.top + currentRect.height / 2,
     };
-    const direction = event.key.replace('Arrow', '').toLocaleLowerCase('zh-CN');
-    const candidates = [...document.querySelectorAll<HTMLElement>('.battle-result .battle-match')]
+    const direction = key.replace('Arrow', '').toLocaleLowerCase('zh-CN');
+    return candidates
       .filter((candidate) => candidate !== current)
       .map((candidate) => {
         const rect = candidate.getBoundingClientRect();
@@ -1714,13 +1742,53 @@
         return { candidate, inDirection, distance: primary + secondary * 0.55 };
       })
       .filter((entry) => entry.inDirection)
-      .sort((left, right) => left.distance - right.distance);
-    const target = candidates[0]?.candidate;
-    if (!target) return;
+      .sort((left, right) => left.distance - right.distance)[0]?.candidate ?? null;
+  }
+
+  function handleBattleScoreFocus(event: FocusEvent) {
+    const target = event.currentTarget as HTMLInputElement;
+    battleScoreFocusValues.set(target, target.value);
+  }
+
+  function handleBattleScoreKeydown(
+    match: BattleTmpMatch,
+    side: 'up' | 'down',
+    event: KeyboardEvent,
+  ) {
+    const target = event.currentTarget as HTMLInputElement;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      target.value = battleScoreFocusValues.get(target) ?? target.defaultValue;
+      target.blur();
+      target.closest<HTMLElement>('.battle-match')?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (target.value.trim() === '') target.value = '0';
+      battleScoreFocusValues.set(target, target.value);
+      void updateBattleScore(match, side, event);
+      return;
+    }
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    target.focus({ preventScroll: true });
-    target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      if (target.value.trim() === '') target.value = '0';
+      else if (event.key === 'ArrowUp') target.stepUp();
+      else target.stepDown();
+      return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const next = closestBattleElement(
+      target,
+      [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
+      event.key,
+    );
+    next?.focus({ preventScroll: true });
+    next?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }
 
   function requestClearAll() {
@@ -1965,7 +2033,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'up')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:change={(event) => updateBattleScore(match, 'up', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
       class:fixed={battleTmpParticipantFixed(match.down)}
@@ -1974,7 +2042,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'down')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:change={(event) => updateBattleScore(match, 'down', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
 {/snippet}
