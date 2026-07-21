@@ -73,7 +73,7 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   ))).toBe('1.1');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
-  await page.goto('/#/lineup');
+  await page.goto('/#/grouping');
   await page.keyboard.press('Control+ArrowUp');
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()

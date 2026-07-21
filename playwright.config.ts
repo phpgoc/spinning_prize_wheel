@@ -9,14 +9,14 @@ export default defineConfig({
   workers: 4,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:4173',
     locale: 'zh-CN',
     trace: 'retain-on-failure',
     viewport: { width: 1600, height: 1000 },
   },
   webServer: {
-    command: 'bun run dev -- --host 127.0.0.1',
-    url: 'http://127.0.0.1:5173',
+    command: 'bun run dev -- --host 127.0.0.1 --port 4173',
+    url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 30_000,
   },

@@ -3,7 +3,7 @@ import { installTauriMock, mockedRankedNames } from './helpers/tauri-mock';
 
 async function openDesktopLineup(page: Page) {
   await installTauriMock(page);
-  await page.goto('/#/lineup');
+  await page.goto('/#/grouping');
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
@@ -181,7 +181,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await expect(page.getByRole('alertdialog')).toBeHidden();
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.drawHistories.length)).toBe(0);
 
-  await page.goto('/#/lineup');
+  await page.goto('/#/grouping');
   await page.getByRole('button', { name: /分组历史/u }).click();
   const lineupHistoryPanel = page.locator('.history-panel');
   await expect(lineupHistoryPanel.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);

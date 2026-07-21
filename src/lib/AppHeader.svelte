@@ -30,10 +30,16 @@
       <button type="button" class:active={page === 'draw'} on:click={() => onNavigatePage('draw')}>抽奖</button>
       <button
         type="button"
-        class:active={page === 'lineup'}
+        class:active={page === 'grouping'}
         disabled={drawBusy}
-        on:click={() => onNavigatePage('lineup')}
+        on:click={() => onNavigatePage('grouping')}
       >分组</button>
+      <button
+        type="button"
+        class:active={page === 'battle'}
+        disabled={drawBusy}
+        on:click={() => onNavigatePage('battle')}
+      >对战</button>
     </nav>
 
   </div>

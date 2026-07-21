@@ -80,12 +80,14 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-也可以简写成 `bun dev`。终端显示 `Local: http://localhost:5173/` 后，用浏览器打开这个地址。开发版包含四个页面：
+也可以简写成 `bun dev`。终端显示 `Local: http://localhost:5173/` 后，用浏览器打开这个地址。开发版包含六个页面：
 
 - `http://localhost:5173/#/draw`
-- `http://localhost:5173/#/lineup`
+- `http://localhost:5173/#/grouping`
+- `http://localhost:5173/#/battle`
 - `http://localhost:5173/#/caimi/draw`
-- `http://localhost:5173/#/caimi/lineup`
+- `http://localhost:5173/#/caimi/grouping`
+- `http://localhost:5173/#/caimi/battle`
 
 终端必须保持打开；需要停止时在该终端按 `Ctrl + C`。
 

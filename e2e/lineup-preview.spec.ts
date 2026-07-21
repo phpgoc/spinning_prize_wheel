@@ -14,7 +14,7 @@ async function previewNames(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/#/lineup');
+  await page.goto('/#/grouping');
 });
 
 test('名单文本区延迟到 Alt+回车集中确认，Esc 恢复上次确认内容', async ({ page }) => {

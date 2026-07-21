@@ -4,6 +4,7 @@
   import caimiIconUrl from './assets/caimi-icon.png?url';
   import defaultIconUrl from '../src-tauri/icons/app-icon.svg?url';
   import AppHeader from './lib/AppHeader.svelte';
+  import BattlePage from './lib/BattlePage.svelte';
   import CaimiBanner from './lib/CaimiBanner.svelte';
   import DrawPage from './lib/DrawPage.svelte';
   import ExportNotice from './lib/ExportNotice.svelte';
@@ -84,7 +85,9 @@
   }
 
   function pageFromHash(hash: string): AppPage {
-    return hash.endsWith('/lineup') ? 'lineup' : 'draw';
+    if (hash.endsWith('/battle')) return 'battle';
+    // 继续识别旧地址，避免升级后已有书签失效。
+    return hash.endsWith('/grouping') || hash.endsWith('/lineup') ? 'grouping' : 'draw';
   }
 
   function syncRoute() {
@@ -93,7 +96,7 @@
   }
 
   function navigatePage(nextPage: AppPage) {
-    if (nextPage === page || (nextPage === 'lineup' && (drawSpinning || continuousRunning))) return;
+    if (nextPage === page || (nextPage !== 'draw' && (drawSpinning || continuousRunning))) return;
     window.location.hash = variantRoute(variant, nextPage);
   }
 
@@ -136,7 +139,7 @@
 <svelte:window on:keydown={handleGlobalFontScaleShortcut} />
 
 <svelte:head>
-  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : '分组'} · 转盘</title>
+  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : page === 'grouping' ? '分组' : '对战'} · 转盘</title>
   <link
     rel="icon"
     type={variant === 'caimi' ? 'image/png' : 'image/svg+xml'}
@@ -180,7 +183,11 @@
     />
   </div>
 
-  {#if page === 'lineup'}
+  {#if page === 'grouping'}
     <RandomLineup {desktopRuntime} {variant} />
+  {/if}
+
+  {#if page === 'battle'}
+    <BattlePage {desktopRuntime} {variant} />
   {/if}
 </div>
