@@ -6,14 +6,19 @@ import {
   groupName,
   insertLineupPreviewName,
   isResolvedLineupName,
+  lineupLastTierSize,
   lineupOrderAvailability,
   lineupPreviewTierStarts,
   nextRankedUserActionIndex,
+  orderBattleNamesByFixedRank,
+  orderPartiallyResolvedLineupNames,
   orderResolvedLineupNames,
+  rankedBattleLineupNameCount,
   rankedUserIdAtShortcut,
   rankedUserDropTargetForCard,
   rankedUserKeyboardDropPoints,
   recentLineupHistories,
+  unrankedLineupNameCount,
   unresolvedLineupNameCount,
   uniqueLineupNames,
   uniqueResolvedLineupPeople,
@@ -93,6 +98,42 @@ describe('随机排阵', () => {
     expect(orderResolvedLineupNames([...people].reverse())).toEqual(['另一个小A', '小B', '另一个A']);
   });
 
+  test('分组按排名排序时把未排名项按输入顺序放在末尾', () => {
+    const people: ResolvedLineupName[] = [
+      { inputName: '未录入甲', known: false, userId: null, canonicalName: null, rank: null },
+      { inputName: '第二名', known: true, userId: 2, canonicalName: '乙', rank: 2 },
+      { inputName: '未排名乙', known: true, userId: 3, canonicalName: '丙', rank: 10_000 },
+      { inputName: '第一名', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+      { inputName: '未关联丙', known: true, userId: 4, canonicalName: '丁', rank: null },
+    ];
+
+    expect(orderPartiallyResolvedLineupNames(people)).toEqual([
+      '第一名',
+      '第二名',
+      '未录入甲',
+      '未排名乙',
+      '未关联丙',
+    ]);
+  });
+
+  test('对战固定前四只要求四个参赛者有排名', () => {
+    const names = ['丁', '甲别名', '陌生', '乙', '无排名', '丙'];
+    const people: ResolvedLineupName[] = [
+      { inputName: '丁', known: true, userId: 4, canonicalName: '丁', rank: 4 },
+      { inputName: '甲别名', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+      { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
+      { inputName: '乙', known: true, userId: 2, canonicalName: '乙', rank: 2 },
+      { inputName: '无排名', known: true, userId: 5, canonicalName: '无排名', rank: 10_000 },
+      { inputName: '丙', known: true, userId: 3, canonicalName: '丙', rank: 3 },
+    ];
+
+    expect(rankedBattleLineupNameCount(names, people)).toBe(4);
+    expect(orderBattleNamesByFixedRank(names, people, 4))
+      .toEqual(['甲别名', '乙', '丙', '丁', '陌生', '无排名']);
+    expect(() => orderBattleNamesByFixedRank(names, people, 5))
+      .toThrow('固定前 5 名，现 4 个排名');
+  });
+
   test('同一排名项的不同别名在预览中只保留首次出现的一项', () => {
     const people: ResolvedLineupName[] = [
       { inputName: '小甲', known: true, userId: 1, canonicalName: '甲', rank: 1 },
@@ -113,6 +154,18 @@ describe('随机排阵', () => {
     expect(createLineupRankingSnapshot(['小甲', '小乙'], people)).toEqual([
       { inputName: '小甲', name: '甲', rank: 1 },
       { inputName: '小乙', name: '乙', rank: 2 },
+    ]);
+  });
+
+  test('排名快照可以跳过最后一档的未排名项', () => {
+    const people: ResolvedLineupName[] = [
+      { inputName: '第一名', known: true, userId: 1, canonicalName: '甲', rank: 1 },
+      { inputName: '未录入', known: false, userId: null, canonicalName: null, rank: null },
+      { inputName: '未排名', known: true, userId: 2, canonicalName: '乙', rank: 10_000 },
+    ];
+
+    expect(createLineupRankingSnapshot(['第一名', '未录入', '未排名'], people, true)).toEqual([
+      { inputName: '第一名', name: '甲', rank: 1 },
     ]);
   });
 
@@ -148,6 +201,15 @@ describe('随机排阵', () => {
     expect(isResolvedLineupName(names[0], people[0])).toBeTrue();
     expect(unresolvedLineupNameCount(names, people)).toBe(3);
     expect(unresolvedLineupNameCount(names, [people[0]])).toBe(3);
+    const unranked: ResolvedLineupName = {
+      inputName: '未排名',
+      known: true,
+      userId: 4,
+      canonicalName: '未排名',
+      rank: 10_000,
+    };
+    expect(isResolvedLineupName('未排名', unranked)).toBeTrue();
+    expect(unrankedLineupNameCount(['已知', '未排名'], [people[0], unranked])).toBe(1);
   });
 
   test('红名只锁定排名排阵，输入顺序仍然可用', () => {
@@ -163,6 +225,18 @@ describe('随机排阵', () => {
       input: false,
       rank: false,
     });
+  });
+
+  test('按排名分组允许末档未排名', () => {
+    expect(lineupLastTierSize(15, 4)).toBe(3);
+    expect(lineupLastTierSize(16, 4)).toBe(4);
+    expect(lineupLastTierSize(24, 6)).toBe(6);
+
+    expect(lineupOrderAvailability(15, true, false, 3, lineupLastTierSize(15, 4)).rank).toBeTrue();
+    expect(lineupOrderAvailability(15, true, false, 4, lineupLastTierSize(15, 4)).rank).toBeFalse();
+    expect(lineupOrderAvailability(16, true, false, 4, lineupLastTierSize(16, 4)).rank).toBeTrue();
+    expect(lineupOrderAvailability(24, true, false, 6, lineupLastTierSize(24, 6)).rank).toBeTrue();
+    expect(lineupOrderAvailability(24, true, false, 1).rank).toBeFalse();
   });
 
   test('预览按组数标出每一档的换行位置', () => {

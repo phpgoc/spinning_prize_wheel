@@ -1,5 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+
+async function clearWebBattle(page: Page) {
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.battle-config textarea')).toHaveValue('');
+}
 
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
   const routes = [
@@ -158,7 +166,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.locator('.battle-fixed-preview .fixed strong')).toHaveText([
     '选手1', '选手4', '选手2', '选手3',
   ]);
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.single-battle-bracket')).toBeVisible();
   const leftBracket = page.locator('.single-bracket-side.left');
   const finalBracket = page.locator('.single-bracket-final');
@@ -174,10 +182,15 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   expect(leftBox!.x + leftBox!.width).toBeLessThan(finalBox!.x);
   expect(finalBox!.x + finalBox!.width).toBeLessThan(rightBox!.x);
 
+  await clearWebBattle(page);
+  await page.locator('.battle-config textarea').fill(
+    Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
+  );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '双败' }).check();
   const doubleGrandFinal = page.getByRole('checkbox', { name: '双总决赛' });
   await expect(doubleGrandFinal).not.toBeChecked();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(8);
   await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
   const doubleScroll = page.locator('.double-battle-scroll');
@@ -231,8 +244,14 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '总决赛', exact: true })).toHaveCount(1);
 
+  await clearWebBattle(page);
+  await page.locator('.battle-config textarea').fill(
+    Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
+  );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '双败' }).check();
   await doubleGrandFinal.check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(9);
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
 });
@@ -244,7 +263,7 @@ test('16 人双败逐列向分界线收拢', async ({ page }) => {
   );
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '双败' }).check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   const winnerRounds = page.locator('.double-winner-section .battle-round');
   const loserRounds = page.locator('.double-loser-section .battle-round');
@@ -271,7 +290,7 @@ test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ pag
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill('A1\nA2\nB1\nB2\nC1\nC2\nD1\nD2');
   await page.locator('.battle-config textarea').press('Alt+Enter');
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   const matches = page.locator('.battle-round .battle-match');
   await expect(matches).toHaveCount(4);
@@ -289,7 +308,7 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   const matches = page.locator('.single-bracket-side .battle-match');
   const firstInputs = matches.nth(0).locator('input[type="number"]');
@@ -331,7 +350,7 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   const firstRoundMatches = page.locator('.single-bracket-side .battle-match');
   const finalMatch = page.locator('.single-bracket-final .battle-match');

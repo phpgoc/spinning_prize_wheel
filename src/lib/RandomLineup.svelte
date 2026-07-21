@@ -38,14 +38,18 @@
     createRandomLineup,
     insertLineupPreviewName,
     isResolvedLineupName,
+    lineupLastTierSize,
     lineupOrderAvailability,
     lineupPreviewTierStarts,
     nextRankedUserActionIndex,
-    orderResolvedLineupNames,
+    orderBattleNamesByFixedRank,
+    orderPartiallyResolvedLineupNames,
+    rankedBattleLineupNameCount,
     rankedUserIdAtShortcut,
     rankedUserDropTargetForCard,
     rankedUserKeyboardDropPoints,
     recentLineupHistories,
+    unrankedLineupNameCount,
     unresolvedLineupNameCount,
     uniqueLineupNames,
     uniqueResolvedLineupPeople,
@@ -179,7 +183,6 @@
   let battleOrderMode: BattleOrderMode = 'input';
   let battleFixedSeedCount = 2;
   let battleDoubleGrandFinal = false;
-  let battlePlanSignature = '';
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
   let battleFullscreen = false;
@@ -233,39 +236,45 @@
     )));
   })();
   $: hiddenLineupCellCount = hiddenLineupCellKeys.size;
+  $: groupingUnrankedCount = desktopRuntime
+    ? unrankedLineupNameCount(names, resolvedNames)
+    : 0;
+  $: groupingUnresolvedCapacity = lineupLastTierSize(names.length, Number(groupCount));
+  $: groupingUnresolvedOverflow = Math.max(0, groupingUnrankedCount - groupingUnresolvedCapacity);
   $: orderAvailability = lineupOrderAvailability(
     names.length,
     desktopRuntime,
     resolvingNames,
     unresolvedPreviewCount,
   );
+  $: groupingOrderAvailability = lineupOrderAvailability(
+    names.length,
+    desktopRuntime,
+    resolvingNames,
+    groupingUnrankedCount,
+    groupingUnresolvedCapacity,
+  );
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
-  $: canGenerateByRank = !sourceTextDirty && orderAvailability.rank;
+  $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailability.rank;
   $: battleFixedOptions = battleFixedSeedOptions(names.length);
   $: if (battleFixedOptions.length > 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
     battleFixedSeedCount = battleFixedOptions[0];
   }
   $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
+  $: battleRankedNameCount = rankedBattleLineupNameCount(names, resolvedNames);
+  $: battleRankCountReady = desktopRuntime
+    && names.length >= 2
+    && battleRankedNameCount >= battleConfiguredFixedCount;
+  $: battleRankReady = battleRankCountReady && !resolvingNames && !sourceTextDirty;
   $: battleOrderedPreviewNames = battleOrderMode === 'rank'
-    && desktopRuntime
-    && !resolvingNames
-    && unresolvedPreviewCount === 0
-      ? orderResolvedLineupNames(resolvedNames)
+    && battleRankReady
+      ? orderBattleNamesByFixedRank(names, resolvedNames, battleConfiguredFixedCount)
       : names;
-  $: battleCanExecute = !sourceTextDirty && (
+  $: battleCanExecute = battleTmpSnapshot === null && !sourceTextDirty && (
     battleFormat === 'avoid-first-pair'
       ? names.length >= 4 && names.length % 2 === 0
-      : battleOrderMode === 'rank' ? canGenerateByRank : canGenerateByInput
+      : battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput
   );
-  $: currentBattleSignature = [
-    namesSignature,
-    battleFormat,
-    battleOrderMode,
-    battleConfiguredFixedCount,
-    battleFormat === 'double-elimination' && battleDoubleGrandFinal ? 'double-final' : 'single-final',
-    battleOrderMode === 'rank' ? desktopRankSignature : 'input',
-  ].join('|');
-  $: battleResultOutdated = battleTmpSnapshot !== null && battlePlanSignature !== currentBattleSignature;
   $: battleTmpGroups = groupBattleTmpMatches(battleTmpSnapshot);
   $: battleTmpWinnerGroups = battleTmpGroups.filter((group) => group.stage === 'winner');
   $: battleTmpLoserGroups = battleTmpGroups.filter((group) => group.stage === 'loser');
@@ -394,10 +403,6 @@
     ]);
     await tick();
     await resolveNames();
-    if (battleTmpSnapshot) {
-      await tick();
-      battlePlanSignature = currentBattleSignature;
-    }
   }
 
   async function resolveNames() {
@@ -448,22 +453,36 @@
     await commitSourceNames(parseOptionText(sourceText));
   }
 
-  async function sortPreviewByRank() {
-    if (!canGenerateByRank) return;
+  async function sortBattlePreviewByRank() {
+    if (!battleRankReady || battleTmpSnapshot) return;
     cancelPreviewInsertion();
     try {
-      await commitSourceNames(orderResolvedLineupNames(resolvedNames));
+      await commitSourceNames(orderBattleNamesByFixedRank(
+        names,
+        resolvedNames,
+        battleConfiguredFixedCount,
+      ));
     } catch (reason) {
-      error = messageFrom(reason, '无法按排名排序名单预览');
+      error = messageFrom(reason, '排名预览失败');
     }
   }
 
-  function orderedNamesForLineup(orderMode: LineupOrderMode): string[] {
+  async function sortGroupingPreviewByRank() {
+    if (!canGenerateGroupingByRank) return;
+    cancelPreviewInsertion();
+    try {
+      await commitSourceNames(orderPartiallyResolvedLineupNames(resolvedNames));
+    } catch (reason) {
+      error = messageFrom(reason, '排名预览失败');
+    }
+  }
+
+  function orderedNamesForGrouping(orderMode: LineupOrderMode): string[] {
     if (!desktopRuntime) return names;
     if (orderMode === 'input') {
       return resolvedNames.map((person) => person.inputName);
     }
-    return orderResolvedLineupNames(resolvedNames);
+    return orderPartiallyResolvedLineupNames(resolvedNames);
   }
 
   function rankScoresForLineup(orderedNames: readonly string[]): number[] {
@@ -476,7 +495,7 @@
       )),
     );
     return orderedNames.map((name, index) => (
-      rankByName.get(name.toLocaleLowerCase('zh-CN')) ?? index + 1
+      rankByName.get(name.toLocaleLowerCase('zh-CN')) ?? 10_000 + index
     ));
   }
 
@@ -485,16 +504,18 @@
     historyStatus = 'idle';
     try {
       if (desktopRuntime) {
+        const unresolvedCount = unrankedLineupNameCount(names, resolvedNames);
+        const allowedUnresolvedCount = lineupLastTierSize(names.length, Number(groupCount));
         if (
           orderMode === 'rank'
-          && unresolvedLineupNameCount(names, resolvedNames) > 0
+          && unresolvedCount > allowedUnresolvedCount
         ) {
-          throw new Error('请先在排名表中补齐所有未关联项');
+          throw new Error(`末档限 ${allowedUnresolvedCount} 个未排名，还差 ${unresolvedCount - allowedUnresolvedCount} 个`);
         }
       }
-      const orderedNames = orderedNamesForLineup(orderMode);
+      const orderedNames = orderedNamesForGrouping(orderMode);
       const rankingSnapshot = orderMode === 'rank'
-        ? createLineupRankingSnapshot(orderedNames, resolvedNames)
+        ? createLineupRankingSnapshot(orderedNames, resolvedNames, true)
         : [];
       const generated = createRandomLineup(orderedNames, Number(groupCount));
       result = variant === 'caimi'
@@ -533,16 +554,24 @@
 
   async function generateBattle() {
     error = '';
+    if (battleTmpSnapshot) {
+      error = '已抽签，请先清空';
+      return;
+    }
     if (!battleCanExecute) {
       error = battleFormat === 'avoid-first-pair'
-        ? `同组不对战1对2需要已确认的偶数名单且至少 4 项，当前为 ${names.length} 项。`
-        : '请先确认名单并补齐排名关联';
+        ? `需偶数名单且至少 4 项，现 ${names.length} 项`
+        : battleOrderMode === 'rank'
+          ? `固定前 ${battleConfiguredFixedCount} 名，现 ${battleRankedNameCount} 个排名`
+          : '至少确认 2 项';
       return;
     }
     try {
       const orderedNames = battleFormat === 'avoid-first-pair'
         ? names
-        : orderedNamesForLineup(battleOrderMode);
+        : battleOrderMode === 'rank'
+          ? orderBattleNamesByFixedRank(names, resolvedNames, battleConfiguredFixedCount)
+          : desktopRuntime ? resolvedNames.map((person) => person.inputName) : names;
       const createdPlan = battleFormat === 'avoid-first-pair'
         ? createAvoidSameGroupPlan(orderedNames)
         : createSeededBattlePlan(orderedNames, {
@@ -553,7 +582,6 @@
         });
       lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
-      battlePlanSignature = currentBattleSignature;
       if (desktopRuntime) {
         battleSyncStatus = 'saving';
         try {
@@ -1990,7 +2018,6 @@
     resultHistory = null;
     battleTmpSnapshot = null;
     lastConfirmedBattleScore = null;
-    battlePlanSignature = '';
     battleSyncStatus = 'idle';
     error = '';
     historyStatus = 'idle';
@@ -2135,7 +2162,6 @@
     }
     if (
       !battleTmpSnapshot
-      || battleResultOutdated
       || battleSyncStatus === 'saving'
       || match.up === null
       || match.down === null
@@ -2208,7 +2234,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'up')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
       class:fixed={battleTmpParticipantFixed(match.down)}
@@ -2217,7 +2243,7 @@
       class="battle-side"
     >
       <div><strong>{battleTmpSlotName(match, 'down')}</strong></div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
 {/snippet}
@@ -2432,7 +2458,7 @@
                     <button type="button" on:click={exportBattleTmpJson}>导出 JSON</button>
                   </div>
                 {:else}
-                  <p class="battle-state-empty">执行对战后，这里会显示实时数据库状态。</p>
+                  <p class="battle-state-empty">抽签后，这里会显示实时数据库状态。</p>
                 {/if}
               </div>
             {:else}
@@ -2483,7 +2509,7 @@
     {/if}
 
     <section class="lineup-center" aria-live="polite">
-      <div class="preview-panel">
+      <fieldset class="preview-panel" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
           <div><span>02</span><div><h2>{battlePage ? '对战预览' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
@@ -2598,14 +2624,18 @@
               </fieldset>
             {/if}
             <div class:valid={battleCanExecute} class="battle-count-status">
-              {#if sourceTextDirty}
-                修改名单后请先确认
+              {#if battleTmpSnapshot}
+                已抽签，清空后重来
+              {:else if sourceTextDirty}
+                名单已改，请确认
               {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
-                需要偶数名单且至少 4 项
+                需偶数且至少 4 项
+              {:else if battleOrderMode === 'rank' && !battleRankReady}
+                固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名
               {:else if battleCanExecute}
-                配置有效，可以执行
+                可以抽签
               {:else}
-                至少需要 2 项
+                至少 2 项
               {/if}
             </div>
           </div>
@@ -2613,8 +2643,16 @@
 
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
-        {#if desktopRuntime && !resolvingNames && unresolvedPreviewCount > 0}
-          <div class="rank-order-lock" role="status">还有未关联项，按排名操作暂不可用；可以使用输入顺序{battlePage ? '执行' : '分组'}。</div>
+        {#if desktopRuntime && !resolvingNames && (battlePage ? battleOrderMode === 'rank' && !battleRankCountReady : groupingUnrankedCount > 0)}
+          <div class="rank-order-lock" role="status">
+            {#if battlePage}
+              固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名。
+            {:else if groupingUnresolvedOverflow > 0}
+              末档限 {groupingUnresolvedCapacity} 个未排名，还差 {groupingUnresolvedOverflow} 个。
+            {:else}
+              {groupingUnrankedCount} 个未排名将进末档。
+            {/if}
+          </div>
         {/if}
 
         {#if !battlePage}
@@ -2623,18 +2661,18 @@
         <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
           {#if battlePage}
             {#if desktopRuntime && battleFormat !== 'avoid-first-pair' && battleOrderMode === 'rank'}
-              <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列对战预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名预览</button>
+              <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : battleRankReady ? `固定前 ${battleConfiguredFixedCount} 名` : `还差 ${Math.max(0, battleConfiguredFixedCount - battleRankedNameCount)} 个排名`} disabled={!battleRankReady} on:click={sortBattlePreviewByRank}>按排名预览</button>
             {/if}
-            <button type="button" class="generate-button battle-generate-button" disabled={!battleCanExecute} on:click={generateBattle}><span>{battleTmpSnapshot && !battleResultOutdated ? '重新执行' : '执行'}</span><i>→</i></button>
+            <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
           {:else if desktopRuntime}
-            <button type="button" class="rank-preview-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名排序' : '按排名重新排列名单预览'} disabled={!canGenerateByRank} on:click={sortPreviewByRank}>按排名顺序预览</button>
-            <button type="button" class="generate-button rank-generate-button" title={unresolvedPreviewCount > 0 ? '先录入所有红名后才能按排名分组' : '按排名分档'} disabled={!canGenerateByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
+            <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
+            <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
           {:else}
             <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
           {/if}
         </div>
-      </div>
+      </fieldset>
 
       <div
         bind:this={lineupResultElement}
@@ -2669,7 +2707,7 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位会立即显示，其他位置执行时随机' : '点击上方执行后生成对战'}</p></div></div>
+            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
             {#if battleTmpSnapshot}
               <div class="result-output-actions">
                 <button type="button" class="result-export-button" on:click={exportBattleTmpExcel}>Excel</button>
@@ -2677,10 +2715,9 @@
               </div>
             {/if}
           </div>
-          {#if battleResultOutdated}<div class="outdated-notice">名单、排名或配置已变化，请重新执行。</div>{/if}
           {#if battleTmpSnapshot}
             {#if battleTmpSnapshot.format === 'single-elimination'}
-              <div class:outdated={battleResultOutdated} class="single-battle-bracket">
+              <div class="single-battle-bracket">
                 <div class="single-bracket-side left">
                   {#each singleBattleLayout.left as round (round.id)}
                     <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
@@ -2700,7 +2737,7 @@
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <div class="double-battle-scroll" tabindex="0" role="application" aria-label="双败横向签表" aria-keyshortcuts="I J K L">
-                <div class:outdated={battleResultOutdated} class="double-battle-bracket">
+                <div class="double-battle-bracket">
                   <div class="double-battle-groups">
                     <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
                     <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
@@ -2709,7 +2746,7 @@
                 </div>
               </div>
             {:else}
-              <div class:outdated={battleResultOutdated} class="battle-bracket">
+              <div class="battle-bracket">
                 {#each battleTmpGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}
               </div>
             {/if}
@@ -3250,6 +3287,7 @@
 
   .preview-panel {
     min-width: 0;
+    margin: 0;
     padding: clamp(20px, 2.4vw, 30px);
     background: rgba(11, 12, 9, 0.27);
   }
@@ -3286,10 +3324,7 @@
   .lineup-table-wrap { margin-top: 20px; overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
   .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .battle-bracket.outdated { opacity: 0.45; }
   .single-battle-bracket { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-battle-bracket.outdated,
-  .double-battle-bracket.outdated { opacity: 0.45; }
   .single-bracket-side { display: flex; align-items: stretch; gap: 13px; }
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }

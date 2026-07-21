@@ -3,13 +3,13 @@ import { installTauriMock, mockedRankedNames } from './helpers/tauri-mock';
 
 async function openDesktopLineup(page: Page) {
   await installTauriMock(page);
-  await page.goto('/#/grouping');
+  await page.goto('/#/grouping', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
 async function openDesktopBattle(page: Page) {
   await installTauriMock(page);
-  await page.goto('/#/battle');
+  await page.goto('/#/battle', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
@@ -158,9 +158,10 @@ test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ 
   await expect(page.locator('.lineup-result')).toBeFocused();
 });
 
-test('按排名顺序预览与按排名顺序分组共用可用状态', async ({ page }) => {
+test('按排名分组允许末档未排名', async ({ page }) => {
   await openDesktopLineup(page);
-  await confirmDesktopNames(page, ['丙', '甲', '乙']);
+  await page.locator('#lineup-group-count').fill('2');
+  await confirmDesktopNames(page, ['乙', '甲', '未录入']);
   const sortPreview = page.getByRole('button', { name: '按排名顺序预览' });
   const groupByRank = page.getByRole('button', { name: '按排名顺序分组' });
   await expect(sortPreview).toBeEnabled();
@@ -169,16 +170,18 @@ test('按排名顺序预览与按排名顺序分组共用可用状态', async ({
   await sortPreview.click();
   await expect.poll(() => page.locator('.preview-row input').evaluateAll((inputs) => (
     inputs.map((input) => (input as HTMLInputElement).value)
-  ))).toEqual(['甲', '乙', '丙']);
+  ))).toEqual(['甲', '乙', '未录入']);
+  await groupByRank.click();
+  await expect(page.locator('.lineup-table-wrap tbody tr')).toHaveCount(2);
 
-  await confirmDesktopNames(page, ['甲', '未录入']);
+  await confirmDesktopNames(page, ['甲', '未录入甲', '未录入乙']);
   await expect(sortPreview).toBeDisabled();
   await expect(groupByRank).toBeDisabled();
 });
 
-test('对战复用分组排名组件并按排名生成固定签位', async ({ page }) => {
+test('对战只要求固定人数有排名', async ({ page }) => {
   await openDesktopBattle(page);
-  await confirmDesktopNames(page, ['丙', '甲', '乙']);
+  await confirmDesktopNames(page, ['丁', '未录入', '乙', '甲']);
   await expect(page.getByRole('button', { name: '甲', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '对战状态' })).toBeVisible();
 
@@ -189,12 +192,13 @@ test('对战复用分组排名组件并按排名生成固定签位', async ({ pa
   await rankPreview.click();
   await expect.poll(() => page.locator('.preview-row input').evaluateAll((inputs) => (
     inputs.map((input) => (input as HTMLInputElement).value)
-  ))).toEqual(['甲', '乙', '丙']);
+  ))).toEqual(['甲', '乙', '丁', '未录入']);
 
   await expect(page.locator('.battle-fixed-preview .fixed strong')).toHaveText(['甲', '乙']);
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(2);
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
+  await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 });
 
 test('桌面对战全屏会同步切换 Tauri 窗口', async ({ page }) => {
@@ -218,7 +222,7 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).not.toBeNull();
@@ -260,7 +264,7 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.battleTmpState)).not.toBeNull();
   const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
@@ -303,7 +307,7 @@ test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page,
   await page.getByRole('radio', { name: '双败' }).check();
   const doubleGrandFinal = page.getByRole('checkbox', { name: '双总决赛' });
   await expect(doubleGrandFinal).not.toBeChecked();
-  await page.getByRole('button', { name: /^执行/ }).click();
+  await page.getByRole('button', { name: /^抽签/ }).click();
 
   const singleFinalState = await page.evaluate(() => structuredClone(
     (window as any).__E2E_TAURI_STATE__.battleTmpState,
@@ -316,11 +320,18 @@ test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page,
   await expect(restoredSingleFinal.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
   await restoredSingleFinal.close();
 
-  await doubleGrandFinal.check();
-  await page.getByRole('button', { name: /^执行/ }).click();
-  const doubleFinalState = await page.evaluate(() => structuredClone(
+  const doubleFinalPage = await context.newPage();
+  await installTauriMock(doubleFinalPage);
+  await doubleFinalPage.goto('/#/battle');
+  await expect(doubleFinalPage.locator('[data-rank-user-id]')).toHaveCount(4);
+  await confirmDesktopNames(doubleFinalPage, ['甲', '乙', '丙', '丁']);
+  await doubleFinalPage.getByRole('radio', { name: '双败' }).check();
+  await doubleFinalPage.getByRole('checkbox', { name: '双总决赛' }).check();
+  await doubleFinalPage.getByRole('button', { name: /^抽签/ }).click();
+  const doubleFinalState = await doubleFinalPage.evaluate(() => structuredClone(
     (window as any).__E2E_TAURI_STATE__.battleTmpState,
   ));
+  await doubleFinalPage.close();
   expect(doubleFinalState.matches.some((match: any) => match.matchId === 'GF-RESET-M1')).toBe(true);
   const restoredDoubleFinal = await context.newPage();
   await installTauriMock(restoredDoubleFinal, undefined, { battleTmpState: doubleFinalState });

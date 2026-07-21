@@ -104,13 +104,36 @@ export function lineupOrderAvailability(
   desktopRuntime: boolean,
   resolvingNames: boolean,
   unresolvedCount: number,
+  allowedUnresolvedCount = 0,
 ): LineupOrderAvailability {
   const input = Math.max(0, Math.floor(Number(nameCount) || 0)) >= 2
     && (!desktopRuntime || !resolvingNames);
+  const unresolved = Math.max(0, Math.floor(Number(unresolvedCount) || 0));
+  const allowedUnresolved = Math.max(0, Math.floor(Number(allowedUnresolvedCount) || 0));
   return {
     input,
-    rank: input && (!desktopRuntime || Math.max(0, unresolvedCount) === 0),
+    rank: input && (!desktopRuntime || unresolved <= allowedUnresolved),
   };
+}
+
+/** 最后一档按实际人数计算；整除时最后一档人数等于组数。 */
+export function lineupLastTierSize(peopleCount: number, groupCount: number): number {
+  const rawTotal = Number(peopleCount);
+  const rawGroupCount = Number(groupCount);
+  const total = Number.isFinite(rawTotal) ? Math.max(0, Math.floor(rawTotal)) : 0;
+  const groups = Number.isFinite(rawGroupCount) ? Math.max(2, Math.floor(rawGroupCount)) : 2;
+  return total === 0 ? 0 : ((total - 1) % groups) + 1;
+}
+
+function hasLineupRank(
+  person: ResolvedLineupName | null | undefined,
+): person is ResolvedLineupName & { canonicalName: string; rank: number } {
+  return Boolean(
+    person?.known
+    && person.canonicalName !== null
+    && person.rank !== null
+    && person.rank < 10_000,
+  );
 }
 
 /** 预览项只有和当前输入逐项对应、且具备本名与排名时，才不显示红名。 */
@@ -132,6 +155,17 @@ export function unresolvedLineupNameCount(
     (count, name, index) => count + (isResolvedLineupName(name, people[index]) ? 0 : 1),
     0,
   );
+}
+
+/** 分组按排名时，未录入、未关联和数据库中的未排名项都计入最后一档。 */
+export function unrankedLineupNameCount(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+): number {
+  return names.reduce((count, name, index) => {
+    const person = people[index];
+    return count + (person?.inputName === name && hasLineupRank(person) ? 0 : 1);
+  }, 0);
 }
 
 /** 返回每一档在预览名单中的起始下标，用于强制换行和绘制分隔线。 */
@@ -233,21 +267,96 @@ export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]):
     .map((person) => person.inputName);
 }
 
+/** 分组时已排名项在前面按排名排序，未排名项按原输入顺序进入最后一档。 */
+export function orderPartiallyResolvedLineupNames(
+  people: readonly ResolvedLineupName[],
+): string[] {
+  const uniquePeople = uniqueResolvedLineupPeople(people);
+  const ranked = uniquePeople
+    .filter(hasLineupRank)
+    .sort((left, right) => (
+      left.rank - right.rank
+      || left.canonicalName.localeCompare(right.canonicalName, 'zh-CN')
+    ));
+  const unranked = uniquePeople.filter((person) => !hasLineupRank(person));
+  return [...ranked, ...unranked].map((person) => person.inputName);
+}
+
+/** 对战固定前 N 时只要求 N 个参赛者已有有效排名，其余参赛者继续保留名单顺序。 */
+export function rankedBattleLineupNameCount(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+): number {
+  return rankedBattleLineupEntries(names, people).length;
+}
+
+export function orderBattleNamesByFixedRank(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+  fixedCount: number,
+): string[] {
+  const required = Math.max(0, Math.floor(Number(fixedCount) || 0));
+  const rankedEntries = rankedBattleLineupEntries(names, people);
+  if (rankedEntries.length < required) {
+    throw new Error(`固定前 ${required} 名，现 ${rankedEntries.length} 个排名`);
+  }
+  const fixedEntries = rankedEntries
+    .sort((left, right) => (
+      left.person.rank! - right.person.rank!
+      || left.person.canonicalName!.localeCompare(right.person.canonicalName!, 'zh-CN')
+      || left.index - right.index
+    ))
+    .slice(0, required);
+  const fixedIndexes = new Set(fixedEntries.map((entry) => entry.index));
+  return [
+    ...fixedEntries.map((entry) => entry.name),
+    ...names.filter((_, index) => !fixedIndexes.has(index)),
+  ];
+}
+
+function rankedBattleLineupEntries(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+): Array<{ index: number; name: string; person: ResolvedLineupName }> {
+  const peopleByInputName = new Map(
+    people.map((person) => [person.inputName.toLocaleLowerCase('zh-CN'), person] as const),
+  );
+  const seenUserIds = new Set<number>();
+  return names.flatMap((name, index) => {
+    const person = peopleByInputName.get(name.toLocaleLowerCase('zh-CN'));
+    if (
+      !person?.known
+      || person.userId === null
+      || person.canonicalName === null
+      || person.rank === null
+      || person.rank >= 10_000
+      || seenUserIds.has(person.userId)
+    ) return [];
+    seenUserIds.add(person.userId);
+    return [{ index, name, person }];
+  });
+}
+
 /** 保存排名分组当时使用的本名和排名，只作为历史 JSON 元数据。 */
 export function createLineupRankingSnapshot(
   orderedNames: readonly string[],
   people: readonly ResolvedLineupName[],
+  skipUnranked = false,
 ): LineupRankingSnapshotEntry[] {
   const byInputName = new Map(
     people.map((person) => [person.inputName.toLocaleLowerCase('zh-CN'), person] as const),
   );
-  return orderedNames.map((inputName) => {
+  const snapshot: LineupRankingSnapshotEntry[] = [];
+  orderedNames.forEach((inputName) => {
     const person = byInputName.get(inputName.toLocaleLowerCase('zh-CN'));
     if (!person?.known || person.canonicalName === null || person.rank === null) {
+      if (skipUnranked) return;
       throw new Error(`无法记录“${inputName}”的排名快照`);
     }
-    return { inputName, name: person.canonicalName, rank: person.rank };
+    if (skipUnranked && !hasLineupRank(person)) return;
+    snapshot.push({ inputName, name: person.canonicalName, rank: person.rank });
   });
+  return snapshot;
 }
 
 export function recentLineupHistories(
