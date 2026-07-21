@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   battleFixedSeedOptions,
+  battleTmpScoresWithMagicFill,
   battleTmpExcelRows,
   createAvoidSameGroupPlan,
   createBattleTmpSnapshot,
@@ -109,6 +110,53 @@ describe('对战签位', () => {
       upResult: null,
       downResult: null,
       status: 'ready',
+    });
+  });
+
+  test('魔法比分只沿用同阶段同层已经确定的胜分', () => {
+    let state = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
+      format: 'double-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 2,
+      random: () => 0.25,
+    }), 1_700_000_000_000);
+    const winnerMatches = state.matches.filter((match) => match.stage === 'winner' && match.level === 1);
+    state = updateBattleTmpResult(state, winnerMatches[0].matchId, 4, 1);
+
+    expect(battleTmpScoresWithMagicFill(state, winnerMatches[1].matchId, 'down', 2)).toEqual({
+      upResult: 4,
+      downResult: 2,
+    });
+    expect(battleTmpScoresWithMagicFill(state, winnerMatches[1].matchId, 'up', 4)).toEqual({
+      upResult: 4,
+      downResult: null,
+    });
+
+    const nextWinnerLevel = state.matches.find((match) => match.stage === 'winner' && match.level === 2)!;
+    expect(battleTmpScoresWithMagicFill(state, nextWinnerLevel.matchId, 'up', 1)).toEqual({
+      upResult: 1,
+      downResult: null,
+    });
+    const loserMatch = state.matches.find((match) => match.stage === 'loser' && match.level === 1)!;
+    expect(battleTmpScoresWithMagicFill(state, loserMatch.matchId, 'down', 1)).toEqual({
+      upResult: null,
+      downResult: 1,
+    });
+  });
+
+  test('同阶段同层胜分不一致时魔法比分不猜测', () => {
+    let state = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
+      format: 'single-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 2,
+      random: () => 0.25,
+    }), 1_700_000_000_000);
+    const firstLevel = state.matches.filter((match) => match.stage === 'single' && match.level === 1);
+    state = updateBattleTmpResult(state, firstLevel[0].matchId, 4, 1);
+    state = updateBattleTmpResult(state, firstLevel[1].matchId, 3, 1);
+    expect(battleTmpScoresWithMagicFill(state, firstLevel[2].matchId, 'down', 1)).toEqual({
+      upResult: null,
+      downResult: 1,
     });
   });
 

@@ -4,6 +4,7 @@
   import type { AppVariant } from './app-variant';
   import {
     battleFixedSeedOptions,
+    battleTmpScoresWithMagicFill,
     battleTmpWinnerId,
     createAvoidSameGroupPlan,
     createBattleTmpSnapshot,
@@ -58,6 +59,8 @@
   export let purpose: 'grouping' | 'battle' = 'grouping';
 
   type LineupOrderMode = 'rank' | 'input';
+  type BattleColorName = 'background' | 'text' | 'participant' | 'match';
+  type BattleColors = Record<BattleColorName, string>;
   type DesktopPanel = 'ranking' | 'history';
   type LineupHistoryDeletion =
     | { kind: 'one'; history: SavedLineup }
@@ -149,6 +152,14 @@
   let battlePlanSignature = '';
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
+  let battleFullscreen = false;
+  let bodyOverflowBeforeBattleFullscreen = '';
+  let battleColors: BattleColors = {
+    background: '#191a16',
+    text: '#f6f3ea',
+    participant: '#f4f5ec',
+    match: '#292a25',
+  };
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -246,7 +257,53 @@
 
   onMount(() => {
     mounted = true;
+    if (battlePage) loadBattleColors();
+    return () => {
+      if (battleFullscreen) document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+    };
   });
+
+  function battleColorStorageKey(): string {
+    return `battle-colors-v1:${variant}`;
+  }
+
+  function loadBattleColors() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}') as Partial<BattleColors>;
+      battleColors = Object.fromEntries(Object.entries(battleColors).map(([name, fallback]) => [
+        name,
+        typeof saved[name as BattleColorName] === 'string'
+          && /^#[0-9a-f]{6}$/iu.test(saved[name as BattleColorName]!)
+            ? saved[name as BattleColorName]
+            : fallback,
+      ])) as unknown as BattleColors;
+    } catch {
+      // 本地颜色损坏时继续使用默认值，不影响对战操作。
+    }
+  }
+
+  function updateBattleColor(name: BattleColorName, event: Event) {
+    const value = (event.currentTarget as HTMLInputElement).value;
+    battleColors = { ...battleColors, [name]: value };
+    try {
+      localStorage.setItem(battleColorStorageKey(), JSON.stringify(battleColors));
+    } catch {
+      // 浏览器禁用本地存储时仍允许本次临时调色。
+    }
+  }
+
+  async function setBattleFullscreen(fullscreen: boolean) {
+    if (!battlePage || battleFullscreen === fullscreen) return;
+    if (fullscreen) {
+      bodyOverflowBeforeBattleFullscreen = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
+    }
+    battleFullscreen = fullscreen;
+    await tick();
+    lineupResultElement?.focus({ preventScroll: true });
+  }
 
   function isTextEditingTarget(target: EventTarget | null): boolean {
     return target instanceof HTMLElement
@@ -1397,6 +1454,11 @@
   }
 
   function handleLineupKeydown(event: KeyboardEvent) {
+    if (battleFullscreen && event.key === 'Escape') {
+      event.preventDefault();
+      void setBattleFullscreen(false);
+      return;
+    }
     const target = event.target;
     if (target === sourceTextarea && isMultilineTextConfirm(event)) {
       event.preventDefault();
@@ -1746,6 +1808,10 @@
     return battleTmpSnapshot?.participants.find((participant) => participant.id === id)?.name ?? `#${id}`;
   }
 
+  function battleTmpParticipantWon(match: BattleTmpMatch, id: number | null): boolean {
+    return id !== null && battleTmpWinnerId(match) === id;
+  }
+
   function battleTmpParticipantFixed(id: number | null): boolean {
     if (id === null || !battleTmpSnapshot) return false;
     const participant = battleTmpSnapshot.participants.find((item) => item.id === id);
@@ -1779,8 +1845,12 @@
       || match.status === 'pending'
       || match.status === 'skipped'
     ) return;
-    const upResult = side === 'up' ? score : match.upResult;
-    const downResult = side === 'down' ? score : match.downResult;
+    const { upResult, downResult } = battleTmpScoresWithMagicFill(
+      battleTmpSnapshot,
+      match.matchId,
+      side,
+      score,
+    );
     const next = updateBattleTmpResult(battleTmpSnapshot, match.matchId, upResult, downResult);
     battleTmpSnapshot = next;
     if (!desktopRuntime) return;
@@ -1834,20 +1904,20 @@
     <small>{match.matchId} · 位置 {match.position} · {battleTmpStatusLabel(match)}</small>
     <div
       class:fixed={battleTmpParticipantFixed(match.up)}
-      class:winner={battleTmpWinnerId(match) === match.up}
+      class:winner={battleTmpParticipantWon(match, match.up)}
       class:waiting={match.up === null}
       class="battle-side"
     >
-      <div><strong>{battleTmpParticipantName(match.up)}</strong><span>{battleTmpParticipantDetail(match.up)}{battleTmpWinnerId(match) === match.up ? ' · 胜者' : ''}</span></div>
+      <div><strong>{battleTmpParticipantName(match.up)}</strong><span>{battleTmpParticipantDetail(match.up)}{battleTmpParticipantWon(match, match.up) ? ' · 胜者' : ''}</span></div>
       <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpParticipantName(match.up)} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
       class:fixed={battleTmpParticipantFixed(match.down)}
-      class:winner={battleTmpWinnerId(match) === match.down}
+      class:winner={battleTmpParticipantWon(match, match.down)}
       class:waiting={match.down === null}
       class="battle-side"
     >
-      <div><strong>{battleTmpParticipantName(match.down)}</strong><span>{battleTmpParticipantDetail(match.down)}{battleTmpWinnerId(match) === match.down ? ' · 胜者' : ''}</span></div>
+      <div><strong>{battleTmpParticipantName(match.down)}</strong><span>{battleTmpParticipantDetail(match.down)}{battleTmpParticipantWon(match, match.down) ? ' · 胜者' : ''}</span></div>
       <input type="number" min="0" step="1" inputmode="numeric" aria-label={`${battleTmpParticipantName(match.down)} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleResultOutdated || battleSyncStatus === 'saving' || match.status === 'skipped'} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
@@ -2264,8 +2334,25 @@
         </div>
       </div>
 
-      <div bind:this={lineupResultElement} class="lineup-result" tabindex="-1">
+      <div
+        bind:this={lineupResultElement}
+        class:battle-result={battlePage}
+        class:battle-fullscreen={battleFullscreen}
+        class="lineup-result"
+        style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
+        tabindex="-1"
+      >
         {#if battlePage}
+          <div class="battle-result-toolbar">
+            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
+            <fieldset class="battle-color-controls">
+              <legend>对战颜色</legend>
+              <label><span>背景框</span><input type="color" aria-label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} /></label>
+              <label><span>文字</span><input type="color" aria-label="文字颜色" value={battleColors.text} on:input={(event) => updateBattleColor('text', event)} /></label>
+              <label><span>选手文字</span><input type="color" aria-label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} /></label>
+              <label><span>对战框</span><input type="color" aria-label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} /></label>
+            </fieldset>
+          </div>
           <div class="result-heading">
             <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位会立即显示，其他位置执行时随机' : '点击上方执行后生成对战'}</p></div></div>
             {#if battleTmpSnapshot}
@@ -2714,6 +2801,87 @@
     outline-offset: 3px;
   }
 
+  .lineup-result.battle-result {
+    background: var(--battle-background-color);
+    color: var(--battle-text-color);
+  }
+
+  .lineup-result.battle-fullscreen {
+    position: fixed;
+    z-index: 900;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    margin: 0 !important;
+    padding: clamp(16px, 2.5vw, 34px);
+    border: 0;
+    border-radius: 0;
+    overflow: auto;
+  }
+
+  .battle-result-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .battle-fullscreen-button {
+    min-width: 68px;
+    padding: 8px 13px;
+    border: 1px solid color-mix(in srgb, var(--battle-text-color) 38%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--battle-text-color) 10%, transparent);
+    color: var(--battle-text-color);
+    cursor: pointer;
+    font-size: calc(12px * var(--font-scale, 1));
+    font-weight: 800;
+  }
+
+  .battle-fullscreen-button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .battle-color-controls {
+    display: flex;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    flex-wrap: wrap;
+  }
+
+  .battle-color-controls legend {
+    color: color-mix(in srgb, var(--battle-text-color) 70%, transparent);
+    font-size: calc(10px * var(--font-scale, 1));
+  }
+
+  .battle-color-controls label {
+    display: flex;
+    padding: 5px 7px;
+    border: 1px solid color-mix(in srgb, var(--battle-text-color) 18%, transparent);
+    border-radius: 8px;
+    align-items: center;
+    gap: 6px;
+    color: var(--battle-text-color);
+    font-size: calc(10px * var(--font-scale, 1));
+  }
+
+  .battle-color-controls input {
+    width: 27px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+  }
+
   .lineup-center {
     display: grid;
     min-width: 0;
@@ -2772,16 +2940,21 @@
   .single-bracket-side.right .battle-match { direction: rtl; }
   .single-bracket-side.right .battle-match > * { direction: ltr; }
   .double-battle-bracket { display: grid; gap: 18px; margin-top: 18px; transition: opacity 180ms ease; }
-  .double-battle-bracket > section { min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); }
+  .double-battle-bracket > section { display: flex; min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); flex-direction: column; }
   .double-battle-bracket > section > h3 { color: var(--accent); font-size: calc(15px * var(--font-scale, 1)); }
-  .double-battle-bracket > section > .battle-bracket { margin-top: 10px; }
+  .double-battle-bracket > section > .battle-bracket { min-height: clamp(290px, 34vh, 580px); margin-top: 10px; align-items: stretch; }
+  .double-battle-bracket > section:last-child > .battle-bracket { min-height: 0; }
+  .double-battle-bracket .battle-round { display: flex; flex-direction: column; }
+  .double-battle-bracket .battle-round > div { flex: 1; align-content: space-around; }
+  .battle-fullscreen .double-battle-bracket > section > .battle-bracket { min-height: clamp(380px, 46vh, 760px); }
+  .battle-fullscreen .double-battle-bracket > section:last-child > .battle-bracket { min-height: 180px; }
   .battle-round { flex: 0 0 min(235px, 74vw); }
   .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
   .battle-round > span { float: right; color: var(--lineup-dim-on-dark); font-size: calc(10px * var(--font-scale, 1)); }
   .battle-round > div { display: grid; gap: 10px; margin-top: 9px; }
   .battle-fixed-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 18px; }
-  .battle-match { min-width: 0; padding: 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 11px; background: rgba(255, 255, 255, 0.035); }
-  .battle-match > small { display: block; margin-bottom: 6px; color: var(--lineup-dim-on-dark); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match { min-width: 0; padding: 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 11px; background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
+  .battle-match > small { display: block; margin-bottom: 6px; color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
   .battle-match > div { width: 100%; min-width: 0; padding: 8px 9px; border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
   .battle-match > div + div { margin-top: 5px; }
   .battle-match > div.fixed { border-left-color: #e7ff72; background: rgba(231, 255, 114, 0.08); }
@@ -2805,8 +2978,8 @@
   }
   .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.12); }
   .battle-side input:disabled { opacity: 0.4; }
-  .battle-match strong { display: block; overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  .battle-match span { display: block; margin-top: 2px; color: var(--lineup-dim-on-dark); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
+  .battle-match span { display: block; margin-top: 2px; color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-size: calc(9px * var(--font-scale, 1)); }
   table {
     width: 100%;
     min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));
@@ -4208,6 +4381,8 @@
     .lineup-page { padding: 24px 14px; }
     .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
+    .battle-result-toolbar { align-items: flex-start; flex-direction: column; }
+    .battle-color-controls { justify-content: flex-start; }
     .lineup-actions { flex-direction: column; }
     .lineup-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
   }

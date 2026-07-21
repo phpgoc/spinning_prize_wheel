@@ -43,6 +43,39 @@ test('网页版对战页不显示桌面专用排名和历史栏', async ({ page 
   await expect(page.locator('.battle-config')).toBeVisible();
 });
 
+test('对战可以全屏返回并持久化四类颜色', async ({ page }) => {
+  await page.goto('/#/battle');
+  const battleResult = page.locator('.battle-result');
+  await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
+
+  await page.getByLabel('背景框颜色').fill('#123456');
+  await page.getByLabel('文字颜色', { exact: true }).fill('#fedcba');
+  await page.getByLabel('选手文字颜色').fill('#abcdef');
+  await page.getByLabel('对战框颜色').fill('#654321');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}'))).toEqual({
+    background: '#123456',
+    text: '#fedcba',
+    participant: '#abcdef',
+    match: '#654321',
+  });
+
+  await page.getByRole('button', { name: '全屏' }).click();
+  await expect(battleResult).toHaveClass(/battle-fullscreen/u);
+  await expect(page.getByRole('button', { name: '返回' })).toBeVisible();
+  const fullscreenBox = await battleResult.boundingBox();
+  expect(fullscreenBox).toMatchObject({ x: 0, y: 0 });
+  expect(fullscreenBox!.width).toBe(page.viewportSize()!.width);
+  expect(fullscreenBox!.height).toBe(page.viewportSize()!.height);
+
+  await page.keyboard.press('Escape');
+  await expect(battleResult).not.toHaveClass(/battle-fullscreen/u);
+  await page.reload();
+  await expect(page.getByLabel('背景框颜色')).toHaveValue('#123456');
+  await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#fedcba');
+  await expect(page.getByLabel('选手文字颜色')).toHaveValue('#abcdef');
+  await expect(page.getByLabel('对战框颜色')).toHaveValue('#654321');
+});
+
 test('对战赛制切换会保留单败和双败的配置', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
@@ -101,6 +134,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('radio', { name: '双败' }).check();
   await page.getByRole('button', { name: /^执行/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(9);
+  await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '总决赛（必要时重赛）' })).toBeVisible();
 });
 
@@ -136,7 +170,10 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   await expect(finalMatch).toContainText(firstWinner);
   await expect(finalMatch).toContainText('等待上游');
 
-  await enterBattleScore(firstRoundMatches.nth(1), 4, 1);
+  const secondMatchInputs = firstRoundMatches.nth(1).locator('input[type="number"]');
+  await secondMatchInputs.nth(1).fill('1');
+  await secondMatchInputs.nth(1).press('Tab');
+  await expect(secondMatchInputs.nth(0)).toHaveValue('4');
   await expect(finalMatch).toContainText('待比分');
   await enterBattleScore(finalMatch, 4, 1);
   await expect(finalMatch).toContainText('已完成');

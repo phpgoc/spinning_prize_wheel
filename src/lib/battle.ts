@@ -194,6 +194,42 @@ export function updateBattleTmpResult(
   return recomputeBattleTmpSnapshot(next);
 }
 
+export function battleTmpScoresWithMagicFill(
+  snapshot: BattleTmpSnapshot,
+  matchId: string,
+  side: 'up' | 'down',
+  score: number | null,
+): { upResult: number | null; downResult: number | null } {
+  const match = snapshot.matches.find((candidate) => candidate.matchId === matchId);
+  if (!match) throw new Error('找不到对战场次');
+
+  let upResult = side === 'up' ? score : match.upResult;
+  let downResult = side === 'down' ? score : match.downResult;
+  const oppositeResult = side === 'up' ? downResult : upResult;
+  if (score === null || oppositeResult !== null) return { upResult, downResult };
+
+  // 同阶段、同层已经录完的场次才能定义本层胜分，避免胜者组规则误套到败者组。
+  const winningScores = new Set(snapshot.matches.flatMap((candidate) => {
+    if (
+      candidate.matchId === matchId
+      || candidate.stage !== match.stage
+      || candidate.level !== match.level
+      || candidate.status !== 'completed'
+      || candidate.upResult === null
+      || candidate.downResult === null
+      || candidate.upResult === candidate.downResult
+    ) return [];
+    return [Math.max(candidate.upResult, candidate.downResult)];
+  }));
+  if (winningScores.size !== 1) return { upResult, downResult };
+
+  const winningScore = [...winningScores][0];
+  if (score >= winningScore) return { upResult, downResult };
+  if (side === 'up') downResult = winningScore;
+  else upResult = winningScore;
+  return { upResult, downResult };
+}
+
 export function battleTmpWinnerId(match: BattleTmpMatch): number | null {
   if (match.status !== 'completed') return null;
   if (match.up === null || match.down === null) return match.up ?? match.down;
