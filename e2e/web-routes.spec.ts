@@ -146,28 +146,31 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   ]);
   expect(doubleFinalBox!.x).toBeGreaterThan(winnerSectionBox!.x + winnerSectionBox!.width);
   expect(Math.abs(doubleFinalBox!.y + doubleFinalBox!.height / 2 - loserSectionBox!.y)).toBeLessThan(2);
+  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await Promise.all([
+    page.locator('.double-winner-section .battle-round').last().locator('.battle-match').boundingBox(),
+    page.locator('.double-loser-section .battle-round').last().locator('.battle-match').boundingBox(),
+    page.locator('.double-final-section .battle-round').first().locator('.battle-match').boundingBox(),
+  ]);
+  const bracketFinalMiddle = (
+    winnerFinalBox!.y + winnerFinalBox!.height / 2
+    + loserFinalBox!.y + loserFinalBox!.height / 2
+  ) / 2;
+  expect(Math.abs(grandFinalBox!.y + grandFinalBox!.height / 2 - bracketFinalMiddle)).toBeLessThan(4);
   await expect(page.locator('.double-battle-bracket')).not.toContainText(/顺位|W\d+-M\d+|L\d+-M\d+/u);
   await expect(page.locator('.double-winner-section .battle-round').nth(0).getByRole('heading')).toHaveText('1/4');
   await expect(page.locator('.double-winner-section .battle-round').nth(1).getByRole('heading')).toHaveText('半决赛');
   await expect(page.locator('.double-winner-section .battle-round').nth(2).getByRole('heading')).toHaveText('决赛');
-  expect(await page.locator('.double-winner-section .battle-round').evaluateAll((rounds) => rounds.map((round) => round.getAttribute('style')))).toEqual([
-    '--battle-level-offset: 0%;',
-    '--battle-level-offset: 23%;',
-    '--battle-level-offset: 45%;',
-  ]);
-  expect(await page.locator('.double-loser-section .battle-round').evaluateAll((rounds) => rounds.map((round) => round.getAttribute('style')))).toEqual([
-    '--battle-level-offset: -0%;',
-    '--battle-level-offset: -0%;',
-    '--battle-level-offset: -20%;',
-    '--battle-level-offset: -40%;',
-  ]);
   const winnerCenters = await battleRoundMatchCenters(page.locator('.double-winner-section .battle-round'));
   const loserCenters = await battleRoundMatchCenters(page.locator('.double-loser-section .battle-round'));
+  const winnerEdges = await battleRoundMatchEdges(page.locator('.double-winner-section .battle-round'));
+  const loserEdges = await battleRoundMatchEdges(page.locator('.double-loser-section .battle-round'));
   expect(winnerCenters[1]).toBeGreaterThan(winnerCenters[0]);
   expect(winnerCenters[2]).toBeGreaterThan(winnerCenters[1]);
+  expect(Math.max(...winnerEdges.map((edge) => edge.lastBottom)) - Math.min(...winnerEdges.map((edge) => edge.lastBottom))).toBeLessThan(2);
   expect(Math.abs(loserCenters[1] - loserCenters[0])).toBeLessThan(2);
   expect(loserCenters[2]).toBeLessThan(loserCenters[1]);
-  expect(loserCenters[3]).toBeLessThan(loserCenters[2]);
+  expect(Math.abs(loserCenters[3] - loserCenters[2])).toBeLessThan(2);
+  expect(Math.max(...loserEdges.map((edge) => edge.firstTop)) - Math.min(...loserEdges.map((edge) => edge.firstTop))).toBeLessThan(2);
   await expect(page.locator('[data-battle-stage="winner"][data-battle-level="2"][data-battle-position="1"]'))
     .toContainText('W1 P1');
   await doubleScroll.focus();
@@ -183,6 +186,37 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await firstWinnerMatch.locator('input[type="number"]').first().press('ArrowRight');
   await expect(page.locator('.double-battle-bracket input:focus')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '总决赛', exact: true })).toHaveCount(1);
+});
+
+test('16 人双败逐列向分界线收拢', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill(
+    Array.from({ length: 16 }, (_, index) => `选手${index + 1}`).join('\n'),
+  );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '双败' }).check();
+  await page.getByRole('button', { name: /^执行/ }).click();
+
+  const winnerRounds = page.locator('.double-winner-section .battle-round');
+  const loserRounds = page.locator('.double-loser-section .battle-round');
+  await expect(winnerRounds).toHaveCount(4);
+  await expect(loserRounds).toHaveCount(6);
+  const winnerEdges = await battleRoundMatchEdges(winnerRounds);
+  const loserEdges = await battleRoundMatchEdges(loserRounds);
+  expect(Math.max(...winnerEdges.map((edge) => edge.lastBottom)) - Math.min(...winnerEdges.map((edge) => edge.lastBottom))).toBeLessThan(2);
+  expect(Math.max(...loserEdges.map((edge) => edge.firstTop)) - Math.min(...loserEdges.map((edge) => edge.firstTop))).toBeLessThan(2);
+
+  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await Promise.all([
+    winnerRounds.last().locator('.battle-match').boundingBox(),
+    loserRounds.last().locator('.battle-match').boundingBox(),
+    page.locator('.double-final-section .battle-round').first().locator('.battle-match').boundingBox(),
+  ]);
+  const bracketFinalMiddle = (
+    winnerFinalBox!.y + winnerFinalBox!.height / 2
+    + loserFinalBox!.y + loserFinalBox!.height / 2
+  ) / 2;
+  expect(Math.abs(grandFinalBox!.y + grandFinalBox!.height / 2 - bracketFinalMiddle)).toBeLessThan(4);
 });
 
 test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ page }) => {
@@ -304,5 +338,17 @@ async function battleRoundMatchCenters(rounds: import('@playwright/test').Locato
       const box = match.getBoundingClientRect();
       return sum + box.top + box.height / 2;
     }, 0) / matches.length;
+  }));
+}
+
+async function battleRoundMatchEdges(rounds: import('@playwright/test').Locator): Promise<{
+  firstTop: number;
+  lastBottom: number;
+}[]> {
+  return rounds.evaluateAll((elements) => elements.map((round) => {
+    const matches = [...round.querySelectorAll('.battle-match')];
+    const first = matches[0].getBoundingClientRect();
+    const last = matches.at(-1)!.getBoundingClientRect();
+    return { firstTop: first.top, lastBottom: last.bottom };
   }));
 }

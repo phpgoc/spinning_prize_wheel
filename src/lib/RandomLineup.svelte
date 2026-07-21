@@ -1919,23 +1919,6 @@
     }));
   }
 
-  function battleTmpConvergencePercent(
-    groups: { matches: BattleTmpMatch[] }[],
-    round: { matches: BattleTmpMatch[] },
-    stage: 'winner' | 'loser',
-  ): number {
-    const index = groups.indexOf(round);
-    const lastIndex = groups.length - 1;
-    if (index <= 0 || lastIndex <= 0) return 0;
-    const keepFirstPairAligned = stage === 'loser'
-      && groups[0].matches.length > 1
-      && groups[0].matches.length === groups[1]?.matches.length;
-    const startIndex = keepFirstPairAligned ? 1 : 0;
-    if (index <= startIndex) return 0;
-    const targetPercent = stage === 'winner' ? 45 : 40;
-    return Math.round((index - startIndex) / Math.max(1, lastIndex - startIndex) * targetPercent);
-  }
-
   function createSingleBattleLayout(snapshot: BattleTmpSnapshot | null): {
     left: ReturnType<typeof groupBattleTmpMatches>;
     right: ReturnType<typeof groupBattleTmpMatches>;
@@ -2588,10 +2571,10 @@
               <div class="double-battle-scroll" tabindex="0" role="application" aria-label="双败横向签表" aria-keyshortcuts="I J K L">
                 <div class:outdated={battleResultOutdated} class="double-battle-bracket">
                   <div class="double-battle-groups">
-                    <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: ${battleTmpConvergencePercent(battleTmpWinnerGroups, round, 'winner')}%`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
-                    <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-level-offset: -${battleTmpConvergencePercent(battleTmpLoserGroups, round, 'loser')}%`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
+                    <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
+                    <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
                   </div>
-                  <section class="double-final-section"><h3>总决赛</h3><div class="battle-bracket">{#each battleTmpFinalGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
+                  <section class="double-final-section"><div class="battle-bracket">{#each battleTmpFinalGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
                 </div>
               </div>
             {:else}
@@ -3152,18 +3135,20 @@
   .double-stage-section,
   .double-final-section { display: flex; min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); flex-direction: column; }
   .double-stage-section { padding: 0; border: 0; background: transparent; }
-  .double-stage-section > h3,
-  .double-final-section > h3 { color: var(--accent); font-size: calc(15px * var(--font-scale, 1)); }
+  .double-stage-section > h3 { color: var(--accent); font-size: calc(15px * var(--font-scale, 1)); }
   .double-battle-bracket .battle-bracket { gap: clamp(32px, 4vw, 68px); margin-top: 10px; overflow: visible; align-items: stretch; }
   .double-stage-section > .battle-bracket { min-height: 0; }
   .double-winner-section { grid-column: 1; grid-row: 1; }
   .double-loser-section { grid-column: 1; grid-row: 2; }
   .double-final-section { grid-column: 2; grid-row: 2; align-self: start; transform: translateY(-50%); }
-  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; }
+  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; }
+  .double-final-section .battle-round { position: relative; justify-content: center; }
+  .double-final-section .battle-round > h3 { position: absolute; bottom: calc(100% + 9px); left: 0; }
+  .double-final-section .battle-round > div { margin-top: 0; }
   .double-battle-bracket .battle-round { display: flex; flex-direction: column; }
-  .double-battle-bracket .battle-round > div { flex: 1; align-content: space-around; }
-  .double-winner-section .battle-round > div,
-  .double-loser-section .battle-round > div { transform: translateY(var(--battle-level-offset)); }
+  .double-battle-bracket .battle-round > div { flex: 1; }
+  .double-winner-section .battle-round > div { align-content: end; }
+  .double-loser-section .battle-round > div { align-content: start; }
   .double-battle-bracket .battle-match { padding: 6px; }
   .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
   .double-battle-bracket .battle-match > div { padding: 4px 6px; }
