@@ -1929,6 +1929,35 @@
     if (sourceText || confirmedSourceText || battleTmpSnapshot) clearLineupConfirmation = 1;
   }
 
+  function clearConfirmationTitle(step: 0 | 1 | 2 | 3): string {
+    if (!battlePage) return '同时清空名单预览？';
+    if (step === 1) return '1/3 删除当前签表和全部比分？';
+    if (step === 2) {
+      return desktopRuntime ? '2/3 直接删除桌面对战临时表？' : '2/3 放弃当前页面的对战状态？';
+    }
+    return '3/3 清空名单和全部对战配置？';
+  }
+
+  function clearConfirmationDetail(step: 0 | 1 | 2 | 3): string {
+    if (!battlePage) return '名单、名单预览和当前分组结果都会清空。';
+    if (step === 1) {
+      return '胜者组、败者组、总决赛以及已经录入的所有比分都会一起删除。';
+    }
+    if (step === 2) {
+      return desktopRuntime
+        ? '删除后即使关闭并重新启动软件，也无法恢复这场对战。'
+        : '清空后当前签表不会保留，刷新页面也无法恢复。';
+    }
+    return '名单、赛制和固定位置都会重置；要继续对战，必须重新确认名单并抽签。';
+  }
+
+  function clearConfirmationAction(step: 0 | 1 | 2 | 3): string {
+    if (!battlePage) return '确认清空';
+    if (step === 1) return '删除签表和比分';
+    if (step === 2) return desktopRuntime ? '删除临时表' : '放弃当前对战';
+    return '清空并重置';
+  }
+
   async function confirmClearAll() {
     if (clearingBattleTmp) return;
     if (battlePage && clearLineupConfirmation < 3) {
@@ -2777,19 +2806,11 @@
   <div class="delete-confirm-backdrop">
     <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-lineup-title" aria-describedby="clear-lineup-detail" tabindex="-1">
       <span class="delete-confirm-icon">!</span>
-      <h2 id="clear-lineup-title">{battlePage
-        ? clearLineupConfirmation === 1
-          ? '清空当前对战？'
-          : clearLineupConfirmation === 2
-            ? '再次确认清空？'
-            : '最后确认清空？'
-        : '同时清空名单预览？'}</h2>
-      <p id="clear-lineup-detail">{battlePage
-        ? `名单、签表和比分都会清空${desktopRuntime ? '，并直接删除桌面对战临时表' : ''}。`
-        : '名单、名单预览和当前分组结果都会清空。'}</p>
+      <h2 id="clear-lineup-title">{clearConfirmationTitle(clearLineupConfirmation)}</h2>
+      <p id="clear-lineup-detail">{clearConfirmationDetail(clearLineupConfirmation)}</p>
       <div>
         <button type="button" aria-keyshortcuts="N Escape" disabled={clearingBattleTmp} on:click={() => (clearLineupConfirmation = 0)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingBattleTmp} on:click={confirmClearAll}><span>{battlePage && clearLineupConfirmation < 3 ? `确认 ${clearLineupConfirmation}/3` : '确认清空'}</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingBattleTmp} on:click={confirmClearAll}><span>{clearConfirmationAction(clearLineupConfirmation)}</span></button>
       </div>
     </div>
   </div>

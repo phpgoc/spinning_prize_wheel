@@ -225,15 +225,21 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
 
   const clearBattle = page.getByRole('button', { name: '清空对战' });
   await clearBattle.click();
-  await expect(page.getByRole('heading', { name: '清空当前对战？' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '1/3 删除当前签表和全部比分？' })).toBeVisible();
+  await expect(page.getByText('胜者组、败者组、总决赛以及已经录入的所有比分都会一起删除。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除签表和比分' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.battle-match')).not.toHaveCount(0);
 
   await clearBattle.click();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '再次确认清空？' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '2/3 直接删除桌面对战临时表？' })).toBeVisible();
+  await expect(page.getByText('删除后即使关闭并重新启动软件，也无法恢复这场对战。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除临时表' })).toBeVisible();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '最后确认清空？' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '3/3 清空名单和全部对战配置？' })).toBeVisible();
+  await expect(page.getByText('名单、赛制和固定位置都会重置；要继续对战，必须重新确认名单并抽签。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '清空并重置' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).not.toBeNull();
