@@ -43,10 +43,26 @@ test('网页版对战页不显示桌面专用排名和历史栏', async ({ page 
   await expect(page.locator('.battle-config')).toBeVisible();
 });
 
-test('对战可以全屏返回并持久化四类颜色', async ({ page }) => {
+test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {
   await page.goto('/#/battle');
   const battleResult = page.locator('.battle-result');
+  const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
+  await expect(presets.getByRole('button')).toHaveCount(3);
+  await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
+
+  await presets.getByRole('button', { name: 'Tokyo' }).click();
+  await expect(page.getByLabel('背景框颜色')).toHaveValue('#1a1b26');
+  await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#c0caf5');
+  await expect(page.getByLabel('选手文字颜色')).toHaveValue('#7dcfff');
+  await expect(page.getByLabel('对战框颜色')).toHaveValue('#414868');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}'))).toEqual({
+    background: '#1a1b26',
+    text: '#c0caf5',
+    participant: '#7dcfff',
+    match: '#414868',
+    preset: 'ocean',
+  });
 
   await page.getByLabel('背景框颜色').fill('#123456');
   await page.getByLabel('文字颜色', { exact: true }).fill('#fedcba');
@@ -57,7 +73,9 @@ test('对战可以全屏返回并持久化四类颜色', async ({ page }) => {
     text: '#fedcba',
     participant: '#abcdef',
     match: '#654321',
+    preset: 'custom',
   });
+  await expect(presets.locator('button[aria-pressed="true"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: '全屏' }).click();
   await expect(battleResult).toHaveClass(/battle-fullscreen/u);
@@ -76,6 +94,29 @@ test('对战可以全屏返回并持久化四类颜色', async ({ page }) => {
   await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#fedcba');
   await expect(page.getByLabel('选手文字颜色')).toHaveValue('#abcdef');
   await expect(page.getByLabel('对战框颜色')).toHaveValue('#654321');
+  await expect(page.getByRole('group', { name: '配色预设' }).locator('button[aria-pressed="true"]')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Gruvbox' }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Gruvbox' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('选手文字颜色')).toHaveValue('#fabd2f');
+});
+
+test('对战配色预设按版本分别持久化', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.getByRole('button', { name: 'Tokyo' }).click();
+  await page.goto('/#/caimi/battle');
+  await expect(page.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Gruvbox' }).click();
+
+  expect(await page.evaluate(() => ({
+    standard: JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}').preset,
+    caimi: JSON.parse(localStorage.getItem('battle-colors-v1:caimi') ?? '{}').preset,
+  }))).toEqual({ standard: 'ocean', caimi: 'sunset' });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Gruvbox' })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/#/battle');
+  await expect(page.getByRole('button', { name: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('对战赛制切换会保留单败和双败的配置', async ({ page }) => {

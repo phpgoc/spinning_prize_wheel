@@ -62,10 +62,34 @@
   type LineupOrderMode = 'rank' | 'input';
   type BattleColorName = 'background' | 'text' | 'participant' | 'match';
   type BattleColors = Record<BattleColorName, string>;
+  type BattleColorPresetName = 'classic' | 'ocean' | 'sunset';
+  type BattleColorPresetSelection = BattleColorPresetName | 'custom';
   type DesktopPanel = 'ranking' | 'history';
   type LineupHistoryDeletion =
     | { kind: 'one'; history: SavedLineup }
     | { kind: 'all'; confirmation: 1 | 2 };
+
+  const BATTLE_COLOR_PRESETS: Record<BattleColorPresetName, {
+    label: string;
+    colors: BattleColors;
+  }> = {
+    classic: {
+      label: 'One Dark',
+      colors: { background: '#282c34', text: '#abb2bf', participant: '#98c379', match: '#3e4451' },
+    },
+    ocean: {
+      label: 'Tokyo',
+      colors: { background: '#1a1b26', text: '#c0caf5', participant: '#7dcfff', match: '#414868' },
+    },
+    sunset: {
+      label: 'Gruvbox',
+      colors: { background: '#282828', text: '#ebdbb2', participant: '#fabd2f', match: '#504945' },
+    },
+  };
+  const BATTLE_COLOR_PRESET_OPTIONS = Object.entries(BATTLE_COLOR_PRESETS) as [
+    BattleColorPresetName,
+    (typeof BATTLE_COLOR_PRESETS)[BattleColorPresetName],
+  ][];
 
   let sourceText = '';
   let confirmedSourceText = '';
@@ -158,12 +182,9 @@
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
   let battleFullscreen = false;
   let bodyOverflowBeforeBattleFullscreen = '';
-  let battleColors: BattleColors = {
-    background: '#191a16',
-    text: '#f6f3ea',
-    participant: '#f4f5ec',
-    match: '#292a25',
-  };
+  let battleColorLoadedVariant: AppVariant | null = null;
+  let battleColorPreset: BattleColorPresetSelection = 'classic';
+  let battleColors: BattleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -259,10 +280,12 @@
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
+  $: if (mounted && battlePage && battleColorLoadedVariant !== variant) {
+    loadBattleColors();
+  }
 
   onMount(() => {
     mounted = true;
-    if (battlePage) loadBattleColors();
     return () => {
       if (battleFullscreen) document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
     };
@@ -273,28 +296,58 @@
   }
 
   function loadBattleColors() {
+    battleColorLoadedVariant = variant;
+    battleColorPreset = 'classic';
+    battleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
     try {
-      const saved = JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}') as Partial<BattleColors>;
-      battleColors = Object.fromEntries(Object.entries(battleColors).map(([name, fallback]) => [
+      const saved = JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}') as Partial<BattleColors> & {
+        preset?: unknown;
+      };
+      const defaultColors = BATTLE_COLOR_PRESETS.classic.colors;
+      battleColors = Object.fromEntries(Object.entries(defaultColors).map(([name, fallback]) => [
         name,
         typeof saved[name as BattleColorName] === 'string'
           && /^#[0-9a-f]{6}$/iu.test(saved[name as BattleColorName]!)
             ? saved[name as BattleColorName]
             : fallback,
       ])) as unknown as BattleColors;
+      const matchingPreset = matchingBattleColorPreset(battleColors);
+      battleColorPreset = saved.preset === 'custom'
+        ? 'custom'
+        : matchingPreset ?? 'custom';
     } catch {
       // 本地颜色损坏时继续使用默认值，不影响对战操作。
     }
   }
 
-  function updateBattleColor(name: BattleColorName, event: Event) {
-    const value = (event.currentTarget as HTMLInputElement).value;
-    battleColors = { ...battleColors, [name]: value };
+  function matchingBattleColorPreset(colors: BattleColors): BattleColorPresetName | null {
+    return BATTLE_COLOR_PRESET_OPTIONS.find(([, preset]) => (
+      Object.entries(preset.colors).every(([name, value]) => colors[name as BattleColorName] === value)
+    ))?.[0] ?? null;
+  }
+
+  function saveBattleColors() {
     try {
-      localStorage.setItem(battleColorStorageKey(), JSON.stringify(battleColors));
+      localStorage.setItem(battleColorStorageKey(), JSON.stringify({
+        ...battleColors,
+        preset: battleColorPreset,
+      }));
     } catch {
       // 浏览器禁用本地存储时仍允许本次临时调色。
     }
+  }
+
+  function selectBattleColorPreset(preset: BattleColorPresetName) {
+    battleColorPreset = preset;
+    battleColors = { ...BATTLE_COLOR_PRESETS[preset].colors };
+    saveBattleColors();
+  }
+
+  function updateBattleColor(name: BattleColorName, event: Event) {
+    const value = (event.currentTarget as HTMLInputElement).value;
+    battleColors = { ...battleColors, [name]: value };
+    battleColorPreset = matchingBattleColorPreset(battleColors) ?? 'custom';
+    saveBattleColors();
   }
 
   async function setBattleFullscreen(fullscreen: boolean) {
@@ -2538,10 +2591,23 @@
             <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
-              <label><span>背景框</span><input type="color" aria-label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} /></label>
-              <label><span>文字</span><input type="color" aria-label="文字颜色" value={battleColors.text} on:input={(event) => updateBattleColor('text', event)} /></label>
-              <label><span>选手文字</span><input type="color" aria-label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} /></label>
-              <label><span>对战框</span><input type="color" aria-label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} /></label>
+              <div class="battle-color-presets" role="group" aria-label="配色预设">
+                {#each BATTLE_COLOR_PRESET_OPTIONS as [name, preset]}
+                  <button
+                    type="button"
+                    class:selected={battleColorPreset === name}
+                    aria-pressed={battleColorPreset === name}
+                    style={`--battle-preset-gradient: linear-gradient(135deg, ${preset.colors.background} 0 42%, ${preset.colors.match} 42% 70%, ${preset.colors.participant} 70% 86%, ${preset.colors.text} 86% 100%); --battle-preset-accent: ${preset.colors.participant};`}
+                    on:click={() => selectBattleColorPreset(name)}
+                  >{preset.label}</button>
+                {/each}
+              </div>
+              <div class="battle-color-custom">
+                <label><span>背景</span><input type="color" aria-label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} /></label>
+                <label><span>文字</span><input type="color" aria-label="文字颜色" value={battleColors.text} on:input={(event) => updateBattleColor('text', event)} /></label>
+                <label><span>选手</span><input type="color" aria-label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} /></label>
+                <label><span>对战</span><input type="color" aria-label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} /></label>
+              </div>
             </fieldset>
           </div>
           <div class="result-heading">
@@ -2999,6 +3065,8 @@
   }
 
   .lineup-result.battle-result {
+    --accent: var(--battle-participant-color);
+
     background: var(--battle-background-color);
     color: var(--battle-text-color);
   }
@@ -3042,31 +3110,67 @@
   }
 
   .battle-color-controls {
-    display: flex;
+    display: grid;
     min-width: 0;
     margin: 0;
     padding: 0;
     border: 0;
     align-items: center;
-    justify-content: flex-end;
-    gap: 9px;
-    flex-wrap: wrap;
+    grid-template-columns: max-content max-content;
+    gap: 8px 15px;
   }
 
   .battle-color-controls legend {
-    color: color-mix(in srgb, var(--battle-text-color) 70%, transparent);
-    font-size: calc(10px * var(--font-scale, 1));
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .battle-color-controls label {
+  .battle-color-presets {
     display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .battle-color-presets button {
+    min-width: 58px;
+    padding: 8px 10px;
+    border: 2px solid color-mix(in srgb, var(--battle-text-color) 20%, transparent);
+    border-radius: 8px;
+    background: var(--battle-preset-gradient);
+    box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.14);
+    color: #fff;
+    cursor: pointer;
+    font-size: calc(10px * var(--font-scale, 1));
+    font-weight: 800;
+    text-shadow: 0 1px 3px #000;
+  }
+
+  .battle-color-presets button.selected {
+    border-color: var(--battle-preset-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--battle-preset-accent) 28%, transparent), inset 0 0 0 999px rgba(0, 0, 0, 0.04);
+  }
+
+  .battle-color-custom {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .battle-color-custom label {
+    display: grid;
     padding: 5px 7px;
     border: 1px solid color-mix(in srgb, var(--battle-text-color) 18%, transparent);
     border-radius: 8px;
     align-items: center;
-    gap: 6px;
+    gap: 3px;
     color: var(--battle-text-color);
     font-size: calc(10px * var(--font-scale, 1));
+    justify-items: center;
   }
 
   .battle-color-controls input {
@@ -3092,7 +3196,7 @@
     background: rgba(11, 12, 9, 0.27);
   }
   .result-heading > div { align-items: center; gap: 11px; }
-  .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid rgba(231, 255, 114, 0.18); border-radius: 50%; place-items: center; }
+  .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
@@ -3108,7 +3212,7 @@
     font-weight: 700;
     transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
   }
-  .result-heading .result-export-button:hover:not(:disabled) { border-color: var(--accent); background: rgba(231, 255, 114, 0.14); color: var(--accent); }
+  .result-heading .result-export-button:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
   .result-heading .history-save-button {
     padding: 8px 11px;
     border: 1px solid rgba(231, 255, 114, 0.48);
@@ -3132,12 +3236,12 @@
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
   .single-bracket-side .battle-round { display: flex; min-width: 220px; flex-direction: column; justify-content: center; }
-  .single-bracket-final { min-width: 220px; padding: 12px; border: 1px solid rgba(231, 255, 114, 0.2); border-radius: 13px; background: rgba(231, 255, 114, 0.045); }
+  .single-bracket-final { min-width: 220px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--accent) 4.5%, transparent); }
   .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
   .single-bracket-side.right .battle-match { direction: rtl; }
   .single-bracket-side.right .battle-match > * { direction: ltr; }
   .double-battle-scroll { margin-top: 18px; outline: 0; overflow: auto; scroll-behavior: smooth; }
-  .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 rgba(231, 255, 114, 0.34); }
+  .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 34%, transparent); }
   .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: clamp(42px, 5vw, 86px); row-gap: clamp(34px, 5vh, 62px); transition: opacity 180ms ease; }
   .double-battle-groups { display: contents; }
   .double-stage-section,
@@ -3175,11 +3279,11 @@
   .battle-match > small { display: block; margin-bottom: 6px; color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
   .battle-match > div { width: 100%; min-width: 0; padding: 8px 9px; border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
   .battle-match > div + div { margin-top: 5px; }
-  .battle-match > div.fixed { border-left-color: #e7ff72; background: rgba(231, 255, 114, 0.08); }
+  .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .battle-match > div.waiting { color: var(--lineup-dim-on-dark); }
   .battle-match > .battle-side { display: flex; align-items: center; gap: 8px; }
   .battle-side > div { min-width: 0; flex: 1; }
-  .battle-side.winner { border-left-color: var(--accent); background: rgba(231, 255, 114, 0.18); color: var(--accent); }
+  .battle-side.winner { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .battle-side input {
     width: 48px;
     min-height: 36px;
@@ -3194,7 +3298,7 @@
     font-weight: 800;
     text-align: center;
   }
-  .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.12); }
+  .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
   .battle-side input:disabled { opacity: 0.4; }
   .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   table {
@@ -4599,7 +4703,7 @@
     .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .battle-result-toolbar { align-items: flex-start; flex-direction: column; }
-    .battle-color-controls { justify-content: flex-start; }
+    .battle-color-controls { grid-template-columns: minmax(0, 1fr); }
     .lineup-actions { flex-direction: column; }
     .lineup-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
   }
