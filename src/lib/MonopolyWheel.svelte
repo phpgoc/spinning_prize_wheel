@@ -8,69 +8,71 @@
   export let disabled = false;
   export let duration = 4000;
   export let centerLabel = '开始';
-  export let weightCellScale = 2;
+  export let integerCellWeights: Record<string, number> | null = null;
   export let onSpin: () => void;
 
   // ── 棋盘几何 ────────────────────────────────────────────────────
-  // 低权重时按倍率展开格子，高权重时限制权重带来的棋盘规模。
+  // 普通模式按权重生成近似比例；俄罗斯模式可以传入整数生命数生成最少格子。
   const CS = 62;  // 格子尺寸（像素）
   const GAP = 5;  // 格子间距（像素）
   const SLOT = CS + GAP;
 
-  function totalCells(opts: WheelOption[], cellScale: number): number {
+  function totalCells(opts: WheelOption[]): number {
     if (opts.length === 0) return 16;
     const w = opts.reduce((s, o) => s + o.weight, 0);
-    const raw = Math.max(8, opts.length * 2, Math.min(w * Math.max(1, cellScale), 40));
+    const raw = Math.max(opts.length * 2, Math.min(w * 2, 40));
     return Math.ceil(raw / 4) * 4;
   }
 
   // nH 是上下边的格子数，nV 是左右边的格子数。
-  // 公式：2*nH + 2*(nV-2) = N，因此 nV = N/4，nH = N/4+2。
+  // 公式：2*nH + 2*(nV-2) = N；任意不少于 4 的偶数都能围成矩形。
   function boardDims(N: number) {
-    const nV = N / 4;
-    const nH = N / 4 + 2;
+    const sideTotal = N / 2 + 2;
+    const nV = Math.max(2, Math.floor(sideTotal / 2));
+    const nH = sideTotal - nV;
     return { nH, nV };
   }
 
   // 从左上角开始，按顺时针方向计算每个格子的中心点和倾斜角度。
-  function cellPositions(nH: number, nV: number): Array<{ cx: number; cy: number; tilt: number }> {
+  function cellPositions(
+    nH: number,
+    nV: number,
+    visualNH: number,
+    visualNV: number,
+  ): Array<{ cx: number; cy: number; tilt: number }> {
     const positions: Array<{ cx: number; cy: number; tilt: number }> = [];
     const ox = GAP + CS / 2;          // 左上角格子中心横坐标
     const oy = GAP + CS / 2;          // 左上角格子中心纵坐标
     const fewCells = nH + nV < 16;    // 格子较少时增加轻微倾斜
+    const horizontalStep = (visualNH - 1) * SLOT / Math.max(1, nH - 1);
+    const verticalStep = (visualNV - 1) * SLOT / Math.max(1, nV - 1);
 
     // 上边：从左到右。
     for (let i = 0; i < nH; i++) {
-      positions.push({ cx: ox + i * SLOT, cy: oy, tilt: 0 });
+      positions.push({ cx: ox + i * horizontalStep, cy: oy, tilt: 0 });
     }
     // 右边：从上到下，不重复计算角落。
-    const rx = ox + (nH - 1) * SLOT;
+    const rx = ox + (visualNH - 1) * SLOT;
     for (let j = 1; j <= nV - 2; j++) {
-      positions.push({ cx: rx, cy: oy + j * SLOT, tilt: fewCells ? 6 : 0 });
+      positions.push({ cx: rx, cy: oy + j * verticalStep, tilt: fewCells ? 6 : 0 });
     }
     // 下边：从右到左。
-    const by = oy + (nV - 1) * SLOT;
+    const by = oy + (visualNV - 1) * SLOT;
     for (let i = nH - 1; i >= 0; i--) {
-      positions.push({ cx: ox + i * SLOT, cy: by, tilt: 0 });
+      positions.push({ cx: ox + i * horizontalStep, cy: by, tilt: 0 });
     }
     // 左边：从下到上，不重复计算角落。
     for (let j = nV - 2; j >= 1; j--) {
-      positions.push({ cx: ox, cy: oy + j * SLOT, tilt: fewCells ? -6 : 0 });
+      positions.push({ cx: ox, cy: oy + j * verticalStep, tilt: fewCells ? -6 : 0 });
     }
     return positions;
   }
 
-  // 使用贪心优先队列把选项分配到 N 个格子中，优先选择剩余数量最多且
-  // 与前一格不同的选项，同时处理最后一格和第一格的环形相邻关系。
-  function assignCells(opts: WheelOption[], N: number): WheelOption[] {
+  function proportionalCellCounts(opts: WheelOption[], N: number): number[] {
     if (opts.length === 0) return [];
     const totalW = opts.reduce((s, o) => s + o.weight, 0);
-
-    // 按权重计算每个选项的格子数，每项至少一个。
     const raw = opts.map(o => (o.weight / totalW) * N);
     const counts = raw.map(c => Math.max(1, Math.round(c)));
-
-    // 调整格子数，使总和严格等于 N。
     let sum = counts.reduce((s, c) => s + c, 0);
     while (sum > N) {
       const i = counts.reduce((b, c, k) => (c > counts[b] && c > 1 ? k : b), 0);
@@ -81,6 +83,40 @@
       const i = fracs.reduce((b, f, k) => (f > fracs[b] ? k : b), 0);
       counts[i]++; sum++;
     }
+    return counts;
+  }
+
+  /** 生命数总和为奇数或不足四格时整体翻倍，保持比例并得到最小可用偶数格。 */
+  function compactIntegerCellCounts(
+    opts: WheelOption[],
+    integerWeights: Record<string, number> | null,
+  ): number[] | null {
+    if (!integerWeights || opts.length === 0) return null;
+    let counts = opts.map((option) => {
+      if (option.isRetry) return 0;
+      return Math.max(1, Math.round(Number(integerWeights[option.id]) || 1));
+    });
+    let candidateSum = counts.reduce((total, count) => total + count, 0);
+    if (candidateSum === 0 || candidateSum > 40) return null;
+    while (candidateSum < 4 || candidateSum % 2 !== 0) {
+      counts = counts.map((count) => count * 2);
+      candidateSum *= 2;
+      if (candidateSum > 40) return null;
+    }
+
+    // “重来”不是生命，单独使用偶数格，不能改变候选生命之间的精确比例。
+    counts = counts.map((count, index) => {
+      if (!opts[index].isRetry) return count;
+      const retryCells = Math.max(2, Math.round(opts[index].weight * 2));
+      return retryCells % 2 === 0 ? retryCells : retryCells + 1;
+    });
+    return counts.reduce((total, count) => total + count, 0) <= 40 ? counts : null;
+  }
+
+  // 使用贪心优先队列按指定数量分配格子，尽量避免同一选项环形相邻。
+  function assignCells(opts: WheelOption[], counts: number[]): WheelOption[] {
+    const N = counts.reduce((total, count) => total + count, 0);
+    if (opts.length === 0 || N === 0) return [];
 
     // 每次优先选择剩余数量最多且不同于前一格的选项；
     // 最后一格还要尽量避免与第一格相同。
@@ -123,16 +159,21 @@
   }
 
   // ── 响应式格子状态 ──────────────────────────────────────────────
-  $: N = totalCells(options, weightCellScale);
+  $: compactCellCounts = compactIntegerCellCounts(options, integerCellWeights);
+  $: N = compactCellCounts?.reduce((total, count) => total + count, 0) ?? totalCells(options);
+  $: cellCounts = compactCellCounts ?? proportionalCellCounts(options, N);
   $: dims = boardDims(N);
   $: nH = dims.nH;
   $: nV = dims.nV;
-  $: positions = cellPositions(nH, nV);
-  $: cells = assignCells(options, N);
+  // 四格和六格仍保留 3×3 的视觉占位，给中央按钮留下空间。
+  $: visualNH = Math.max(3, nH);
+  $: visualNV = Math.max(3, nV);
+  $: positions = cellPositions(nH, nV, visualNH, visualNV);
+  $: cells = assignCells(options, cellCounts);
 
   // SVG 四周各留一个格子间距。
-  $: svgW = (nH - 1) * SLOT + CS + 2 * GAP;
-  $: svgH = (nV - 1) * SLOT + CS + 2 * GAP;
+  $: svgW = (visualNH - 1) * SLOT + CS + 2 * GAP;
+  $: svgH = (visualNV - 1) * SLOT + CS + 2 * GAP;
 
   // ── 棋子动画 ────────────────────────────────────────────────────
   let tokenFloatIdx = 0;   // 使用小数格子下标实现平滑移动。

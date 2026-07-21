@@ -235,6 +235,11 @@
   $: monopolyWheelOptions = mode === 'roulette'
     ? currentDrawOptions(activeDrawOptions, wheelOptions)
     : wheelOptions;
+  $: monopolyLifeWeights = mode === 'roulette'
+    ? Object.fromEntries(activeDrawOptions
+        .filter((option) => !option.isRetry)
+        .map((option) => [option.id, Math.max(1, Math.round(option.weight))]))
+    : null;
   $: if (hydrated) {
     localStorage.setItem(
       STORAGE_KEY,
@@ -2094,7 +2099,7 @@
             spinning={isSpinning}
             disabled={spinDisabled}
             centerLabel={rouletteFinished ? '结束' : '开始'}
-            weightCellScale={mode === 'roulette' ? 4 : 2}
+            integerCellWeights={monopolyLifeWeights}
             onSpin={spin}
           />
         {:else if animationStyle === 'luxury'}

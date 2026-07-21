@@ -71,7 +71,7 @@ test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) 
   await expect(page.getByRole('img', { name: '大富翁抽奖棋盘' })).toBeVisible();
 });
 
-test('俄罗斯大富翁用格子数量明确区分 2:1 和 1:1 剩余生命', async ({ page }) => {
+test('俄罗斯大富翁用最少偶数格明确区分 2:1 和 1:1 剩余生命', async ({ page }) => {
   await importCandidates(page, ['甲', '乙']);
   const firstWeight = page.getByRole('spinbutton', { name: '甲的权重' });
   await firstWeight.fill('2');
@@ -84,15 +84,21 @@ test('俄罗斯大富翁用格子数量明确区分 2:1 和 1:1 剩余生命', a
   const cells = page.locator('.cell-label');
   const firstCells = cells.filter({ hasText: /^甲$/u });
   const secondCells = cells.filter({ hasText: /^乙$/u });
-  await expect(cells).toHaveCount(12);
-  await expect(firstCells).toHaveCount(8);
-  await expect(secondCells).toHaveCount(4);
+  await expect(cells).toHaveCount(6);
+  await expect(firstCells).toHaveCount(4);
+  await expect(secondCells).toHaveCount(2);
 
   await firstWeight.fill('1');
   await firstWeight.press('Tab');
-  await expect(cells).toHaveCount(8);
-  await expect(firstCells).toHaveCount(4);
-  await expect(secondCells).toHaveCount(4);
+  await expect(cells).toHaveCount(4);
+  await expect(firstCells).toHaveCount(2);
+  await expect(secondCells).toHaveCount(2);
+  const centerSize = await page.locator('.center-area').evaluate((element) => ({
+    width: Number(element.getAttribute('width')),
+    height: Number(element.getAttribute('height')),
+  }));
+  expect(centerSize.width).toBeGreaterThan(0);
+  expect(centerSize.height).toBeGreaterThan(0);
 });
 
 test('Web 不占用桌面 S 快捷键，全局方向键滚动当前折叠页', async ({ page }) => {
