@@ -300,9 +300,23 @@ test('对战只要求固定人数有排名', async ({ page }) => {
     inputs.map((input) => (input as HTMLInputElement).value)
   ))).toEqual(['甲', '乙', '丁', '未录入']);
 
-  await expect(page.locator('.battle-fixed-preview .fixed strong')).toHaveText(['甲', '乙']);
+  const previewBracket = page.locator('.battle-preview-bracket');
+  await expect(previewBracket.locator('.battle-match .fixed strong')).toHaveText(['甲', '乙']);
+  await expect(previewBracket.locator('.battle-match[data-battle-level="1"] .battle-side:not(.fixed) strong')).toHaveText(['待随机', '待随机']);
+  await expect(previewBracket.locator('.battle-match input:not(:disabled)')).toHaveCount(0);
+  const previewStructure = await previewBracket.locator('.battle-match').evaluateAll((matches) => matches.map((match) => ({
+    stage: match.getAttribute('data-battle-stage'),
+    level: match.getAttribute('data-battle-level'),
+    position: match.getAttribute('data-battle-position'),
+  })));
   await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(2);
+  const resultStructure = await page.locator('.lineup-result > .single-battle-bracket .battle-match').evaluateAll((matches) => matches.map((match) => ({
+    stage: match.getAttribute('data-battle-stage'),
+    level: match.getAttribute('data-battle-level'),
+    position: match.getAttribute('data-battle-position'),
+  })));
+  expect(resultStructure).toEqual(previewStructure);
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 });
@@ -366,6 +380,118 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   ))).toBe(1);
 });
 
+test('桌面对战加载当前和历史时保护非空临时表并保留历史原记录', async ({ page }) => {
+  await openDesktopBattle(page);
+
+  await page.getByRole('button', { name: '加载当前' }).click();
+  await expect(page.getByRole('alert')).toHaveText('当前临时表为空，没有可以加载的对战');
+
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).not.toBeNull();
+
+  const saveCount = () => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'save_battle_tmp_state').length
+  ));
+  const generatedSaveCount = await saveCount();
+  await page.getByRole('button', { name: /对战状态/u }).click();
+  await expect(page.locator('.battle-state-sync strong')).toHaveText('已同步');
+  await page.getByRole('button', { name: /对战状态/u }).click();
+  await expect(page.getByRole('button', { name: '加载当前' })).toBeEnabled();
+  await page.getByRole('button', { name: '加载当前' }).click();
+  await expect(page.getByRole('heading', { name: '1/3 用当前数据库临时表替换编辑区？' })).toBeVisible();
+  await expect(page.getByText('当前编辑区的参赛者、赛制、全部场次和比分会离开页面。')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '2/3 以数据库内容覆盖页面状态？' })).toBeVisible();
+  await expect(page.getByText('将重新读取数据库中的关系化临时表；页面内容全部以数据库为准。')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '3/3 重新载入当前临时表？' })).toBeVisible();
+  await expect(page.getByText('加载完成后配置继续锁定，只有签表中的比分可以修改。')).toBeVisible();
+  expect(await saveCount()).toBe(generatedSaveCount);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '3/3 重新载入当前临时表？' })).toHaveCount(0);
+  expect(await saveCount()).toBe(generatedSaveCount);
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).toBeNull();
+
+  const originalHistory = await page.evaluate(() => {
+    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    return structuredClone(histories[0]);
+  });
+  expect(originalHistory.snapshot.matches[0].upResult).toBeNull();
+  expect(originalHistory.snapshot.matches[0].downResult).toBeNull();
+
+  await page.getByRole('button', { name: /对战状态/u }).click();
+  const historyLoad = page.locator('.battle-history-list article').first().getByRole('button', { name: '加载' });
+  const beforeDirectHistoryLoad = await saveCount();
+  await historyLoad.click();
+  await expect(page.getByRole('heading', { name: /用.*历史签表替换编辑区/u })).toHaveCount(0);
+  await expect(page.locator('.battle-match')).toHaveCount(3);
+  await expect(page.locator('.battle-config textarea')).toHaveValue('甲\n乙\n丙\n丁');
+  await expect.poll(saveCount).toBe(beforeDirectHistoryLoad + 1);
+
+  const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
+  await enterDesktopBattleScore(firstMatch, 4, 1);
+  expect(await page.evaluate((historyId) => {
+    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const history = histories.find((entry: any) => entry.id === historyId);
+    return [history.snapshot.matches[0].upResult, history.snapshot.matches[0].downResult];
+  }, originalHistory.id)).toEqual([null, null]);
+
+  const beforeConfirmedHistoryLoad = await saveCount();
+  await historyLoad.click();
+  await expect(page.getByRole('heading', { name: /1\/3 用.*历史签表替换编辑区？/u })).toBeVisible();
+  await expect(page.getByText('当前编辑区的参赛者、赛制、全部场次和比分会离开页面。')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '2/3 将历史副本写入临时表？' })).toBeVisible();
+  await expect(page.getByText('现有临时签表会先保存到对战历史；所选历史随后覆盖关系化临时表。')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '3/3 覆盖并加载这条历史？' })).toBeVisible();
+  await expect(page.getByText('原历史记录保持不变；后续比分只写入新生成的临时表副本。')).toBeVisible();
+  expect(await saveCount()).toBe(beforeConfirmedHistoryLoad);
+  await page.keyboard.press('Enter');
+  await expect.poll(saveCount).toBe(beforeConfirmedHistoryLoad + 1);
+  await expect(firstMatch.locator('input[type="number"]').nth(0)).toHaveValue('');
+  await expect(firstMatch.locator('input[type="number"]').nth(1)).toHaveValue('');
+
+  const archivedResults = await page.evaluate((historyId) => {
+    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const original = histories.find((entry: any) => entry.id === historyId);
+    return {
+      count: histories.length,
+      originalScore: [original.snapshot.matches[0].upResult, original.snapshot.matches[0].downResult],
+      archivedEditedScore: histories.some((entry: any) => (
+        entry.id !== historyId
+        && entry.snapshot.matches[0].upResult === 4
+        && entry.snapshot.matches[0].downResult === 1
+      )),
+    };
+  }, originalHistory.id);
+  expect(archivedResults).toEqual({
+    count: 2,
+    originalScore: [null, null],
+    archivedEditedScore: true,
+  });
+
+  await enterDesktopBattleScore(firstMatch, 3, 2);
+  expect(await page.evaluate((historyId) => {
+    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const history = histories.find((entry: any) => entry.id === historyId);
+    return [history.snapshot.matches[0].upResult, history.snapshot.matches[0].downResult];
+  }, originalHistory.id)).toEqual([null, null]);
+});
+
 test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({ page, context }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
@@ -409,6 +535,37 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await expect(restoredPage.getByRole('button', { name: /^抽签/u })).toBeDisabled();
   await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first().locator('.battle-side.winner')).toHaveCount(1);
   await restoredPage.close();
+});
+
+test('对战历史使用只读签表并保留比分', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
+  await enterDesktopBattleScore(firstMatch, 4, 1);
+  const savedNames = await firstMatch.locator('.battle-side strong').allTextContents();
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /对战状态/u }).click();
+  await page.locator('.battle-history-list .history-view').first().click();
+  await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
+  const historyMatch = page.locator('.battle-history-bracket .battle-round').first().locator('.battle-match').first();
+  await expect(historyMatch.locator('.battle-side strong')).toHaveText(savedNames);
+  await expect(historyMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
+  await expect(historyMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
+  await expect(page.locator('.battle-history-bracket input:not(:disabled)')).toHaveCount(0);
+  await expect(historyMatch.locator('.battle-side.winner')).toHaveCount(1);
+
+  await page.getByRole('button', { name: '返回当前' }).click();
+  await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
+  await expect(page.locator('.battle-match')).toHaveCount(0);
 });
 
 test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page, context }) => {

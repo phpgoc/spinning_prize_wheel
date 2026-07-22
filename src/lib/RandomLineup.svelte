@@ -3,21 +3,18 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { onMount, tick } from 'svelte';
   import type { AppVariant } from './app-variant';
+  import BattleBracketEditor from './BattleBracketEditor.svelte';
+  import BattleBracketViewer from './BattleBracketViewer.svelte';
   import {
     battleFixedSeedOptions,
-    battleTmpScoreLocked,
     battleTmpScoresWithMagicFill,
-    battleTmpSlotOrigin,
-    battleTmpWinnerId,
     createAvoidSameGroupPlan,
     createBattleTmpSnapshot,
-    createFixedBattlePositions,
     createSeededBattlePlan,
     parseBattleTmpSnapshot,
     updateBattleTmpResult,
     type BattleFormat,
     type BattleOrderMode,
-    type BattlePosition,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
   } from './battle';
@@ -75,6 +72,10 @@
     | { kind: 'one'; history: SavedLineup }
     | { kind: 'all'; confirmation: 1 | 2 };
   type BattleHistory = { id: string; createdAt: number; snapshot: BattleTmpSnapshot };
+  type BattleLoadTarget =
+    | { kind: 'current' }
+    | { kind: 'history'; history: BattleHistory };
+  type PendingBattleLoad = { target: BattleLoadTarget; confirmation: 1 | 2 | 3 };
 
   const BATTLE_COLOR_PRESETS: Record<BattleColorPresetName, {
     label: string;
@@ -189,11 +190,14 @@
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleHistories: BattleHistory[] = [];
+  let battleHistoryPreview: BattleHistory | null = null;
   let battleHistoryStart = '';
   let battleHistoryEnd = '';
   let battleHistoryFileInput: HTMLInputElement | null = null;
   let battleHistoryImporting = false;
   let battleHistoryDeleteConfirmation: 0 | 1 | 2 = 0;
+  let pendingBattleLoad: PendingBattleLoad | null = null;
+  let battleLoadingTarget = false;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
   let battleFullscreen = false;
   let battleFullscreenChanging = false;
@@ -303,20 +307,19 @@
       ? names.length >= 8 && names.length % 2 === 0
       : names.length >= 4 && (battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput)
   );
-  $: battleTmpGroups = groupBattleTmpMatches(battleTmpSnapshot);
-  $: battleTmpWinnerGroups = battleTmpGroups.filter((group) => group.stage === 'winner');
-  $: battleTmpLoserGroups = battleTmpGroups.filter((group) => group.stage === 'loser');
-  $: battleTmpFinalGroups = battleTmpGroups.filter((group) => group.stage === 'final');
-  $: singleBattleLayout = createSingleBattleLayout(battleTmpSnapshot);
   $: battleTmpCompletedCount = battleTmpSnapshot?.matches.filter((match) => (
     match.status === 'completed' || match.status === 'skipped'
   )).length ?? 0;
-  $: battleFixedPreviewPositions = battlePage
-    && battleFormat !== 'avoid-first-pair'
-    && battleOrderedPreviewNames.length >= 2
-      ? createFixedBattlePositions(battleOrderedPreviewNames, battleConfiguredFixedCount)
-      : [];
-  $: battleFixedPreviewMatches = pairBattlePositions(battleFixedPreviewPositions);
+  $: battlePreviewSnapshot = createBattlePreviewSnapshot(
+    battlePage,
+    battleTmpSnapshot,
+    variant,
+    battleFormat,
+    battleOrderMode,
+    battleOrderedPreviewNames,
+    battleOrderMode === 'rank' && !battleRankReady ? 0 : battleConfiguredFixedCount,
+    battleDoubleGrandFinal,
+  );
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
@@ -584,6 +587,7 @@
 
   async function generateBattle() {
     error = '';
+    battleHistoryPreview = null;
     if (battleTmpSnapshot) {
       error = '已抽签，请先清空';
       return;
@@ -783,33 +787,173 @@
     }
   }
 
-  async function loadBattleTmpState() {
-    if (!desktopRuntime || !battlePage) return;
+  function applyBattleTmpSnapshot(state: BattleTmpSnapshot) {
+    battleTmpSnapshot = structuredClone(state);
+    resetBattleReveal();
+    battleFormat = state.format;
+    battleOrderMode = state.orderMode;
+    battleFixedSeedCount = state.fixedSeedCount;
+    battleDoubleGrandFinal = state.matches.some((match) => match.matchId === 'GF-RESET-M1');
+    const restoredNames = [...state.participants]
+      .sort((left, right) => left.sourceIndex - right.sourceIndex)
+      .map((participant) => participant.name)
+      .join('\n');
+    confirmedSourceText = restoredNames;
+    sourceText = restoredNames;
+  }
+
+  async function readBattleTmpState(): Promise<BattleTmpSnapshot | null> {
+    const value = await invoke<unknown | null>('load_battle_tmp_state', { variant });
+    return value === null ? null : parseBattleTmpSnapshot(value, variant);
+  }
+
+  async function loadBattleTmpState(showEmptyError = false): Promise<boolean> {
+    if (!desktopRuntime || !battlePage) return false;
     battleSyncStatus = 'loading';
     try {
-      const value = await invoke<unknown | null>('load_battle_tmp_state', { variant });
-      if (value === null) {
+      const state = await readBattleTmpState();
+      if (state === null) {
         battleSyncStatus = 'idle';
-        return;
+        if (showEmptyError) error = '当前临时表为空，没有可以加载的对战';
+        return false;
       }
-      const state = parseBattleTmpSnapshot(value, variant);
-      battleTmpSnapshot = state;
-      resetBattleReveal();
-      battleFormat = state.format;
-      battleOrderMode = state.orderMode;
-      battleFixedSeedCount = state.fixedSeedCount;
-      battleDoubleGrandFinal = state.matches.some((match) => match.matchId === 'GF-RESET-M1');
-      const restoredNames = [...state.participants]
-        .sort((left, right) => left.sourceIndex - right.sourceIndex)
-        .map((participant) => participant.name)
-        .join('\n');
-      confirmedSourceText = restoredNames;
-      sourceText = restoredNames;
+      applyBattleTmpSnapshot(state);
       battleSyncStatus = 'saved';
+      error = '';
+      return true;
     } catch (reason) {
       battleSyncStatus = 'error';
       error = messageFrom(reason, '无法读取对战临时状态');
+      return false;
     }
+  }
+
+  async function requestBattleLoad(target: BattleLoadTarget) {
+    if (battleLoadingTarget) return;
+    if (battleTmpSnapshot) {
+      pendingBattleLoad = { target, confirmation: 1 };
+      return;
+    }
+    if (target.kind === 'current') {
+      await performBattleLoad(target);
+      return;
+    }
+    battleLoadingTarget = true;
+    let current: BattleTmpSnapshot | null = null;
+    try {
+      current = await readBattleTmpState();
+      if (current) {
+        pendingBattleLoad = { target, confirmation: 1 };
+        return;
+      }
+    } catch (reason) {
+      battleSyncStatus = 'error';
+      error = messageFrom(reason, '无法确认当前对战临时表是否为空');
+      return;
+    } finally {
+      battleLoadingTarget = false;
+    }
+    await performBattleLoad(target);
+  }
+
+  async function confirmBattleLoad() {
+    const pending = pendingBattleLoad;
+    if (!pending || battleLoadingTarget) return;
+    if (pending.confirmation < 3) {
+      pendingBattleLoad = {
+        ...pending,
+        confirmation: (pending.confirmation + 1) as 2 | 3,
+      };
+      return;
+    }
+    pendingBattleLoad = null;
+    await performBattleLoad(pending.target);
+  }
+
+  async function performBattleLoad(target: BattleLoadTarget) {
+    if (!desktopRuntime || !battlePage || battleLoadingTarget) return;
+    battleLoadingTarget = true;
+    try {
+      let loaded = false;
+      if (target.kind === 'current') {
+        loaded = await loadBattleTmpState(true);
+      } else {
+        const snapshot = parseBattleTmpSnapshot(structuredClone(target.history.snapshot), variant);
+        const current = await readBattleTmpState();
+        if (current) archiveBattleHistory(current);
+        else if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
+        battleSyncStatus = 'saving';
+        await invoke('save_battle_tmp_state', { variant, state: snapshot });
+        applyBattleTmpSnapshot(snapshot);
+        battleSyncStatus = 'saved';
+        error = '';
+        loaded = true;
+      }
+      if (loaded) {
+        battleHistoryPreview = null;
+        await tick();
+        await resolveNames();
+        focusLineupResult();
+      }
+    } catch (reason) {
+      battleSyncStatus = 'error';
+      error = messageFrom(reason, target.kind === 'current' ? '无法加载当前临时表' : '无法把历史加载到临时表');
+    } finally {
+      battleLoadingTarget = false;
+    }
+  }
+
+  function battleLoadTargetLabel(target: BattleLoadTarget): string {
+    return target.kind === 'current'
+      ? '当前数据库临时表'
+      : `${formatHistoryDate(target.history.createdAt)} 的历史签表`;
+  }
+
+  function battleLoadConfirmationTitle(pending: PendingBattleLoad): string {
+    const label = battleLoadTargetLabel(pending.target);
+    if (pending.confirmation === 1) return `1/3 用${label}替换编辑区？`;
+    if (pending.confirmation === 2) {
+      return pending.target.kind === 'current'
+        ? '2/3 以数据库内容覆盖页面状态？'
+        : '2/3 将历史副本写入临时表？';
+    }
+    return pending.target.kind === 'current'
+      ? '3/3 重新载入当前临时表？'
+      : '3/3 覆盖并加载这条历史？';
+  }
+
+  function battleLoadConfirmationDetail(pending: PendingBattleLoad): string {
+    if (pending.confirmation === 1) {
+      return '当前编辑区的参赛者、赛制、全部场次和比分会离开页面。';
+    }
+    if (pending.confirmation === 2) {
+      return pending.target.kind === 'current'
+        ? '将重新读取数据库中的关系化临时表；页面内容全部以数据库为准。'
+        : '现有临时签表会先保存到对战历史；所选历史随后覆盖关系化临时表。';
+    }
+    return pending.target.kind === 'current'
+      ? '加载完成后配置继续锁定，只有签表中的比分可以修改。'
+      : '原历史记录保持不变；后续比分只写入新生成的临时表副本。';
+  }
+
+  function battleLoadConfirmationAction(pending: PendingBattleLoad): string {
+    if (pending.confirmation < 3) return '继续检查';
+    return pending.target.kind === 'current' ? '重新读取' : '覆盖并加载';
+  }
+
+  async function previewBattleHistory(history: BattleHistory) {
+    battleHistoryPreview = {
+      ...history,
+      snapshot: structuredClone(history.snapshot),
+    };
+    await tick();
+    focusLineupResult();
+  }
+
+  async function returnToCurrentBattle() {
+    battleHistoryPreview = null;
+    await tick();
+    focusLineupResult();
   }
 
   function battleHistoryStorageKey(): string {
@@ -1840,6 +1984,17 @@
       return;
     }
 
+    if (pendingBattleLoad) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        pendingBattleLoad = null;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        void confirmBattleLoad();
+      }
+      return;
+    }
+
     if (clearLineupConfirmation) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -2264,6 +2419,7 @@
     result = null;
     resultHistory = null;
     battleTmpSnapshot = null;
+    battleHistoryPreview = null;
     resetBattleReveal();
     lastConfirmedBattleScore = null;
     battleSyncStatus = 'idle';
@@ -2277,87 +2433,34 @@
     lineupResultElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
-  function pairBattlePositions(positions: readonly BattlePosition[]): [BattlePosition, BattlePosition][] {
-    return Array.from({ length: positions.length / 2 }, (_, index) => [
-      positions[index * 2],
-      positions[index * 2 + 1],
-    ]);
-  }
-
-  function groupBattleTmpMatches(snapshot: BattleTmpSnapshot | null): {
-    id: string;
-    label: string;
-    stage: BattleTmpMatch['stage'];
-    matches: BattleTmpMatch[];
-  }[] {
-    if (!snapshot) return [];
-    const groups = new Map<string, {
-      id: string;
-      label: string;
-      stage: BattleTmpMatch['stage'];
-      matches: BattleTmpMatch[];
-    }>();
-    for (const match of snapshot.matches) {
-      const id = `${match.stage}-${match.level}`;
-      const group = groups.get(id) ?? { id, label: '', stage: match.stage, matches: [] };
-      group.matches.push(match);
-      groups.set(id, group);
+  function createBattlePreviewSnapshot(
+    isBattlePage: boolean,
+    currentSnapshot: BattleTmpSnapshot | null,
+    currentVariant: AppVariant,
+    format: BattleFormat,
+    orderMode: BattleOrderMode,
+    orderedNames: readonly string[],
+    fixedSeedCount: number,
+    doubleGrandFinal: boolean,
+  ): BattleTmpSnapshot | null {
+    if (
+      !isBattlePage
+      || currentSnapshot
+      || format === 'avoid-first-pair'
+      || orderedNames.length < 4
+    ) return null;
+    try {
+      return createBattleTmpSnapshot(currentVariant, createSeededBattlePlan(orderedNames, {
+        format,
+        orderMode,
+        fixedSeedCount,
+        doubleGrandFinal,
+        // 预览只显示固定签位，未固定项的随机次序不会暴露。
+        random: () => 0.5,
+      }), 1);
+    } catch {
+      return null;
     }
-    return [...groups.values()].map((group) => ({
-      ...group,
-      label: battleTmpColumnLabel(group.stage, group.matches[0].level, group.matches.length),
-    }));
-  }
-
-  function createSingleBattleLayout(snapshot: BattleTmpSnapshot | null): {
-    left: ReturnType<typeof groupBattleTmpMatches>;
-    right: ReturnType<typeof groupBattleTmpMatches>;
-    final: BattleTmpMatch | null;
-  } {
-    if (!snapshot || snapshot.format !== 'single-elimination') {
-      return { left: [], right: [], final: null };
-    }
-    const levels = groupBattleTmpMatches(snapshot).filter((group) => group.stage === 'single');
-    const finalGroup = levels.at(-1);
-    const sideLevels = levels.slice(0, -1);
-    const left = sideLevels.map((group) => ({
-      ...group,
-      matches: group.matches.slice(0, Math.ceil(group.matches.length / 2)),
-    }));
-    const right = sideLevels.map((group) => ({
-      ...group,
-      matches: group.matches.slice(Math.ceil(group.matches.length / 2)).reverse(),
-    })).reverse();
-    return { left, right, final: finalGroup?.matches[0] ?? null };
-  }
-
-  function battleTmpStageName(stage: BattleTmpMatch['stage']): string {
-    if (stage === 'pairing') return '1对2';
-    if (stage === 'single') return '单败';
-    if (stage === 'winner') return '胜者组';
-    if (stage === 'loser') return '败者组';
-    return '总决赛';
-  }
-
-  function battleTmpColumnLabel(
-    stage: BattleTmpMatch['stage'],
-    level: number,
-    matchCount: number,
-  ): string {
-    if (stage === 'pairing') return '1对2';
-    if (stage === 'final') return level === 2 ? '重赛' : '总决赛';
-    if (matchCount === 1) return '决赛';
-    if (matchCount === 2) return '半决赛';
-    return `1/${matchCount}`;
-  }
-
-  function battleTmpMatchCode(match: BattleTmpMatch): string {
-    const stage = match.stage === 'pairing' ? 'P'
-      : match.stage === 'single' ? 'S'
-        : match.stage === 'winner' ? 'W'
-          : match.stage === 'loser' ? 'L'
-            : 'F';
-    return `${stage}${match.level} P${match.position}`;
   }
 
   function battleTmpFormatLabel(format: BattleFormat): string {
@@ -2372,32 +2475,6 @@
     if (battleSyncStatus === 'saved') return '已同步';
     if (battleSyncStatus === 'error') return '同步失败';
     return '尚未执行';
-  }
-
-  function battleTmpParticipantName(id: number | null): string {
-    if (id === null) return '等待上游';
-    return battleTmpSnapshot?.participants.find((participant) => participant.id === id)?.name ?? `#${id}`;
-  }
-
-  function battleTmpSlotName(match: BattleTmpMatch, slot: 'up' | 'down'): string {
-    const participantId = slot === 'up' ? match.up : match.down;
-    if (participantId !== null) return battleTmpParticipantName(participantId);
-    if (!battleTmpSnapshot) return '待定';
-    const origin = battleTmpSlotOrigin(battleTmpSnapshot, match, slot);
-    if (!origin) return '待定';
-    const originMatch = battleTmpSnapshot.matches.find((candidate) => candidate.matchId === origin.matchId);
-    if (!originMatch) return '待定';
-    return battleTmpMatchCode(originMatch);
-  }
-
-  function battleTmpParticipantWon(match: BattleTmpMatch, id: number | null): boolean {
-    return id !== null && battleTmpWinnerId(match) === id;
-  }
-
-  function battleTmpParticipantFixed(id: number | null): boolean {
-    if (id === null || !battleTmpSnapshot) return false;
-    const participant = battleTmpSnapshot.participants.find((item) => item.id === id);
-    return Boolean(participant && participant.seed <= battleTmpSnapshot.fixedSeedCount);
   }
 
   async function updateBattleScore(match: BattleTmpMatch, side: 'up' | 'down', event: Event) {
@@ -2469,42 +2546,6 @@
   on:pointerup={finishRankPointerDrag}
   on:pointercancel={cancelRankPointerDrag}
 />
-
-{#snippet battleMatchCard(match: BattleTmpMatch)}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <article class="battle-match" tabindex="0" aria-label={`${battleTmpMatchCode(match)} 对战`} data-battle-stage={match.stage} data-battle-level={match.level} data-battle-position={match.position} on:keydown={handleBattleMatchKeydown}>
-    <small>{battleTmpMatchCode(match)}</small>
-    <div
-      class:fixed={battleTmpParticipantFixed(match.up)}
-      class:winner={battleTmpParticipantWon(match, match.up)}
-      class:waiting={match.up === null}
-      class="battle-side"
-    >
-      <div>
-        {#if hiddenBattleSlotKeys.has(`${match.matchId}:up`)}
-          <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, 'up')}`} on:click|stopPropagation={() => revealBattleSlot(match, 'up')}>·</button>
-          <span class="visually-hidden">{battleTmpSlotName(match, 'up')}</span>
-        {:else}<strong>{battleTmpSlotName(match, 'up')}</strong>{/if}
-      </div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped' || battleTmpScoreLocked(battleTmpSnapshot!, match, 'up')} title={battleTmpScoreLocked(battleTmpSnapshot!, match, 'up') ? '下游已有比分' : ''} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
-    </div>
-    <div
-      class:fixed={battleTmpParticipantFixed(match.down)}
-      class:winner={battleTmpParticipantWon(match, match.down)}
-      class:waiting={match.down === null}
-      class="battle-side"
-    >
-      <div>
-        {#if hiddenBattleSlotKeys.has(`${match.matchId}:down`)}
-          <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, 'down')}`} on:click|stopPropagation={() => revealBattleSlot(match, 'down')}>·</button>
-          <span class="visually-hidden">{battleTmpSlotName(match, 'down')}</span>
-        {:else}<strong>{battleTmpSlotName(match, 'down')}</strong>{/if}
-      </div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped' || battleTmpScoreLocked(battleTmpSnapshot!, match, 'down')} title={battleTmpScoreLocked(battleTmpSnapshot!, match, 'down') ? '下游已有比分' : ''} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
-    </div>
-  </article>
-{/snippet}
 
 <main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
@@ -2731,11 +2772,13 @@
                   {:else}
                     {#each visibleBattleHistories as history (history.id)}
                       <article>
-                        <div class="history-view">
+                        <button type="button" class:active={battleHistoryPreview?.id === history.id} class="history-view" on:click={() => previewBattleHistory(history)}>
                           <span>{formatHistoryDate(history.createdAt)}</span>
                           <strong>{history.snapshot.participantCount} 人 · {battleTmpFormatLabel(history.snapshot.format)}</strong>
-                        </div>
+                          <small>只读预览 →</small>
+                        </button>
                         <div class="history-item-actions">
+                          <button type="button" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>加载</button>
                           <button type="button" on:click={() => void exportBattleHistoryExcel(history)}>Excel</button>
                           <button type="button" on:click={() => void exportBattleHistoryJson(history)}>JSON</button>
                         </div>
@@ -2923,7 +2966,7 @@
                 </fieldset>
               {/if}
             </div>
-            <div class="battle-option-actions">
+            <div class:desktop-actions={desktopRuntime} class="battle-option-actions">
               <div class:valid={battleCanExecute} class="battle-count-status">
                 {#if battleTmpSnapshot}
                   已抽签，清空后重来
@@ -2940,6 +2983,9 @@
                 {/if}
               </div>
               <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+              {#if desktopRuntime && !battleTmpSnapshot}
+                <button type="button" class="battle-load-current-button" disabled={battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
+              {/if}
               <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
             </div>
           </div>
@@ -2974,6 +3020,12 @@
           </div>
         {/if}
       </fieldset>
+
+      {#if battlePage && desktopRuntime && battleTmpSnapshot}
+        <div class="battle-load-current-strip">
+          <button type="button" class="battle-load-current-button" disabled={battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
+        </div>
+      {/if}
 
       <div
         bind:this={lineupResultElement}
@@ -3010,8 +3062,12 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}<small class="battle-shortcut-hint"><span><b>对战页</b>A排名 · Z历史 · X对战 · W名单</span><span><b>对战区</b>F全屏 · I/K上下 · J/L左右</span></small></p></div></div>
-            {#if battleTmpSnapshot}
+            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}<small class="battle-shortcut-hint"><span><b>对战页</b>A排名 · Z历史 · X对战 · W名单</span><span><b>对战区</b>F全屏 · I/K上下 · J/L左右</span></small></p></div></div>
+            {#if battleHistoryPreview}
+              <div class="result-output-actions">
+                <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前</button>
+              </div>
+            {:else if battleTmpSnapshot}
               <div class="result-output-actions">
                 {#if hiddenBattleSlotCount > 0}
                   <button type="button" class="result-export-button reveal-all-button" on:click={revealAllBattleSlots}>显示全部</button>
@@ -3022,53 +3078,30 @@
               </div>
             {/if}
           </div>
-          {#if battleTmpSnapshot}
-            {#if battleTmpSnapshot.format === 'single-elimination'}
-              <div class="single-battle-bracket">
-                <div class="single-bracket-side left">
-                  {#each singleBattleLayout.left as round (round.id)}
-                    <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
-                  {/each}
-                </div>
-                <section class="single-bracket-final">
-                  <h3>决赛</h3>
-                  {#if singleBattleLayout.final}{@render battleMatchCard(singleBattleLayout.final)}{/if}
-                </section>
-                <div class="single-bracket-side right">
-                  {#each singleBattleLayout.right as round (round.id)}
-                    <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
-                  {/each}
-                </div>
-              </div>
-            {:else if battleTmpSnapshot.format === 'double-elimination'}
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-              <div class="double-battle-scroll" tabindex="0" role="application" aria-label="双败横向签表" aria-keyshortcuts="I J K L">
-                <div class="double-battle-bracket">
-                  <div class="double-battle-groups">
-                    <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each battleTmpWinnerGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
-                    <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each battleTmpLoserGroups as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
-                  </div>
-                  <section class="double-final-section"><div class="battle-bracket">{#each battleTmpFinalGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}</div></section>
-                </div>
-              </div>
-            {:else}
-              <div class="battle-bracket">
-                {#each battleTmpGroups as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>{/each}
-              </div>
-            {/if}
-          {:else if battleFixedPreviewMatches.length > 0}
-            <div class="battle-fixed-preview">
-              {#each battleFixedPreviewMatches as positions, index}
-                <article class="battle-match">
-                  <small>首轮 · 第 {index + 1} 场</small>
-                  {#each positions as position}
-                    <div class:fixed={position.fixed} class:waiting={!position.participant}>
-                      <strong>{position.participant?.name ?? '待随机'}</strong>
-                    </div>
-                  {/each}
-                </article>
-              {/each}
+          {#if battleHistoryPreview}
+            <div class="battle-history-bracket" aria-label="历史对战只读预览">
+              {#key `history-${battleHistoryPreview.id}`}
+                <BattleBracketViewer snapshot={battleHistoryPreview.snapshot} />
+              {/key}
+            </div>
+          {:else if battleTmpSnapshot}
+            {#key 'battle-editor'}
+              <BattleBracketEditor
+                snapshot={battleTmpSnapshot}
+                hiddenSlotKeys={hiddenBattleSlotKeys}
+                saving={battleSyncStatus === 'saving'}
+                onMatchKeydown={handleBattleMatchKeydown}
+                onScoreFocus={handleBattleScoreFocus}
+                onScoreKeydown={handleBattleScoreKeydown}
+                onScoreChange={updateBattleScore}
+                onReveal={revealBattleSlot}
+              />
+            {/key}
+          {:else if battlePreviewSnapshot}
+            <div class="battle-preview-bracket" aria-label="只读对战预览">
+              {#key 'battle-preview'}
+                <BattleBracketViewer snapshot={battlePreviewSnapshot} maskUnfixed />
+              {/key}
             </div>
           {:else}
             <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '名单每相邻两项为一组，依次为第 1 和第 2' : '确认名单并选择固定位置'}</p></div>
@@ -3178,6 +3211,20 @@
       <div>
         <button type="button" aria-keyshortcuts="N Escape" on:click={() => (battleHistoryDeleteConfirmation = 0)}><span>取消</span></button>
         <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmClearBattleHistories}><span>确认</span></button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if pendingBattleLoad}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog battle-load-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="load-battle-title" aria-describedby="load-battle-detail" tabindex="-1">
+      <span class="delete-confirm-icon">↻</span>
+      <h2 id="load-battle-title">{battleLoadConfirmationTitle(pendingBattleLoad)}</h2>
+      <p id="load-battle-detail">{battleLoadConfirmationDetail(pendingBattleLoad)}</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" disabled={battleLoadingTarget} on:click={() => (pendingBattleLoad = null)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={battleLoadingTarget} on:click={confirmBattleLoad}><span>{battleLoadConfirmationAction(pendingBattleLoad)}</span></button>
       </div>
     </div>
   </div>
@@ -3484,6 +3531,10 @@
     align-items: stretch;
     gap: calc(6px * var(--lineup-layout-scale, 1));
   }
+  .battle-option-actions.desktop-actions {
+    min-width: calc(var(--battle-control-width) * 4 + 18px * var(--lineup-layout-scale, 1));
+    grid-template-columns: minmax(var(--battle-control-width), 1fr) repeat(3, var(--battle-control-width));
+  }
   .battle-preview-settings .battle-radio-group {
     flex: 0 0 auto;
     align-content: start;
@@ -3550,7 +3601,8 @@
     overflow: hidden;
   }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
-  .battle-preview-settings .battle-generate-button {
+  .battle-preview-settings .battle-generate-button,
+  .battle-preview-settings .battle-load-current-button {
     width: var(--battle-control-width);
     height: var(--battle-control-height);
     min-height: 0;
@@ -3560,6 +3612,27 @@
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 900;
     line-height: 1;
+  }
+  .battle-preview-settings .battle-load-current-button {
+    border: 1px solid rgba(231, 255, 114, 0.2);
+    background: rgba(231, 255, 114, 0.07);
+    color: #e6edbb;
+    cursor: pointer;
+  }
+  .battle-preview-settings .battle-load-current-button:hover:not(:disabled) {
+    border-color: rgba(231, 255, 114, 0.48);
+    background: rgba(231, 255, 114, 0.13);
+  }
+  .battle-load-current-strip { display: flex; justify-content: flex-end; }
+  .battle-load-current-strip .battle-load-current-button {
+    min-width: 150px;
+    min-height: 42px;
+    padding: 9px 15px;
+    border: 1px solid rgba(231, 255, 114, 0.2);
+    border-radius: 9px;
+    background: rgba(231, 255, 114, 0.07);
+    color: #e6edbb;
+    font-weight: 900;
   }
   .battle-preview-settings .battle-generate-button i { font-size: calc(15px * var(--font-scale, 1)); }
 
@@ -3787,103 +3860,10 @@
 
   .lineup-table-wrap { margin-top: calc(20px * var(--lineup-layout-scale, 1)); overflow: auto; transition: opacity 180ms ease; }
   .lineup-table-wrap.outdated { opacity: 0.45; }
-  .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-battle-bracket { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-bracket-side { display: flex; align-items: stretch; gap: 13px; }
-  .single-bracket-side.left { justify-content: flex-end; }
-  .single-bracket-side.right { justify-content: flex-start; }
-  .single-bracket-side .battle-round { display: flex; min-width: calc(220px * var(--battle-layout-scale, 1)); flex-direction: column; justify-content: center; }
-  .single-bracket-final { min-width: calc(220px * var(--battle-layout-scale, 1)); padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--accent) 4.5%, transparent); }
-  .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
-  .single-bracket-side.right .battle-match { direction: rtl; }
-  .single-bracket-side.right .battle-match > * { direction: ltr; }
-  .double-battle-scroll { margin-top: 18px; outline: 0; overflow: auto; scroll-behavior: smooth; }
-  .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 34%, transparent); }
-  .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: clamp(42px, 5vw, 86px); row-gap: clamp(34px, 5vh, 62px); transition: opacity 180ms ease; }
-  .double-battle-groups { display: contents; }
-  .double-stage-section,
-  .double-final-section { display: flex; min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); flex-direction: column; }
-  .double-stage-section { padding: 0; border: 0; background: transparent; }
-  .double-stage-section > h3 { color: var(--accent); font-size: calc(15px * var(--font-scale, 1)); }
-  .double-battle-bracket .battle-bracket { gap: clamp(32px, 4vw, 68px); margin-top: 10px; overflow: visible; align-items: stretch; }
-  .double-stage-section > .battle-bracket { min-height: 0; }
-  .double-winner-section { grid-column: 1; grid-row: 1; }
-  .double-loser-section { grid-column: 1; grid-row: 2; }
-  .double-final-section { grid-column: 2; grid-row: 2; align-self: start; transform: translateY(-50%); }
-  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; }
-  .double-final-section .battle-round { position: relative; justify-content: center; }
-  .double-final-section .battle-round > h3 { position: absolute; bottom: calc(100% + 9px); left: 0; }
-  .double-final-section .battle-round > div { margin-top: 0; }
-  .double-battle-bracket .battle-round { display: flex; flex-direction: column; }
-  .double-battle-bracket .battle-round > div { flex: 1; }
-  .double-winner-section .battle-round > div { align-content: end; }
-  .double-loser-section .battle-round > div { align-content: start; }
-  .double-battle-bracket .battle-match { padding: 6px; }
-  .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
-  .double-battle-bracket .battle-match > div { padding: 4px 6px; }
-  .double-battle-bracket .battle-match > div + div { margin-top: 2px; }
-  .double-battle-bracket .battle-match > .battle-side { gap: 6px; }
-  .double-battle-bracket .battle-side input { min-height: 30px; }
   .battle-fullscreen .result-heading { justify-content: flex-end; }
   .battle-fullscreen .result-heading > div:first-child { display: none; }
   .battle-fullscreen .battle-result-toolbar { margin-bottom: 8px; }
-  .battle-fullscreen .double-battle-scroll { margin-top: 10px; }
-  .battle-round { flex: 0 0 min(calc(235px * var(--battle-layout-scale, 1)), 74vw); }
-  .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
-  .battle-round > div { display: grid; gap: calc(10px * var(--battle-layout-scale, 1)); margin-top: 9px; }
-  .single-bracket-side.left .battle-round:first-child > div,
-  .single-bracket-side.right .battle-round:last-child > div { gap: calc(16px * var(--battle-layout-scale, 1)); }
-  .battle-fixed-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 18px; }
-  .battle-match { min-width: 0; padding: calc(9px * var(--battle-layout-scale, 1)); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: calc(11px * var(--battle-layout-scale, 1)); background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
-  .battle-match > small { display: block; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
-  .battle-match > div { width: 100%; min-width: 0; padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1)); border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
-  .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
-  .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  .battle-match > div.waiting { color: var(--lineup-dim-on-dark); }
-  .battle-match > .battle-side { display: flex; align-items: center; gap: 8px; }
-  .battle-side > div { min-width: 0; flex: 1; }
-  .battle-side.winner { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .battle-side input {
-    width: calc(48px * var(--battle-layout-scale, 1));
-    min-height: calc(36px * var(--battle-layout-scale, 1));
-    padding: 4px 5px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 7px;
-    outline: 0;
-    background: rgba(0, 0, 0, 0.2);
-    color: #f4f5ec;
-    font-family: var(--font-mono);
-    font-size: calc(14px * var(--font-scale, 1));
-    font-weight: 800;
-    text-align: center;
-  }
-  .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
-  .battle-side input:disabled { opacity: 0.4; }
-  .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(24px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  .battle-reveal-slot {
-    display: block;
-    width: 100%;
-    min-height: 24px;
-    padding: 0;
-    border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--accent);
-    cursor: pointer;
-    font-size: calc(21px * var(--font-scale, 1));
-    line-height: 1;
-  }
-  .battle-reveal-slot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
+  .battle-preview-bracket { overflow: hidden; }
   table {
     width: 100%;
     min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));
