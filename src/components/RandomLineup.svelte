@@ -1013,6 +1013,12 @@
     saveBattleHistories();
   }
 
+  /** 手动存档不会影响仍可继续编辑的临时签表。 */
+  function saveCurrentBattleHistory() {
+    if (!battleTmpSnapshot) return;
+    archiveBattleHistory(battleTmpSnapshot);
+  }
+
   async function importBattleHistoryFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -2872,6 +2878,7 @@
                   </dl>
                   <p>所有赛程行已关系化保存；修改赛果时只同步该场及受影响的下游。</p>
                   <div class="history-export-actions battle-state-actions">
+                    <button type="button" on:click={saveCurrentBattleHistory}>保存历史</button>
                     <button type="button" on:click={exportBattleTmpExcel}>导出 Excel</button>
                     <button type="button" on:click={exportBattleTmpJson}>导出 JSON</button>
                     <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
@@ -2895,7 +2902,7 @@
                           <small>只读预览 →</small>
                         </button>
                         <div class="history-item-actions">
-                          <button type="button" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>加载</button>
+                          <button type="button" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</button>
                           <button type="button" on:click={() => void exportBattleHistoryExcel(history)}>Excel</button>
                           <button type="button" on:click={() => void exportBattleHistoryJson(history)}>JSON</button>
                         </div>
@@ -2904,6 +2911,7 @@
                   {/if}
                 </div>
                 <div class="history-export-actions battle-state-actions">
+                  <button type="button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</button>
                   <button type="button" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</button>
                   <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
                   <button type="button" class="history-delete-all" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</button>
