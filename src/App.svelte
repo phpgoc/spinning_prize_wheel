@@ -3,12 +3,12 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import caimiIconUrl from './assets/caimi-icon.png?url';
   import defaultIconUrl from '../src-tauri/icons/app-icon.svg?url';
-  import AppHeader from './lib/AppHeader.svelte';
-  import BattlePage from './lib/BattlePage.svelte';
-  import CaimiBanner from './lib/CaimiBanner.svelte';
-  import WheelPage from './lib/WheelPage.svelte';
-  import ExportNotice from './lib/ExportNotice.svelte';
-  import RandomLineup from './lib/RandomLineup.svelte';
+  import AppHeader from './components/AppHeader.svelte';
+  import BattlePage from './routes/BattlePage.svelte';
+  import CaimiBanner from './components/CaimiBanner.svelte';
+  import WheelPage from './routes/WheelPage.svelte';
+  import ExportNotice from './components/ExportNotice.svelte';
+  import RandomLineup from './components/RandomLineup.svelte';
   import {
     BUILD_VARIANT,
     variantFromHash,

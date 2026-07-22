@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { WheelOption } from './types';
-  import { createWeightedSegments, type WeightedSegment } from './wheel-geometry';
+  import type { WheelOption } from '../lib/types';
+  import { createWeightedSegments, type WeightedSegment } from '../lib/wheel-geometry';
 
   export let options: WheelOption[] = [];
   export let rotation = 0;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Prize } from './types';
+  import type { Prize } from '../lib/types';
 
   export let prizes: Prize[];
   export let disabled = false;

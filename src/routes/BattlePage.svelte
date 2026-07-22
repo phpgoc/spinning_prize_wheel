@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { AppVariant } from './app-variant';
-  import RandomLineup from './RandomLineup.svelte';
+  import type { AppVariant } from '../lib/app-variant';
+  import RandomLineup from '../components/RandomLineup.svelte';
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';

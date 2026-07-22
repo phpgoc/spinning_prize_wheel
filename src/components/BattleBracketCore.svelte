@@ -5,7 +5,7 @@
     battleTmpWinnerId,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
-  } from './battle';
+  } from '../lib/battle';
 
   type BattleSide = 'up' | 'down';
   const BATTLE_SIDES: BattleSide[] = ['up', 'down'];

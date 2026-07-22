@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { variantRoute, type AppPage, type AppVariant } from './app-variant';
-  import type { DrawMode } from './types';
+  import { variantRoute, type AppPage, type AppVariant } from '../lib/app-variant';
+  import type { DrawMode } from '../lib/types';
 
   export let page: AppPage;
   export let variant: AppVariant;

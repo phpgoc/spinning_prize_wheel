@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BattleTmpSnapshot } from './battle';
+  import type { BattleTmpSnapshot } from '../lib/battle';
   import BattleBracketCore from './BattleBracketCore.svelte';
 
   export let snapshot: BattleTmpSnapshot;

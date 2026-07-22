@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { onMount, tick } from 'svelte';
-  import type { AppVariant } from './app-variant';
+  import type { AppVariant } from '../lib/app-variant';
   import BattleBracketEditor from './BattleBracketEditor.svelte';
   import BattleBracketViewer from './BattleBracketViewer.svelte';
   import {
@@ -17,19 +17,19 @@
     type BattleOrderMode,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
-  } from './battle';
-  import { createBattleBracketWorkbook } from './battle-excel';
-  import { downloadExcel, downloadExcelBytes, downloadFormattedJson } from './file-export';
+  } from '../lib/battle';
+  import { createBattleBracketWorkbook } from '../lib/battle-excel';
+  import { downloadExcel, downloadExcelBytes, downloadFormattedJson } from '../lib/file-export';
   import {
     createLineupHistoryTransfer,
     parseLineupHistoryTransfer,
-  } from './lineup-history-transfer';
-  import { parseOptionText } from './parse-options';
+  } from '../lib/lineup-history-transfer';
+  import { parseOptionText } from '../lib/parse-options';
   import {
     createRankingTransfer,
     parseRankingTransfer,
     type RankedUserTransfer,
-  } from './ranking-transfer';
+  } from '../lib/ranking-transfer';
   import {
     applyCaimiLineupSwap,
     createLineupRankingSnapshot,
@@ -54,9 +54,9 @@
     updateRankShortcutInput,
     type RankedUserDropTarget,
     type RandomLineup,
-  } from './random-lineup';
-  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
-  import type { RankedUser, ResolvedLineupName, SavedLineup } from './types';
+  } from '../lib/random-lineup';
+  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
+  import type { RankedUser, ResolvedLineupName, SavedLineup } from '../lib/types';
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BattleTmpMatch, BattleTmpSnapshot } from './battle';
+  import type { BattleTmpMatch, BattleTmpSnapshot } from '../lib/battle';
   import BattleBracketCore from './BattleBracketCore.svelte';
 
   type BattleSide = 'up' | 'down';

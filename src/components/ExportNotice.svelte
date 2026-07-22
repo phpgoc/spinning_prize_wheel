@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { subscribeExportCompleted, type ExportCompletedNotice } from './file-export';
+  import { subscribeExportCompleted, type ExportCompletedNotice } from '../lib/file-export';
 
   let notice: ExportCompletedNotice | null = null;
   let noticeKey = 0;

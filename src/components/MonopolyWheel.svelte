@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { WheelOption } from './types';
+  import type { WheelOption } from '../lib/types';
 
   export let options: WheelOption[] = [];
   export let targetOptionId: string | null = null;

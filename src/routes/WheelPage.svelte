@@ -1,17 +1,17 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
-  import LuxuryWheel from './LuxuryWheel.svelte';
-  import MonopolyWheel from './MonopolyWheel.svelte';
-  import PrizeEditor from './PrizeEditor.svelte';
-  import Wheel from './Wheel.svelte';
-  import type { AppVariant } from './app-variant';
+  import LuxuryWheel from '../components/LuxuryWheel.svelte';
+  import MonopolyWheel from '../components/MonopolyWheel.svelte';
+  import PrizeEditor from '../components/PrizeEditor.svelte';
+  import Wheel from '../components/Wheel.svelte';
+  import type { AppVariant } from '../lib/app-variant';
   import {
     changeAutoSaveHistory,
     prepareAutoSaveClose,
     shouldHandleAutoSaveClose,
-  } from './auto-save';
-  import { applyCaimiSelectedWeights, caimiRouletteWeight } from './caimi';
+  } from '../lib/auto-save';
+  import { applyCaimiSelectedWeights, caimiRouletteWeight } from '../lib/caimi';
   import {
     RETRY_ID,
     buildWheelOptions,
@@ -19,7 +19,7 @@
     pickWeighted,
     scaleRouletteRetryWeight,
     simulateBatch,
-  } from './draw';
+  } from '../lib/draw';
   import {
     adjustResultLimit,
     areCandidateChangesLocked,
@@ -27,28 +27,28 @@
     isRewardAmountLocked,
     normalizeResultLimit,
     remainingResultSlots,
-  } from './draw-limit';
+  } from '../lib/draw-limit';
   import {
     aggregateDrawHistories,
     filterDrawHistories,
     singleDrawHistoryStats,
-  } from './draw-history';
-  import { createDrawSoundController, type DrawSoundOutcome } from './draw-sound';
-  import { downloadExcel, downloadFormattedJson } from './file-export';
-  import { parseOptionText } from './parse-options';
-  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
+  } from '../lib/draw-history';
+  import { createDrawSoundController, type DrawSoundOutcome } from '../lib/draw-sound';
+  import { downloadExcel, downloadFormattedJson } from '../lib/file-export';
+  import { parseOptionText } from '../lib/parse-options';
+  import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
   import {
     DEFAULT_FONT_SCALE,
     DEFAULT_STAY_SECONDS,
     normalizeFontScale,
     normalizeStaySeconds,
     positiveNumberOrFallback,
-  } from './ui-settings';
+  } from '../lib/ui-settings';
   import {
     createRouletteWheelSlots,
     createWeightedSegments,
     pickWheelSegmentIndex,
-  } from './wheel-geometry';
+  } from '../lib/wheel-geometry';
   import type {
     AnimationStyle,
     BatchSimulation,
@@ -60,7 +60,7 @@
     SavedDraw,
     SimulationEvent,
     WheelOption,
-  } from './types';
+  } from '../lib/types';
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';
