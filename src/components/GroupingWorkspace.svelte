@@ -19,6 +19,10 @@
     type BattleTmpSnapshot,
   } from '../lib/battle';
   import { createBattleBracketWorkbook } from '../lib/battle-excel';
+  import {
+    createBattleHistoryTransfer,
+    parseBattleHistoryTransfer,
+  } from '../lib/battle-history-transfer';
   import { downloadExcel, downloadExcelBytes, downloadFormattedJson } from '../lib/file-export';
   import {
     createLineupHistoryTransfer,
@@ -1028,8 +1032,8 @@
     }
     battleHistoryImporting = true;
     try {
-      const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as { snapshot?: unknown };
-      const snapshot = parseBattleTmpSnapshot(value && typeof value === 'object' && 'snapshot' in value ? value.snapshot : value, variant);
+      const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
+      const snapshot = parseBattleHistoryTransfer(value, variant);
       archiveBattleHistory(snapshot);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
@@ -1039,7 +1043,7 @@
   }
 
   async function exportBattleHistoryJson(history: BattleHistory) {
-    await downloadFormattedJson('对战历史', { kind: 'battle-history', version: 1, snapshot: history.snapshot });
+    await downloadFormattedJson('对战历史', createBattleHistoryTransfer(history.snapshot));
   }
 
   async function exportBattleHistoryExcel(history: BattleHistory) {

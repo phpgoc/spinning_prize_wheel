@@ -5,6 +5,7 @@ import { installTauriMock } from './helpers/tauri-mock';
 async function openDesktopBattle(page: Page) {
   await installTauriMock(page);
   await page.goto('/battle', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
@@ -30,6 +31,14 @@ async function enterScore(match: Locator, up: number, down: number) {
   await inputs.nth(0).press('Tab');
   await inputs.nth(1).fill(String(down));
   await inputs.nth(1).press('Tab');
+}
+
+async function importBattleHistory(page: Page, name: string, value: unknown) {
+  await page.locator('.lineup-file-input').setInputFiles({
+    name,
+    mimeType: name.endsWith('.json') ? 'application/json' : 'text/plain',
+    buffer: Buffer.from(JSON.stringify(value)),
+  });
 }
 
 test('对战历史 JSON 导出导入可完整复现并能从查看切回当前', async ({ page }) => {
@@ -99,4 +108,55 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   await expect(viewedMatch.locator('.battle-side strong')).toHaveText(expectedNames);
   await expect(viewedMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
   await expect(viewedMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
+});
+
+test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ page }) => {
+  await openDesktopBattle(page);
+  await createScoredBattle(page);
+  const expectedSnapshot = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  const historyCard = page.locator('.battle-history-list article');
+  await expect(historyCard).toHaveCount(1);
+
+  const validTransfer = {
+    kind: 'battle-history',
+    version: 1,
+    snapshot: expectedSnapshot,
+  };
+  const assertImportRejected = async (name: string, value: unknown, detail: string) => {
+    await importBattleHistory(page, name, value);
+    const dialog = page.getByRole('alertdialog', { name: '对战历史导入失败' });
+    await expect(dialog).toContainText(detail);
+    await dialog.getByRole('button', { name: '知道了' }).click();
+    await expect(historyCard).toHaveCount(1);
+  };
+
+  await assertImportRejected('错误格式.json', {
+    ...validTransfer,
+    kind: 'lineup-history',
+  }, '不是对战历史 JSON');
+  await assertImportRejected('未来版本.json', {
+    ...validTransfer,
+    version: 2,
+  }, '不支持的对战历史版本');
+  await assertImportRejected('其他变体.json', {
+    ...validTransfer,
+    snapshot: { ...expectedSnapshot, variant: 'caimi' },
+  }, '对战临时状态格式不正确');
+  await assertImportRejected('错误扩展名.txt', validTransfer, '只支持 JSON 文件');
+
+  await historyCard.getByRole('button', { name: /删除 .* 的对战历史/u }).click();
+  await page.keyboard.press('Enter');
+  await expect(historyCard).toHaveCount(0);
+
+  await importBattleHistory(page, '旧版对战状态.json', expectedSnapshot);
+  await expect(historyCard).toHaveCount(1);
+  const importedSnapshot = await page.evaluate(() => (
+    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')[0]?.snapshot
+  ));
+  expect(importedSnapshot).toEqual(expectedSnapshot);
 });

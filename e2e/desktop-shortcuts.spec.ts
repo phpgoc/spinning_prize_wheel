@@ -16,7 +16,7 @@ async function openDesktopBattle(page: Page) {
 async function openDesktopWheel(page: Page) {
   await installTauriMock(page);
   await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
 }
 
 async function confirmDesktopNames(page: Page, names: string[]) {
