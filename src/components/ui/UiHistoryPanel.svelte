@@ -41,7 +41,7 @@
     min-height: calc(112px * var(--app-component-scale, 1));
     padding: calc(18px * var(--app-component-scale, 1));
     border: 1px dashed color-mix(in srgb, var(--color-app-text) 14%, transparent);
-    border-radius: calc(13px * var(--app-component-scale, 1));
+    border-radius: var(--app-control-radius, calc(13px * var(--app-component-scale, 1)));
     background: linear-gradient(145deg, rgb(255 255 255 / 38%), rgb(255 255 255 / 9%));
     color: var(--color-app-muted);
     gap: calc(7px * var(--app-component-scale, 1));

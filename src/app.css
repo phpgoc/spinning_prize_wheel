@@ -56,6 +56,12 @@
   --on-dark: #f6f3ea;
   --on-dark-muted: #c4c7bd;
   --surface-field: #fffdf8;
+  --radius-app-frame: 1.5rem;
+  --radius-app-panel: 1.125rem;
+  --radius-app-control: 0.625rem;
+  --shadow-app-frame: 0 28px 80px rgb(0 0 0 / 28%);
+  --shadow-app-panel: 0 12px 34px rgb(0 0 0 / 14%);
+  --app-glow-position: 48% 35%;
   --accent-strong: #829638;
   --accent-ink: #465318;
   --accent-soft: #f2f6df;
@@ -83,6 +89,12 @@
   --on-dark: #f1f7fa;
   --on-dark-muted: #c7d4dc;
   --surface-field: #fbfdfe;
+  --radius-app-frame: 1.75rem;
+  --radius-app-panel: 1.25rem;
+  --radius-app-control: 0.75rem;
+  --shadow-app-frame: 0 30px 90px rgb(4 18 27 / 30%);
+  --shadow-app-panel: 0 14px 38px rgb(33 72 94 / 16%);
+  --app-glow-position: 72% 24%;
   --accent-strong: #4f88a8;
   --accent-ink: #28556d;
   --accent-soft: #e4f2f9;
@@ -110,6 +122,12 @@
   --on-dark: #fff8ef;
   --on-dark-muted: #dacbbd;
   --surface-field: #fffaf4;
+  --radius-app-frame: 1.25rem;
+  --radius-app-panel: 1rem;
+  --radius-app-control: 0.5rem;
+  --shadow-app-frame: 0 24px 66px rgb(41 26 14 / 30%);
+  --shadow-app-panel: 0 10px 28px rgb(92 57 29 / 15%);
+  --app-glow-position: 26% 22%;
   --accent-strong: #a86f27;
   --accent-ink: #66451e;
   --accent-soft: #fbefdc;
@@ -129,7 +147,7 @@
   --text-muted: var(--color-app-muted);
   --accent: var(--color-app-accent);
   background:
-    radial-gradient(circle at 48% 35%, rgb(var(--app-canvas-rgb) / 20%), transparent 34%),
+    radial-gradient(circle at var(--app-glow-position), rgb(var(--app-canvas-rgb) / 20%), transparent 34%),
     var(--color-app-canvas);
   color: var(--color-app-text);
 }
@@ -594,9 +612,9 @@ button:not(:disabled):active { filter: brightness(0.94); }
 }
 
 .active .mode-dot {
-  border-color: #7d8d2e;
+  border-color: var(--accent-strong);
   background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(125, 141, 46, 0.17);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-strong) 17%, transparent);
 }
 
 .crosshair {
@@ -731,7 +749,7 @@ p {
 .import-box {
   margin-top: 8px;
   padding: 10px;
-  border: 1px solid rgba(126, 143, 57, 0.32);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 32%, transparent);
   border-radius: 11px;
   background: var(--surface-raised);
   box-shadow: 0 8px 22px rgba(30, 31, 25, 0.08);
@@ -909,7 +927,7 @@ p {
 .animation-options button.active {
   border-color: var(--accent-strong);
   background: var(--surface-raised);
-  box-shadow: 0 0 0 1px rgba(155, 170, 87, 0.18);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong) 18%, transparent);
   color: var(--text);
 }
 
@@ -1544,13 +1562,13 @@ kbd {
 
 .empty-visual span:nth-child(1) { height: 25px; }
 .empty-visual span:nth-child(2) { height: 43px; }
-.empty-visual span:nth-child(3) { height: 62px; background: rgb(var(--app-accent-rgb, 231 255 114) / 0.58); color: #687329; }
+.empty-visual span:nth-child(3) { height: 62px; background: rgb(var(--app-accent-rgb, 231 255 114) / 0.58); color: var(--accent-ink); }
 
 .empty-visual i {
   position: absolute;
   top: -5px;
   right: -19px;
-  color: #8da038;
+  color: var(--accent-strong);
   font-family: var(--font-mono);
   font-size: calc(20px * var(--font-scale, 1));
   font-style: normal;
@@ -1952,7 +1970,7 @@ kbd {
   gap: 12px;
   margin-bottom: 15px;
   padding: 11px 12px;
-  border: 1px solid rgba(128, 144, 62, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 22%, transparent);
   border-radius: 11px;
   background: rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
 }
@@ -1986,7 +2004,7 @@ kbd {
   position: absolute;
   top: 50%;
   left: 9px;
-  color: #85877d;
+  color: var(--text-dim);
   content: '¥';
   font-family: var(--font-mono);
   font-size: calc(12px * var(--font-scale, 1));
@@ -2008,8 +2026,8 @@ kbd {
 }
 
 .reward-input input:focus {
-  border-color: #8fa142;
-  box-shadow: 0 0 0 2px rgba(143, 161, 66, 0.12);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-strong) 12%, transparent);
 }
 
 .batch-content .panel-heading {
@@ -2199,7 +2217,7 @@ kbd {
 .common-card > button {
   width: 100%;
   padding: 8px 9px;
-  border: 1px solid rgba(119, 137, 48, 0.23);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 23%, transparent);
   border-radius: 8px;
   background: rgb(var(--app-accent-rgb, 231 255 114) / 0.18);
   color: var(--accent-ink);
@@ -2363,7 +2381,7 @@ kbd {
   gap: 10px;
   margin-bottom: 12px;
   padding: 9px 11px;
-  border: 1px solid rgba(122, 141, 49, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 25%, transparent);
   border-radius: 10px;
   background: rgb(var(--app-accent-rgb, 231 255 114) / 0.16);
   color: var(--accent-ink);
@@ -2669,7 +2687,7 @@ kbd {
 .continuous-control {
   margin-bottom: 12px;
   padding: 12px;
-  border: 1px solid rgba(128, 144, 62, 0.24);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 24%, transparent);
   border-radius: 12px;
   background: rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
 }

@@ -42,11 +42,11 @@
     gap: 10px;
     padding: 12px 15px 15px;
     overflow: hidden;
-    border: 1px solid rgba(199, 222, 83, 0.42);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.42);
     border-radius: 12px;
-    background: rgba(25, 28, 20, 0.96);
+    background: color-mix(in srgb, var(--workspace-deep) 96%, transparent);
     box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
-    color: #f1f4df;
+    color: var(--on-dark);
     pointer-events: none;
     transform: translateX(-50%);
     animation: export-notice-in 320ms cubic-bezier(0.2, 0.82, 0.25, 1);
@@ -59,7 +59,7 @@
     bottom: 0;
     left: 0;
     height: 3px;
-    background: #dff85d;
+    background: var(--accent);
     content: '';
     transform-origin: left;
     animation: export-notice-time 4.2s linear forwards;
@@ -70,8 +70,8 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #dff85d;
-    color: #252b10;
+    background: var(--accent);
+    color: var(--accent-ink);
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 950;
     place-items: center;
@@ -83,7 +83,7 @@
     display: block;
     overflow: hidden;
     margin-top: 3px;
-    color: #c9cead;
+    color: var(--on-dark-muted);
     font-family: var(--font-mono);
     font-size: calc(10px * var(--font-scale, 1));
     text-overflow: ellipsis;

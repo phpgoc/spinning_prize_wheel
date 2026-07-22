@@ -31,7 +31,7 @@
     gap: calc(6px * var(--app-component-scale, 1));
     padding: calc(9px * var(--app-component-scale, 1));
     border: 1px solid color-mix(in srgb, var(--color-app-text) 11%, transparent);
-    border-radius: calc(10px * var(--app-component-scale, 1));
+    border-radius: var(--app-control-radius, calc(10px * var(--app-component-scale, 1)));
     background:
       linear-gradient(145deg, color-mix(in srgb, var(--color-app-surface-raised) 95%, white), var(--color-app-surface-raised));
     box-shadow: inset 0 1px rgb(255 255 255 / 72%), 0 5px 16px rgb(30 31 25 / 5%);

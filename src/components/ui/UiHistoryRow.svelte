@@ -25,7 +25,7 @@
     min-width: 0;
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--color-app-text) 10%, transparent);
-    border-radius: calc(13px * var(--app-component-scale, 1));
+    border-radius: var(--app-control-radius, calc(13px * var(--app-component-scale, 1)));
     background:
       radial-gradient(circle at 100% 0, rgb(var(--app-accent-rgb, 231 255 114) / 8%), transparent 48%),
       var(--color-app-surface-raised);

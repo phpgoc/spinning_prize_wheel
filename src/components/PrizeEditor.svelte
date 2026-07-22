@@ -313,7 +313,7 @@
 
   .add-button:hover:not(:disabled) {
     border-color: var(--accent);
-    background: rgba(235, 255, 123, 0.05);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.05);
     color: var(--text);
   }
 

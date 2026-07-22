@@ -46,7 +46,7 @@
     gap: calc(3px * var(--app-component-scale, 1));
     padding: calc(9px * var(--app-component-scale, 1));
     border: 1px solid color-mix(in srgb, var(--color-app-text) 12%, transparent);
-    border-radius: calc(11px * var(--app-component-scale, 1));
+    border-radius: var(--app-control-radius, calc(11px * var(--app-component-scale, 1)));
     background: var(--color-app-surface-raised);
     color: var(--color-app-text);
     box-shadow: inset 0 1px rgb(255 255 255 / 68%);
@@ -60,16 +60,16 @@
     box-shadow: 0 0 0 calc(2px * var(--app-component-scale, 1)) color-mix(in srgb, var(--preview-accent) 18%, transparent), 0 calc(8px * var(--app-component-scale, 1)) calc(18px * var(--app-component-scale, 1)) rgb(28 29 23 / 10%);
   }
 
-  .classic { --preview-canvas: #171813; --preview-surface: #efede6; --preview-accent: #b7cd48; }
-  .mist { --preview-canvas: #111820; --preview-surface: #e8eef2; --preview-accent: #6ca9ca; }
-  .sand { --preview-canvas: #211a14; --preview-surface: #f1e9df; --preview-accent: #c88735; }
+  .classic { --preview-canvas: #171813; --preview-surface: #efede6; --preview-accent: #b7cd48; --preview-radius: 7px; }
+  .mist { --preview-canvas: #111820; --preview-surface: #e8eef2; --preview-accent: #6ca9ca; --preview-radius: 12px; }
+  .sand { --preview-canvas: #211a14; --preview-surface: #f1e9df; --preview-accent: #c88735; --preview-radius: 4px; }
 
   .theme-preview {
     display: grid;
     width: 100%;
     height: calc(24px * var(--app-component-scale, 1));
     grid-template-columns: 1fr 0.7fr 0.34fr;
-    border-radius: calc(7px * var(--app-component-scale, 1));
+    border-radius: calc(var(--preview-radius) * var(--app-component-scale, 1));
     overflow: hidden;
     background: var(--preview-canvas);
   }

@@ -132,6 +132,35 @@ test('排名字号放大时排名框同步扩容', async ({ page }) => {
   expect(Math.abs(largeAlignment.innerTop - largeAlignment.innerBottom)).toBeLessThan(1);
 });
 
+test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page }) => {
+  await openDesktopLineup(page);
+  await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
+    localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, uiTheme: 'sand' }));
+  });
+  await page.reload();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'sand');
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
+
+  const rankingColors = await page.locator('.rank-manager').evaluate((element) => {
+    const firstCard = element.querySelector<HTMLElement>('[data-rank-user-id]:not(.keyboard-selected)');
+    if (!firstCard) throw new Error('缺少排名卡片');
+    return {
+      panel: getComputedStyle(element).backgroundImage,
+      card: getComputedStyle(firstCard).backgroundImage,
+    };
+  });
+  expect(rankingColors.panel).toContain('rgb(44, 36, 28)');
+  expect(rankingColors.panel).toContain('rgb(37, 29, 23)');
+  expect(rankingColors.card).toContain('rgb(255, 250, 244)');
+  expect(rankingColors.card).toContain('rgb(241, 233, 223)');
+
+  await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
+  await expect(page.locator('.ui-history-panel')).toBeVisible();
+  await expect(page.locator('.ui-date-range input').first()).toHaveCSS('color', 'rgb(51, 40, 32)');
+  await expect(page.locator('.ui-history-empty')).toHaveCSS('color', 'rgb(108, 91, 78)');
+});
+
 test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整行展开', async ({ page }) => {
   const rankedUsers = Array.from({ length: 8 }, (_, index) => ({
     id: index + 1,

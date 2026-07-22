@@ -191,7 +191,7 @@
     background: #f3efe4;
     box-shadow:
       0 0 0 4px #26271f,
-      0 0 0 6px rgba(235, 255, 123, 0.52),
+      0 0 0 6px rgb(var(--app-accent-rgb, 231 255 114) / 0.52),
       0 24px 55px rgba(5, 6, 4, 0.5);
     overflow: hidden;
     transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 300ms ease;
@@ -289,7 +289,7 @@
 
   .hub {
     fill: #1c1d17;
-    stroke: #ebff7b;
+    stroke: var(--accent);
     stroke-width: 1.5;
   }
 
@@ -383,7 +383,7 @@
   }
 
   .spin-button:focus-visible {
-    box-shadow: 0 0 0 6px rgba(235, 255, 123, 0.38), 0 0 35px rgb(var(--app-accent-rgb, 231 255 114) / 0.3);
+    box-shadow: 0 0 0 6px rgb(var(--app-accent-rgb, 231 255 114) / 0.38), 0 0 35px rgb(var(--app-accent-rgb, 231 255 114) / 0.3);
   }
 
   .spin-button:disabled {
@@ -405,7 +405,7 @@
   .orbit {
     position: absolute;
     inset: 4%;
-    border: 1px solid rgba(235, 255, 123, 0.12);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
     border-radius: 50%;
     pointer-events: none;
   }
@@ -532,8 +532,8 @@
   .luxury.spinning .wheel-tilt {
     box-shadow:
       0 0 0 4px #26271f,
-      0 0 0 8px rgba(235, 255, 123, 0.22),
-      0 0 48px rgba(235, 255, 123, 0.18),
+      0 0 0 8px rgb(var(--app-accent-rgb, 231 255 114) / 0.22),
+      0 0 48px rgb(var(--app-accent-rgb, 231 255 114) / 0.18),
       0 24px 55px rgba(5, 6, 4, 0.5);
   }
 

@@ -54,18 +54,42 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({ page }) => {
-  await page.goto('/wheel');
-  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ uiTheme: 'mist' })));
-  await page.goto('/battle');
-  const shellAccent = await page.locator('.app-shell').evaluate((element) => (
-    getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
-  ));
-  const battleAccent = await page.locator('.battle-result').evaluate((element) => (
-    getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
-  ));
-  expect(shellAccent).toBe('139 199 229');
-  expect(battleAccent).toBe('231 255 114');
-  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+  const battleBackgrounds = new Set<string>();
+  for (const theme of [
+    { id: 'mist', accent: '139 199 229', surface: 'rgb(232, 238, 242)' },
+    { id: 'sand', accent: '235 182 104', surface: 'rgb(241, 233, 223)' },
+  ]) {
+    await page.goto('/wheel');
+    await page.evaluate((uiTheme) => {
+      const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
+      localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, uiTheme }));
+    }, theme.id);
+    await page.goto('/battle');
+    const shellAccent = await page.locator('.app-shell').evaluate((element) => (
+      getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
+    ));
+    const battleStyle = await page.locator('.battle-result').evaluate((element) => {
+      const style = getComputedStyle(element);
+      const colorProbe = document.createElement('span');
+      colorProbe.style.color = 'var(--battle-background-color)';
+      element.append(colorProbe);
+      const selectedBackground = getComputedStyle(colorProbe).color;
+      colorProbe.remove();
+      return {
+        accent: style.getPropertyValue('--app-accent-rgb').trim(),
+        workspace: style.getPropertyValue('--workspace-deep').trim(),
+        background: style.backgroundColor,
+        selectedBackground,
+      };
+    });
+    expect(shellAccent).toBe(theme.accent);
+    expect(battleStyle.accent).toBe('231 255 114');
+    expect(battleStyle.workspace).toBe('#22231d');
+    expect(battleStyle.background).toBe(battleStyle.selectedBackground);
+    battleBackgrounds.add(battleStyle.background);
+    await expect(page.locator('.lineup-config')).toHaveCSS('background-color', theme.surface);
+  }
+  expect(battleBackgrounds.size).toBe(1);
 });
 
 test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {

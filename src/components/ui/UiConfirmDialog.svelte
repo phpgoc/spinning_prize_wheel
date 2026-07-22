@@ -62,7 +62,7 @@
     width: min(100%, calc(390px * var(--app-component-scale, 1)));
     padding: calc(25px * var(--app-component-scale, 1));
     border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
-    border-radius: calc(18px * var(--app-component-scale, 1));
+    border-radius: var(--app-frame-radius, calc(18px * var(--app-component-scale, 1)));
     background: var(--color-app-surface-raised);
     color: var(--color-app-text);
     box-shadow: 0 calc(28px * var(--app-component-scale, 1)) calc(80px * var(--app-component-scale, 1)) rgba(0, 0, 0, 0.46);

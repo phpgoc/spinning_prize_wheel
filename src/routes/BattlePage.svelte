@@ -31,5 +31,5 @@
     text-align: center;
   }
   .battle-web-unavailable strong { color: var(--accent); font-size: 24px; }
-  .battle-web-unavailable p { color: #858b99; }
+  .battle-web-unavailable p { color: var(--on-dark-muted); }
 </style>

@@ -2,6 +2,71 @@ import { expect, test, type Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
 import { readFile } from 'node:fs/promises';
 
+const UI_THEME_CASES = [
+  {
+    id: 'classic',
+    buttonName: /经典.*深灰.*苔绿/u,
+    canvas: '#171813',
+    workspace: '#20211b',
+    surface: '#efede6',
+    surfaceRaised: '#f8f6f0',
+    text: '#24251f',
+    accent: '#e7ff72',
+    accentStrong: '#829638',
+    accentInk: '#465318',
+    accentSoft: '#f2f6df',
+    onDark: '#f6f3ea',
+    surfaceRgb: 'rgb(239, 237, 230)',
+    canvasRgb: 'rgb(23, 24, 19)',
+  },
+  {
+    id: 'mist',
+    buttonName: /雾蓝.*冷灰.*雾蓝/u,
+    canvas: '#111820',
+    workspace: '#192630',
+    surface: '#e8eef2',
+    surfaceRaised: '#f6f9fb',
+    text: '#1f2b34',
+    accent: '#8bc7e5',
+    accentStrong: '#4f88a8',
+    accentInk: '#28556d',
+    accentSoft: '#e4f2f9',
+    onDark: '#f1f7fa',
+    surfaceRgb: 'rgb(232, 238, 242)',
+    canvasRgb: 'rgb(17, 24, 32)',
+  },
+  {
+    id: 'sand',
+    buttonName: /暖砂.*暖灰.*琥珀/u,
+    canvas: '#211a14',
+    workspace: '#2c241c',
+    surface: '#f1e9df',
+    surfaceRaised: '#fbf7f1',
+    text: '#332820',
+    accent: '#ebb668',
+    accentStrong: '#a86f27',
+    accentInk: '#66451e',
+    accentSoft: '#fbefdc',
+    onDark: '#fff8ef',
+    surfaceRgb: 'rgb(241, 233, 223)',
+    canvasRgb: 'rgb(33, 26, 20)',
+  },
+] as const;
+
+function contrastRatio(first: string, second: string): number {
+  const luminance = (color: string) => {
+    const values = color.slice(1).match(/.{2}/gu)?.map((part) => Number.parseInt(part, 16) / 255) ?? [];
+    const [red, green, blue] = values.map((value) => (
+      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+    ));
+    return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+  };
+  const firstLuminance = luminance(first);
+  const secondLuminance = luminance(second);
+  return (Math.max(firstLuminance, secondLuminance) + 0.05)
+    / (Math.min(firstLuminance, secondLuminance) + 0.05);
+}
+
 async function importCandidates(page: Page, names: string[]) {
   await page.keyboard.press('w');
   const textarea = page.locator('.import-box textarea');
@@ -12,8 +77,8 @@ async function importCandidates(page: Page, names: string[]) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/wheel');
-  await expect(page.locator('.app-shell')).toBeVisible();
+  await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
 });
 
 test('发布版默认不再带示例候选', async ({ page }) => {
@@ -41,17 +106,60 @@ test('转盘音乐与音效可关闭并持久化', async ({ page }) => {
 
 test('三套界面风格即时切换并跨页面持久化', async ({ page }) => {
   const shell = page.locator('.app-shell');
-  const classic = page.getByRole('button', { name: /经典.*深灰.*苔绿/u });
-  const mist = page.getByRole('button', { name: /雾蓝.*冷灰.*雾蓝/u });
-  const sand = page.getByRole('button', { name: /暖砂.*暖灰.*琥珀/u });
+  const classic = page.getByRole('button', { name: UI_THEME_CASES[0].buttonName });
+  const mist = page.getByRole('button', { name: UI_THEME_CASES[1].buttonName });
+  const sand = page.getByRole('button', { name: UI_THEME_CASES[2].buttonName });
   await expect(classic).toHaveAttribute('aria-pressed', 'true');
 
+  const stageBackgrounds = new Set<string>();
+  const workspaceRadii = new Set<string>();
+  for (const theme of UI_THEME_CASES) {
+    await page.getByRole('button', { name: theme.buttonName }).click();
+    await expect(shell).toHaveAttribute('data-ui-theme', theme.id);
+    const palette = await shell.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const value = (name: string) => style.getPropertyValue(name).trim();
+      return {
+        canvas: value('--color-app-canvas'),
+        workspace: value('--color-app-workspace'),
+        surface: value('--color-app-surface'),
+        surfaceRaised: value('--color-app-surface-raised'),
+        text: value('--color-app-text'),
+        accent: value('--color-app-accent'),
+        accentStrong: value('--accent-strong'),
+        accentInk: value('--accent-ink'),
+        accentSoft: value('--accent-soft'),
+        onDark: value('--on-dark'),
+      };
+    });
+    expect(palette).toEqual({
+      canvas: theme.canvas,
+      workspace: theme.workspace,
+      surface: theme.surface,
+      surfaceRaised: theme.surfaceRaised,
+      text: theme.text,
+      accent: theme.accent,
+      accentStrong: theme.accentStrong,
+      accentInk: theme.accentInk,
+      accentSoft: theme.accentSoft,
+      onDark: theme.onDark,
+    });
+    expect(contrastRatio(theme.text, theme.surface)).toBeGreaterThanOrEqual(7);
+    expect(contrastRatio(theme.onDark, theme.workspace)).toBeGreaterThanOrEqual(7);
+    expect(contrastRatio(theme.accentInk, theme.accentSoft)).toBeGreaterThanOrEqual(5);
+    await expect(page.locator('body')).toHaveCSS('background-color', theme.canvasRgb);
+    await expect(page.locator('.candidate-board')).toHaveCSS('background-color', theme.surfaceRgb);
+    stageBackgrounds.add(await page.locator('.stage-panel').evaluate((element) => (
+      getComputedStyle(element).backgroundImage
+    )));
+    workspaceRadii.add(await page.locator('.workspace').evaluate((element) => (
+      getComputedStyle(element).borderRadius
+    )));
+  }
+  expect(stageBackgrounds.size).toBe(3);
+  expect(workspaceRadii.size).toBe(3);
+
   await mist.click();
-  await expect(shell).toHaveAttribute('data-ui-theme', 'mist');
-  await expect.poll(() => shell.evaluate((element) => (
-    getComputedStyle(element).getPropertyValue('--color-app-accent').trim()
-  ))).toBe('#8bc7e5');
-  await expect(page.locator('.candidate-board')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
   await expect.poll(() => page.evaluate(() => (
     JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').uiTheme
   ))).toBe('mist');
@@ -63,12 +171,52 @@ test('三套界面风格即时切换并跨页面持久化', async ({ page }) => 
   ))).toBe('#192630');
   await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
 
+  await page.goto('/caimi/grouping');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
+  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+
+  await page.goto('/caimi/wheel');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
+  await expect(page.locator('.candidate-board')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+
   await page.goto('/wheel');
   await sand.click();
   await expect(shell).toHaveAttribute('data-ui-theme', 'sand');
   await expect(page.locator('.candidate-board')).toHaveCSS('background-color', 'rgb(241, 233, 223)');
   await page.reload();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'sand');
+
+  await page.goto('/grouping');
+  await page.locator('.lineup-config textarea').fill('主题确认项');
+  await page.locator('.lineup-config textarea').press('Alt+Enter');
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await expect(page.locator('.ui-confirm-dialog')).toHaveCSS('background-color', 'rgb(251, 247, 241)');
+  await expect(page.locator('.ui-confirm-dialog')).toHaveCSS('color', 'rgb(51, 40, 32)');
+});
+
+test('界面风格选择器在最大字号下自适应换行且不溢出', async ({ page }) => {
+  await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
+    localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, fontScale: 3 }));
+  });
+  await page.reload();
+  const picker = page.locator('.ui-theme-picker');
+  await expect(picker).toBeVisible();
+  const layout = await picker.evaluate((element) => {
+    const cards = [...element.querySelectorAll('button')].map((button) => button.getBoundingClientRect());
+    return {
+      overflow: element.scrollWidth - element.clientWidth,
+      columns: new Set(cards.map((card) => Math.round(card.x))).size,
+      minWidth: Math.min(...cards.map((card) => card.width)),
+      cardOverflow: Math.max(...[...element.querySelectorAll('button')].map((button) => (
+        button.scrollWidth - button.clientWidth
+      ))),
+    };
+  });
+  expect(layout.overflow).toBeLessThanOrEqual(1);
+  expect(layout.columns).toBeLessThanOrEqual(2);
+  expect(layout.minWidth).toBeGreaterThanOrEqual(160);
+  expect(layout.cardOverflow).toBeLessThanOrEqual(1);
 });
 
 test('大窗口会继续放大转盘并保留候选栏空间', async ({ page }) => {
