@@ -210,10 +210,6 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
   ));
 
   await page.goto('/#/battle');
-  await expect(page.locator('.battle-shortcut-hint span')).toHaveText([
-    '对战页A排名 · Z历史 · X对战 · W名单',
-    '对战区F全屏 · U/J上下 · H/K微调左右 · S单败 · W/L分组聚焦',
-  ]);
   await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L');
   await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();

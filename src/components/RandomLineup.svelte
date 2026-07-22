@@ -3094,7 +3094,7 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}<small class="battle-shortcut-hint"><span><b>对战页</b>A排名 · Z历史 · X对战 · W名单</span><span><b>对战区</b>F全屏 · U/J上下 · H/K微调左右 · S单败 · W/L分组聚焦</span></small></p></div></div>
+            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
             {#if battleHistoryPreview}
               <div class="result-output-actions">
                 <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前</button>
@@ -3862,8 +3862,6 @@
   .result-heading > div { align-items: center; gap: 11px; }
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-shortcut-hint { display: grid; gap: 2px; margin-top: 5px; color: color-mix(in srgb, var(--lineup-muted-on-dark) 74%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); font-weight: 650; letter-spacing: 0.01em; }
-  .battle-shortcut-hint b { margin-right: 7px; color: var(--lineup-muted-on-dark); font-family: var(--font-sans); }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }

@@ -135,6 +135,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await installTauriMock(page, rankedUsers);
   await page.goto('/#/battle', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(8);
+  await expect(page.locator('.battle-shortcut-hint')).toHaveCount(0);
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
