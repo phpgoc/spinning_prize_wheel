@@ -160,3 +160,47 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
   ));
   expect(importedSnapshot).toEqual(expectedSnapshot);
 });
+
+test('对战历史限制最近二十条并按日期筛选和二次确认删除全部', async ({ page }) => {
+  await openDesktopBattle(page);
+  await createScoredBattle(page);
+  const snapshot = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+
+  await page.evaluate((currentSnapshot) => {
+    const records = Array.from({ length: 21 }, (_, index) => {
+      const createdAt = new Date(2026, 0, 21 - index, 12).getTime();
+      return {
+        id: `history-${index}`,
+        createdAt,
+        snapshot: { ...structuredClone(currentSnapshot), updatedAt: createdAt },
+      };
+    });
+    localStorage.setItem('battle-history-v1:standard', JSON.stringify(records));
+  }, snapshot);
+  await page.reload();
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /对战历史/u }).click();
+
+  const historyCards = page.locator('.battle-history-list article');
+  await expect(historyCards).toHaveCount(20);
+  const dateInputs = page.locator('.battle-history-dates input[type="date"]');
+  await dateInputs.nth(0).fill('2026-01-10');
+  await dateInputs.nth(1).fill('2026-01-12');
+  await expect(historyCards).toHaveCount(2);
+
+  await dateInputs.nth(0).fill('');
+  await dateInputs.nth(1).fill('');
+  await expect(historyCards).toHaveCount(20);
+  await page.getByRole('button', { name: '删除全部', exact: true }).click();
+  await expect(page.getByRole('alertdialog', { name: '删除全部对战历史？' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alertdialog', { name: '真的删除全部对战历史？' })).toBeVisible();
+  await page.keyboard.press('Enter');
+
+  await expect(historyCards).toHaveCount(0);
+  expect(await page.evaluate(() => (
+    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
+  ))).toEqual([]);
+});
