@@ -362,10 +362,10 @@
     cursor: pointer;
     font-family: var(--font-sans);
     box-shadow:
-      0 0 0 5px rgba(231, 255, 114, 0.14),
-      0 0 30px rgba(231, 255, 114, 0.22),
+      0 0 0 5px rgb(var(--app-accent-rgb, 231 255 114) / 0.14),
+      0 0 30px rgb(var(--app-accent-rgb, 231 255 114) / 0.22),
       0 11px 24px rgba(0, 0, 0, 0.48),
-      inset 0 0 16px rgba(231, 255, 114, 0.08);
+      inset 0 0 16px rgb(var(--app-accent-rgb, 231 255 114) / 0.08);
     transform: translate(-50%, -50%);
     transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease, filter 180ms ease;
   }
@@ -374,16 +374,16 @@
   .spin-button:focus-visible {
     background: #26281e;
     box-shadow:
-      0 0 0 6px rgba(231, 255, 114, 0.22),
-      0 0 38px rgba(231, 255, 114, 0.34),
+      0 0 0 6px rgb(var(--app-accent-rgb, 231 255 114) / 0.22),
+      0 0 38px rgb(var(--app-accent-rgb, 231 255 114) / 0.34),
       0 13px 26px rgba(0, 0, 0, 0.5),
-      inset 0 0 18px rgba(231, 255, 114, 0.12);
+      inset 0 0 18px rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
     filter: brightness(1.08);
     transform: translate(-50%, -50%) scale(1.06);
   }
 
   .spin-button:focus-visible {
-    box-shadow: 0 0 0 6px rgba(235, 255, 123, 0.38), 0 0 35px rgba(231, 255, 114, 0.3);
+    box-shadow: 0 0 0 6px rgba(235, 255, 123, 0.38), 0 0 35px rgb(var(--app-accent-rgb, 231 255 114) / 0.3);
   }
 
   .spin-button:disabled {

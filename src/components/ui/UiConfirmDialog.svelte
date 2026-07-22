@@ -61,10 +61,10 @@
   .ui-confirm-dialog {
     width: min(100%, calc(390px * var(--app-component-scale, 1)));
     padding: calc(25px * var(--app-component-scale, 1));
-    border: 1px solid rgba(184, 72, 50, 0.24);
+    border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
     border-radius: calc(18px * var(--app-component-scale, 1));
-    background: #f4f1e9;
-    color: #282921;
+    background: var(--color-app-surface-raised);
+    color: var(--color-app-text);
     box-shadow: 0 calc(28px * var(--app-component-scale, 1)) calc(80px * var(--app-component-scale, 1)) rgba(0, 0, 0, 0.46);
     text-align: center;
   }
@@ -75,23 +75,23 @@
     height: calc(42px * var(--app-component-scale, 1));
     margin: 0 auto calc(13px * var(--app-component-scale, 1));
     border-radius: 50%;
-    background: rgba(209, 70, 43, 0.1);
-    color: #b63e28;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: color-mix(in srgb, var(--danger) 78%, var(--color-app-text));
     font-size: calc(25px * var(--font-scale, 1));
     font-weight: 900;
     place-items: center;
   }
 
   .tone-accent .ui-confirm-icon {
-    background: rgba(114, 132, 43, 0.13);
-    color: #667621;
+    background: color-mix(in srgb, var(--accent-strong) 13%, transparent);
+    color: var(--accent-ink);
   }
 
   h2 { font-size: calc(20px * var(--font-scale, 1)); }
 
   p {
     margin-top: calc(9px * var(--app-component-scale, 1));
-    color: #62655b;
+    color: var(--color-app-muted);
     font-size: calc(12px * var(--font-scale, 1));
     line-height: 1.6;
   }

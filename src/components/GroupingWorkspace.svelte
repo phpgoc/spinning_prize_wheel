@@ -8,6 +8,8 @@
   import UiButton from './ui/UiButton.svelte';
   import UiCheckbox from './ui/UiCheckbox.svelte';
   import UiConfirmDialog from './ui/UiConfirmDialog.svelte';
+  import UiHistoryPanel from './ui/UiHistoryPanel.svelte';
+  import UiHistoryRow from './ui/UiHistoryRow.svelte';
   import UiRadio from './ui/UiRadio.svelte';
   import UiTextarea from './ui/UiTextarea.svelte';
   import {
@@ -2297,11 +2299,19 @@
       || isTextEditingTarget(event.target)
     ) return;
     const current = event.currentTarget as HTMLElement;
-    const target = closestBattleElement(
-      current,
-      [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
-      event.key,
-    );
+    const currentInputs = [...current.querySelectorAll<HTMLInputElement>(
+      '.battle-side input:not(:disabled)',
+    )];
+    // 对战框本身获得焦点时，上下键先进入框内对应一侧，保持键盘入口稳定。
+    const target = event.key === 'ArrowUp'
+      ? currentInputs[0]
+      : event.key === 'ArrowDown'
+        ? currentInputs.at(-1) ?? null
+        : closestBattleElement(
+            current,
+            [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
+            event.key,
+          );
     event.preventDefault();
     event.stopPropagation();
     if (!target) return;
@@ -2314,6 +2324,18 @@
     candidates: T[],
     key: string,
   ): T | null {
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      const currentMatch = current.closest<HTMLElement>('.battle-match');
+      const targetSide = key === 'ArrowUp' ? 'up' : 'down';
+      const currentSide = current.dataset.battleSide;
+      if (currentMatch && currentSide !== targetSide) {
+        const sameMatchTarget = candidates.find((candidate) => (
+          candidate.closest('.battle-match') === currentMatch
+          && candidate.dataset.battleSide === targetSide
+        ));
+        if (sameMatchTarget) return sameMatchTarget;
+      }
+    }
     const logicalSingleTarget = closestSingleBattleVerticalElement(current, candidates, key);
     if (logicalSingleTarget) return logicalSingleTarget;
     const currentRect = current.getBoundingClientRect();
@@ -2866,79 +2888,74 @@
             {#if battlePage}
               <div class="desktop-accordion-content history-panel">
                 <input bind:this={battleHistoryFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importBattleHistoryFile} />
-                <div class="history-dates battle-history-dates">
-                  <label><span>开始日期</span><input type="date" bind:value={battleHistoryStart} /></label>
-                  <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={battleHistoryEnd} /></label>
-                </div>
-                <div class="lineup-history-list battle-history-list">
-                  {#if visibleBattleHistories.length === 0}
-                    <p>日期范围内没有对战记录。</p>
-                  {:else}
+                <UiHistoryPanel
+                  bind:start={battleHistoryStart}
+                  bind:end={battleHistoryEnd}
+                  empty={visibleBattleHistories.length === 0}
+                  emptyText="日期范围内没有对战记录"
+                >
                     {#each visibleBattleHistories as history (history.id)}
-                      <article>
-                        <button type="button" class:active={battleHistoryView?.id === history.id} class="history-view" on:click={() => viewBattleHistory(history)}>
-                          <span>{formatHistoryDate(history.createdAt)}</span>
-                          <strong>{history.snapshot.participantCount} 人 · {battleTmpFormatLabel(history.snapshot.format)}</strong>
-                          <small>查看比赛 →</small>
-                        </button>
-                        <div class="history-item-actions">
-                          <UiButton size="xs" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</UiButton>
-                          <UiButton size="xs" on:click={() => void exportBattleHistoryExcel(history)}>Excel</UiButton>
-                          <UiButton size="xs" on:click={() => void exportBattleHistoryJson(history)}>JSON</UiButton>
-                          <UiButton size="xs" tone="danger" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</UiButton>
-                        </div>
-                      </article>
+                      <UiHistoryRow
+                        eyebrow={formatHistoryDate(history.createdAt)}
+                        title={`${history.snapshot.participantCount} 人 · ${battleTmpFormatLabel(history.snapshot.format)}`}
+                        hint="查看比赛 →"
+                        active={battleHistoryView?.id === history.id}
+                        on:select={() => viewBattleHistory(history)}
+                      >
+                        <UiButton size="xs" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</UiButton>
+                        <UiButton size="xs" on:click={() => void exportBattleHistoryExcel(history)}>Excel</UiButton>
+                        <UiButton size="xs" on:click={() => void exportBattleHistoryJson(history)}>JSON</UiButton>
+                        <UiButton size="xs" tone="danger" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</UiButton>
+                      </UiHistoryRow>
                     {/each}
-                  {/if}
-                </div>
-                <div class="history-export-actions battle-state-actions">
-                  <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
-                  <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
-                  <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
-                  <UiButton size="xs" tone="danger" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</UiButton>
-                </div>
+                  <svelte:fragment slot="actions">
+                    <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
+                    <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
+                    <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                    <UiButton size="xs" tone="danger" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</UiButton>
+                  </svelte:fragment>
+                </UiHistoryPanel>
               </div>
             {:else}
               <div class="desktop-accordion-content history-panel">
               <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importLineupHistoryFile} />
-              <div class="history-dates">
-                <label><span>开始日期</span><input type="date" bind:value={historyStart} /></label>
-                <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={historyEnd} /></label>
-              </div>
-              {#if historyError}<div class="ranking-error" role="alert">{historyError}</div>{/if}
-              <div class="lineup-history-list">
-                {#if historyLoading}
-                  <p>正在读取分组历史…</p>
-                {:else if visibleHistories.length === 0}
-                  <p>日期范围内没有分组记录。</p>
-                {:else}
+              <UiHistoryPanel
+                bind:start={historyStart}
+                bind:end={historyEnd}
+                loading={historyLoading}
+                loadingText="正在读取分组历史…"
+                empty={visibleHistories.length === 0}
+                emptyText="日期范围内没有分组记录"
+              >
                   {#each visibleHistories as history (history.id)}
-                    <article>
-                      <button type="button" class="history-view" on:click={() => viewHistory(history)}>
-                        <span>{formatHistoryDate(history.createdAt)}</span>
-                        <strong>{historySummary(history)}</strong>
-                        <small>预览 →</small>
-                      </button>
-                      <div class="history-item-actions">
-                        <UiButton size="xs" on:click={() => void exportLineupHistoryExcel(history)}>Excel</UiButton>
-                        <UiButton size="xs" on:click={() => void exportLineupHistoryJson(history)}>JSON</UiButton>
-                        <UiButton
-                          size="xs"
-                          tone="danger"
-                          aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的分组历史`}
-                          disabled={historyDeleting}
-                          on:click={() => requestDeleteLineupHistory(history)}
-                        >删除</UiButton>
-                      </div>
-                    </article>
+                    <UiHistoryRow
+                      eyebrow={formatHistoryDate(history.createdAt)}
+                      title={historySummary(history)}
+                      hint="查看分组 →"
+                      on:select={() => viewHistory(history)}
+                    >
+                      <UiButton size="xs" on:click={() => void exportLineupHistoryExcel(history)}>Excel</UiButton>
+                      <UiButton size="xs" on:click={() => void exportLineupHistoryJson(history)}>JSON</UiButton>
+                      <UiButton
+                        size="xs"
+                        tone="danger"
+                        aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的分组历史`}
+                        disabled={historyDeleting}
+                        on:click={() => requestDeleteLineupHistory(history)}
+                      >删除</UiButton>
+                    </UiHistoryRow>
                   {/each}
-                {/if}
-              </div>
-              <div class="history-export-actions">
-                <UiButton size="xs" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</UiButton>
-                <UiButton size="xs" tone="danger" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</UiButton>
-              </div>
-              {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
+                <svelte:fragment slot="notice">
+                  {#if historyError}<div class="ranking-error" role="alert">{historyError}</div>{/if}
+                </svelte:fragment>
+                <svelte:fragment slot="actions">
+                  <UiButton size="xs" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</UiButton>
+                  <UiButton size="xs" tone="danger" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</UiButton>
+                </svelte:fragment>
+                <svelte:fragment slot="status">
+                  {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
+                </svelte:fragment>
+              </UiHistoryPanel>
               </div>
             {/if}
           {/if}
@@ -2978,8 +2995,10 @@
                 class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                 class="preview-row"
               >
-                <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>插入</button>
-                <span class="preview-position">{String(index + 1).padStart(2, '0')}</span>
+                <div class="preview-leading-actions">
+                  <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
+                  <span class="preview-position">{String(index + 1).padStart(2, '0')}</span>
+                </div>
                 <div class="preview-name">
                   <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
                   {#if desktopRuntime}
@@ -2990,13 +3009,15 @@
                         : '未录入排名'}</small>
                   {/if}
                 </div>
-                {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
-                  <div class="preview-link-actions">
-                    <button type="button" class="link-preview-user" title="关联到现有排名" on:click={() => startAliasLink(row.name)}>关联</button>
-                    <button type="button" class="add-preview-user" title="直接加入无排名" disabled={rankingSaving} on:click={() => addUnknownPerson(row.name)}>录入</button>
-                  </div>
-                {/if}
-                <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} aria-label={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>删除</button>
+                <div class="preview-trailing-actions">
+                  {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
+                    <div class="preview-link-actions">
+                      <button type="button" class="link-preview-user" title="关联到现有排名" on:click={() => startAliasLink(row.name)}>关联</button>
+                      <button type="button" class="add-preview-user" title="直接加入无排名" disabled={rankingSaving} on:click={() => addUnknownPerson(row.name)}>录入</button>
+                    </div>
+                  {/if}
+                  <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} aria-label={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>删除</button>
+                </div>
               </div>
             {/each}
             {#if insertIndex === previewRows.length}
@@ -3040,9 +3061,9 @@
             <div class="battle-option-groups">
               <fieldset class="battle-radio-group battle-format-group">
                 <legend>赛制</legend>
-                <UiRadio name="battle-format" value="avoid-first-pair" bind:group={battleFormat}>同组不对战1对2</UiRadio>
-                <UiRadio name="battle-format" value="single-elimination" bind:group={battleFormat}>单败</UiRadio>
-                <UiRadio name="battle-format" value="double-elimination" bind:group={battleFormat}>双败</UiRadio>
+                <UiRadio battle name="battle-format" value="avoid-first-pair" bind:group={battleFormat}>同组不对战1对2</UiRadio>
+                <UiRadio battle name="battle-format" value="single-elimination" bind:group={battleFormat}>单败</UiRadio>
+                <UiRadio battle name="battle-format" value="double-elimination" bind:group={battleFormat}>双败</UiRadio>
                 {#if battleFormat === 'double-elimination'}
                   <UiCheckbox compact bind:checked={battleDoubleGrandFinal}>双总决赛</UiCheckbox>
                 {/if}
@@ -3050,8 +3071,8 @@
               {#if battleFormat !== 'avoid-first-pair'}
                 <fieldset class="battle-radio-group battle-order-group">
                   <legend>名单顺序</legend>
-                  <UiRadio name="battle-order" value="input" bind:group={battleOrderMode}>按输入顺序</UiRadio>
-                  <UiRadio name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} title={desktopRuntime ? '' : '网页版没有排名数据库'}>按排名</UiRadio>
+                  <UiRadio battle name="battle-order" value="input" bind:group={battleOrderMode}>按输入顺序</UiRadio>
+                  <UiRadio battle name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} title={desktopRuntime ? '' : '网页版没有排名数据库'}>按排名</UiRadio>
                   {#if desktopRuntime && battleOrderMode === 'rank'}
                     <button
                       type="button"
@@ -3064,9 +3085,9 @@
                 </fieldset>
                 <fieldset class="battle-radio-group battle-fixed-group">
                   <legend>固定位置</legend>
-                  <UiRadio name="battle-fixed-seeds" value={0} bind:group={battleFixedSeedCount}>全随机</UiRadio>
+                  <UiRadio battle name="battle-fixed-seeds" value={0} bind:group={battleFixedSeedCount}>全随机</UiRadio>
                   {#each battleFixedOptions as count}
-                    <UiRadio name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount}>前 {count} 固定</UiRadio>
+                    <UiRadio battle name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount}>前 {count} 固定</UiRadio>
                   {/each}
                 </fieldset>
               {/if}
@@ -3450,22 +3471,22 @@
 
 <style>
   .lineup-page {
-    --lineup-muted-on-dark: #d9dbd2;
-    --lineup-dim-on-dark: #c4c7bd;
-    --lineup-muted-on-light: #34362f;
-    --lineup-dim-on-light: #484b43;
+    --lineup-muted-on-dark: var(--on-dark-muted);
+    --lineup-dim-on-dark: color-mix(in srgb, var(--on-dark-muted) 84%, transparent);
+    --lineup-muted-on-light: var(--color-app-text);
+    --lineup-dim-on-light: var(--color-app-muted);
     --lineup-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
-    --battle-control-width: calc(160px * var(--lineup-layout-scale, 1));
-    --battle-control-height: calc(42px * var(--lineup-layout-scale, 1));
+    --battle-control-width: calc(115px + 135px * var(--font-scale, 1));
+    --battle-control-height: calc(56px * var(--app-component-scale, 1));
     min-height: 0;
     padding: clamp(24px, 4vw, 58px);
     border: 1px solid var(--app-frame-border, rgba(255, 255, 255, 0.06));
     border-radius: var(--app-frame-radius, 25px);
     overflow: hidden;
     background:
-      radial-gradient(circle at 82% 8%, rgba(231, 255, 114, 0.09), transparent 28%),
+      radial-gradient(circle at 82% 8%, rgb(var(--app-accent-rgb, 231 255 114) / 0.09), transparent 28%),
       var(--app-frame-background, #20211b);
-    color: #f6f3ea;
+    color: var(--on-dark);
     box-shadow: var(--app-frame-shadow, 0 28px 80px rgba(0, 0, 0, 0.28));
   }
 
@@ -3481,14 +3502,14 @@
 
   .config-heading span,
   .result-heading > div > span {
-    color: #c9d66f;
+    color: var(--accent);
     font-family: var(--font-mono);
     font-size: calc(12px * var(--font-scale, 1));
     letter-spacing: 0.14em;
   }
 
   .config-heading span {
-    color: #626d1f;
+    color: var(--accent-ink);
   }
 
   .lineup-workbench {
@@ -3543,17 +3564,17 @@
   .list-actions { display: flex; justify-content: flex-end; gap: calc(7px * var(--lineup-layout-scale, 1)); margin-top: calc(7px * var(--lineup-layout-scale, 1)); }
   .list-actions button {
     padding: calc(6px * var(--lineup-layout-scale, 1)) calc(9px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(36, 37, 31, 0.24);
+    border: 1px solid var(--line-strong);
     border-radius: 7px;
-    background: #fffdf8;
-    color: #3e4631;
+    background: var(--surface-field);
+    color: var(--color-app-text);
     cursor: pointer;
     font-size: calc(12px * var(--font-scale, 1));
     font-weight: 700;
     transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
   }
-  .list-actions .confirm-list { border-color: #a8b86b; background: #f2f6df; color: #52601d; }
-  .list-actions .confirm-list:hover:not(:disabled) { border-color: #829638; background: #e8f1c7; color: #34420f; }
+  .list-actions .confirm-list { border-color: color-mix(in srgb, var(--accent-strong) 55%, transparent); background: var(--accent-soft); color: var(--accent-ink); }
+  .list-actions .confirm-list:hover:not(:disabled) { border-color: var(--accent-strong); background: color-mix(in srgb, var(--accent-soft) 75%, var(--accent)); color: var(--accent-ink); }
   .list-actions .clear-list { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
   .list-actions .clear-list:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
 
@@ -3569,9 +3590,9 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 11px;
-    border: 1px solid rgba(36, 37, 31, 0.1);
+    border: 1px solid var(--line-subtle);
     border-radius: 10px;
-    background: #f8f6f0;
+    background: var(--color-app-surface-raised);
   }
   .group-setting span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .group-setting input {
@@ -3579,7 +3600,7 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: #24251f;
+    color: var(--color-app-text);
     font-family: var(--font-mono);
     font-size: calc(20px * var(--font-scale, 1));
     font-weight: 800;
@@ -3606,46 +3627,26 @@
     margin-top: calc(18px * var(--lineup-layout-scale, 1));
     padding-top: calc(12px * var(--lineup-layout-scale, 1));
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    overflow-x: auto;
+    min-width: 0;
+    overflow-x: hidden;
   }
-  .battle-option-groups {
-    display: grid;
-    width: 100%;
-    min-width: calc(var(--battle-control-width) * 3);
-    grid-template-columns:
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr);
-    align-items: stretch;
-  }
-  .battle-format-group { grid-column: 2; }
-  .battle-order-group { grid-column: 4; }
-  .battle-fixed-group { grid-column: 6; }
+  .battle-option-groups,
   .battle-option-actions {
     display: grid;
     width: 100%;
-    min-width: calc(var(--battle-control-width) * 3);
-    grid-template-columns:
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr)
-      var(--battle-control-width)
-      minmax(0, 1fr);
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--battle-control-width)), 1fr));
     align-items: stretch;
-    row-gap: calc(6px * var(--lineup-layout-scale, 1));
+    gap: calc(10px * var(--lineup-layout-scale, 1));
+  }
+  .battle-option-groups {
+    align-items: start;
   }
   .battle-option-actions .battle-count-status { grid-column: 1 / -1; }
-  .battle-option-actions .battle-load-current-button { grid-column: 4; }
-  .battle-option-actions .battle-generate-button { grid-column: 6; }
   .battle-control-hidden { visibility: hidden; pointer-events: none; }
   .battle-preview-settings .battle-radio-group {
-    width: var(--battle-control-width);
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
     flex: 0 0 auto;
@@ -3658,13 +3659,20 @@
     background: rgba(255, 255, 255, 0.025);
   }
   .battle-preview-settings .battle-format-group,
-  .battle-preview-settings .battle-order-group,
-  .battle-preview-settings .battle-fixed-group { grid-template-columns: var(--battle-control-width); }
-  .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
+  .battle-preview-settings .battle-order-group { grid-template-columns: minmax(0, 1fr); }
+  .battle-preview-settings .battle-fixed-group {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(50px + 70px * var(--font-scale, 1))), 1fr));
+  }
+  .battle-preview-settings .battle-fixed-group legend { grid-column: 1 / -1; }
+  .battle-preview-settings .battle-radio-group legend {
+    color: var(--lineup-muted-on-dark);
+    font-weight: 850;
+    letter-spacing: 0.08em;
+  }
   .battle-preview-settings .battle-rank-preview-button {
-    width: var(--battle-control-width);
-    height: var(--battle-control-height);
-    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: var(--battle-control-height);
     padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
     border-radius: calc(8px * var(--lineup-layout-scale, 1));
     font-size: calc(15px * var(--font-scale, 1));
@@ -3673,9 +3681,10 @@
   }
   .battle-preview-settings .battle-count-status {
     display: flex;
-    min-width: var(--battle-control-width);
-    height: var(--battle-control-height);
-    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: var(--battle-control-height);
     box-sizing: border-box;
     align-items: center;
     margin-top: 0;
@@ -3683,31 +3692,34 @@
     background: rgba(218, 91, 63, 0.08);
     color: #e1a092;
     font-weight: 800;
-    line-height: 1;
-    overflow: hidden;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
-  .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
+  .battle-preview-settings .battle-count-status.valid { border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.17); background: rgb(var(--app-accent-rgb, 231 255 114) / 0.07); color: #dce99b; }
   .battle-preview-settings .battle-generate-button,
   .battle-preview-settings .battle-load-current-button {
-    width: var(--battle-control-width);
-    height: var(--battle-control-height);
-    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: var(--battle-control-height);
     margin: 0;
     padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
     border-radius: calc(8px * var(--lineup-layout-scale, 1));
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 900;
-    line-height: 1;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   .battle-preview-settings .battle-load-current-button {
-    border: 1px solid rgba(231, 255, 114, 0.2);
-    background: rgba(231, 255, 114, 0.07);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.07);
     color: #e6edbb;
     cursor: pointer;
   }
   .battle-preview-settings .battle-load-current-button:hover:not(:disabled) {
-    border-color: rgba(231, 255, 114, 0.48);
-    background: rgba(231, 255, 114, 0.13);
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.48);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
   }
   .battle-preview-settings .battle-generate-button i { font-size: calc(15px * var(--font-scale, 1)); }
 
@@ -3719,7 +3731,7 @@
     font-size: calc(12px * var(--font-scale, 1));
   }
   .lineup-error { background: rgba(218, 91, 63, 0.1); color: #ad4b35; }
-  .outdated-notice { background: rgba(231, 255, 114, 0.1); color: #e2eab3; }
+  .outdated-notice { background: rgb(var(--app-accent-rgb, 231 255 114) / 0.1); color: #e2eab3; }
 
   .generate-button {
     display: flex;
@@ -3730,8 +3742,8 @@
     padding: 13px 15px;
     border: 0;
     border-radius: 11px;
-    background: #22231d;
-    color: #f8f6ef;
+    background: var(--workspace-deep);
+    color: var(--on-dark);
     cursor: pointer;
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 800;
@@ -3745,12 +3757,21 @@
   }
 
   .lineup-result:focus {
-    outline: 2px solid rgba(231, 255, 114, 0.42);
+    outline: 2px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.42);
     outline-offset: 3px;
   }
 
   .lineup-result.battle-result {
     --accent: var(--battle-participant-color);
+    --app-accent-rgb: 231 255 114;
+    --accent-strong: #829638;
+    --accent-ink: #465318;
+    --accent-soft: #f2f6df;
+    --workspace-deep: #22231d;
+    --workspace-highlight: #35372b;
+    --on-dark: #f6f3ea;
+    --on-dark-muted: #c4c7bd;
+    --app-surface-background: rgb(11 12 9 / 27%);
     /* 字号放大时，载具按三分之一幅度扩张，避免同比例撑爆签表。 */
     --battle-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
 
@@ -3909,9 +3930,9 @@
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
   .result-heading .history-save-button {
     padding: 8px 11px;
-    border: 1px solid rgba(231, 255, 114, 0.48);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.48);
     border-radius: 8px;
-    background: rgba(231, 255, 114, 0.14);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.14);
     color: var(--accent);
     cursor: pointer;
     font-size: calc(12px * var(--font-scale, 1));
@@ -3949,25 +3970,25 @@
   td.empty { color: var(--lineup-dim-on-dark); }
   td.slow-hidden {
     padding: 4px;
-    border-color: rgba(231, 255, 114, 0.1);
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.1);
     background: rgba(255, 255, 255, 0.025);
     box-shadow: none;
   }
   .slow-reveal-cell {
     width: 100%;
     min-height: 58px;
-    border: 1px dashed rgba(231, 255, 114, 0.2);
+    border: 1px dashed rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
     border-radius: 8px;
-    background: rgba(231, 255, 114, 0.025);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.025);
     color: #aeb676;
     cursor: pointer;
     font-size: calc(24px * var(--font-scale, 1));
     line-height: 1;
   }
   .slow-reveal-cell:hover {
-    border-color: rgba(231, 255, 114, 0.42);
-    background: rgba(231, 255, 114, 0.08);
-    color: #e7ff72;
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.42);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.08);
+    color: var(--accent);
   }
   td.caimi-swapped {
     position: relative;
@@ -3982,7 +4003,7 @@
   }
   td.slow-hidden.caimi-swapped,
   td.slow-hidden.caimi-favored {
-    border-color: rgba(231, 255, 114, 0.1);
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.1);
     background: rgba(255, 255, 255, 0.025);
     box-shadow: none;
   }
@@ -4012,7 +4033,7 @@
   .battle-empty-result { gap: 8px; }
   .battle-empty-result p { color: var(--lineup-dim-on-dark); font-size: calc(12px * var(--font-scale, 1)); text-align: center; }
   .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
-  .empty-grid i { display: grid; height: 42px; border: 1px solid rgba(231, 255, 114, 0.2); border-radius: 9px; background: rgba(231, 255, 114, 0.055); color: #cbd877; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
+  .empty-grid i { display: grid; height: 42px; border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2); border-radius: 9px; background: rgb(var(--app-accent-rgb, 231 255 114) / 0.055); color: #cbd877; font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
 
   .preview-status {
     color: #dde2c2;
@@ -4046,11 +4067,11 @@
   .preview-tier-divider i {
     height: 1px;
     flex: 1;
-    background: linear-gradient(90deg, transparent, rgba(231, 255, 114, 0.38));
+    background: linear-gradient(90deg, transparent, rgb(var(--app-accent-rgb, 231 255 114) / 0.38));
   }
 
   .preview-tier-divider i:last-child {
-    background: linear-gradient(90deg, rgba(231, 255, 114, 0.38), transparent);
+    background: linear-gradient(90deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.38), transparent);
   }
 
   .preview-row {
@@ -4058,14 +4079,14 @@
     display: grid;
     min-width: 0;
     min-height: calc(44px + 22px * var(--lineup-layout-scale, 1));
-    grid-template-columns: auto 29px minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 1.35fr) minmax(0, 1fr);
     align-items: center;
     gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
     padding: calc(5px + 4px * var(--lineup-layout-scale, 1)) calc(6px + 4px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(231, 255, 114, 0.13);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
     border-radius: calc(7px + 4px * var(--lineup-layout-scale, 1));
     background:
-      linear-gradient(100deg, rgba(231, 255, 114, 0.065), transparent 54%),
+      linear-gradient(100deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.065), transparent 54%),
       rgba(255, 255, 255, 0.035);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   }
@@ -4083,6 +4104,17 @@
     font-size: calc(11px * var(--font-scale, 1));
     text-align: center;
   }
+
+  .preview-leading-actions,
+  .preview-trailing-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
+  }
+
+  .preview-leading-actions { justify-content: flex-start; }
+  .preview-trailing-actions { justify-content: flex-end; flex-wrap: wrap; }
 
   .preview-row > div { min-width: 0; }
 
@@ -4108,13 +4140,13 @@
     font-weight: 900;
     letter-spacing: 0.025em;
     text-align: center;
-    text-shadow: 0 2px 12px rgba(231, 255, 114, 0.14);
+    text-shadow: 0 2px 12px rgb(var(--app-accent-rgb, 231 255 114) / 0.14);
   }
 
   .preview-row input:focus {
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.055);
-    box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.2);
+    box-shadow: 0 0 0 2px rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
   }
 
   .preview-row small {
@@ -4132,26 +4164,32 @@
   .insert-before-button,
   .append-preview-user,
   .preview-insert-form button {
-    border: 1px solid rgba(231, 255, 114, 0.2);
-    background: rgba(231, 255, 114, 0.05);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.05);
     color: #d5e184;
     cursor: pointer;
   }
 
   .insert-before-button {
-    padding: 4px 6px;
+    display: grid;
+    width: calc(27px * var(--app-component-scale, 1));
+    min-width: calc(27px * var(--app-component-scale, 1));
+    height: calc(27px * var(--app-component-scale, 1));
+    padding: 0;
     border-radius: 6px;
-    font-size: calc(10px * var(--font-scale, 1));
+    font-size: calc(16px * var(--font-scale, 1));
+    font-weight: 850;
     line-height: 1;
+    place-items: center;
   }
 
   .insert-before-button:hover,
   .insert-before-button.active,
   .append-preview-user:hover,
   .preview-insert-form button:hover {
-    border-color: rgba(231, 255, 114, 0.48);
-    background: rgba(231, 255, 114, 0.12);
-    color: #e7ff72;
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.48);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
+    color: var(--accent);
   }
 
   .append-preview-user {
@@ -4169,9 +4207,9 @@
     gap: 7px;
     width: 100%;
     padding: 9px;
-    border: 1px solid rgba(231, 255, 114, 0.34);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.34);
     border-radius: 9px;
-    background: rgba(231, 255, 114, 0.07);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.07);
     box-sizing: border-box;
   }
 
@@ -4196,7 +4234,7 @@
     font: inherit;
   }
 
-  .preview-insert-form input:focus { border-color: rgba(231, 255, 114, 0.55); }
+  .preview-insert-form input:focus { border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.55); }
 
   .preview-insert-form button {
     padding: 5px 9px;
@@ -4227,8 +4265,11 @@
 
   .preview-link-actions {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 3px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .link-preview-user,
@@ -4289,8 +4330,6 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
   }
   .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .battle-state-actions { justify-content: stretch; }
-
   .lineup-actions .generate-button {
     min-height: 48px;
     flex: 1;
@@ -4387,8 +4426,8 @@
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 13px;
-    background: #efede6;
-    color: #24251f;
+    background: var(--color-app-surface);
+    color: var(--color-app-text);
   }
 
   .desktop-accordion-toggle {
@@ -4400,7 +4439,7 @@
     padding: calc(13px * var(--lineup-layout-scale, 1)) calc(14px * var(--lineup-layout-scale, 1));
     border: 0;
     background: transparent;
-    color: #33362f;
+    color: var(--color-app-text);
     cursor: pointer;
     font-size: calc(13px * var(--font-scale, 1));
     font-weight: 800;
@@ -4408,7 +4447,7 @@
   }
 
   .desktop-accordion-toggle strong {
-    color: #7a842f;
+    color: var(--accent-strong);
     font-size: calc(11px * var(--font-scale, 1));
   }
 
@@ -4433,19 +4472,19 @@
   .desktop-accordion-content { padding: calc(12px * var(--lineup-layout-scale, 1)); }
 
   .rank-manager {
-    --rank-gold: #f7d66d;
-    --rank-lime: #dff66c;
-    --rank-ink: #101711;
+    --rank-gold: var(--accent);
+    --rank-lime: var(--accent);
+    --rank-ink: var(--workspace-deep);
     --rank-number-size: calc(40px * var(--lineup-layout-scale, 1));
     display: flex;
     min-height: 0;
     flex: 1;
     flex-direction: column;
     background:
-      radial-gradient(circle at 18% 0%, rgba(223, 246, 108, 0.2), transparent 29%),
-      radial-gradient(circle at 92% 18%, rgba(247, 214, 109, 0.16), transparent 26%),
-      linear-gradient(155deg, #17231a, #0d1510 58%, #182017);
-    color: #f7f3df;
+      radial-gradient(circle at 18% 0%, rgb(var(--app-accent-rgb, 231 255 114) / 0.2), transparent 29%),
+      radial-gradient(circle at 92% 18%, rgb(var(--app-accent-rgb, 231 255 114) / 0.12), transparent 26%),
+      linear-gradient(155deg, var(--color-app-workspace), var(--workspace-deep) 58%, var(--color-app-workspace));
+    color: var(--on-dark);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
   }
 
@@ -4457,11 +4496,11 @@
   .rank-person-form {
     margin-top: 14px;
     padding: 12px;
-    border: 1px solid rgba(247, 214, 109, 0.38);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.38);
     border-radius: 12px;
     background:
-      linear-gradient(135deg, rgba(247, 214, 109, 0.12), rgba(223, 246, 108, 0.06)),
-      rgba(5, 10, 7, 0.52);
+      linear-gradient(135deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.12), rgb(var(--app-accent-rgb, 231 255 114) / 0.05)),
+      color-mix(in srgb, var(--workspace-deep) 72%, transparent);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.18);
   }
 
@@ -4485,7 +4524,7 @@
   }
 
   .rank-manager label > span {
-    color: #e6e8cd;
+    color: var(--on-dark-muted);
     font-size: calc(12px * var(--font-scale, 1));
   }
 
@@ -4493,31 +4532,31 @@
     width: 100%;
     min-width: 0;
     padding: 9px 10px;
-    border: 1px solid rgba(247, 214, 109, 0.42);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.42);
     border-radius: 8px;
     outline: 0;
-    background: #fffdf5;
-    color: #182017;
+    background: var(--surface-field);
+    color: var(--color-app-text);
     font-family: var(--font-sans);
     font-size: calc(14px * var(--font-scale, 1));
   }
 
   .rank-manager input:focus {
     border-color: var(--rank-lime);
-    box-shadow: 0 0 0 3px rgba(223, 246, 108, 0.17), 0 0 20px rgba(223, 246, 108, 0.1);
+    box-shadow: 0 0 0 3px rgb(var(--app-accent-rgb, 231 255 114) / 0.17), 0 0 20px rgb(var(--app-accent-rgb, 231 255 114) / 0.1);
   }
 
   .save-user {
     padding: 9px;
     border: 0;
     border-radius: 7px;
-    border: 1px solid rgba(247, 214, 109, 0.55);
-    background: linear-gradient(135deg, #d9ed60, #aebc3f);
-    color: #17200e;
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.55);
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: var(--accent-ink);
     cursor: pointer;
     font-size: calc(13px * var(--font-scale, 1));
     font-weight: 900;
-    box-shadow: 0 6px 18px rgba(175, 197, 66, 0.19);
+    box-shadow: 0 6px 18px rgb(var(--app-accent-rgb, 231 255 114) / 0.19);
   }
 
   .ranking-error {
@@ -4544,29 +4583,29 @@
     gap: calc(5px * var(--lineup-layout-scale, 1));
     margin: calc(2px * var(--lineup-layout-scale, 1)) 0 calc(7px * var(--lineup-layout-scale, 1));
     padding: calc(7px * var(--lineup-layout-scale, 1)) calc(8px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(247, 214, 109, 0.36);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.36);
     border-radius: 10px;
-    background: linear-gradient(135deg, rgba(247, 214, 109, 0.15), rgba(223, 246, 108, 0.07));
+    background: linear-gradient(135deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.15), rgb(var(--app-accent-rgb, 231 255 114) / 0.07));
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.07);
   }
 
   .rank-keyboard-order.active {
-    border-color: rgba(223, 246, 108, 0.74);
-    background: linear-gradient(135deg, rgba(223, 246, 108, 0.23), rgba(247, 214, 109, 0.12));
-    box-shadow: 0 0 24px rgba(223, 246, 108, 0.12);
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.74);
+    background: linear-gradient(135deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.23), rgb(var(--app-accent-rgb, 231 255 114) / 0.12));
+    box-shadow: 0 0 24px rgb(var(--app-accent-rgb, 231 255 114) / 0.12);
   }
 
   .rank-keyboard-order > span { min-width: 0; }
   .rank-keyboard-order strong,
   .rank-keyboard-order small { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-keyboard-order strong { color: #fff1ba; font-size: calc(13px * var(--font-scale, 1)); }
-  .rank-keyboard-order small { margin-left: 6px; color: #e2e7c3; font-size: calc(12px * var(--font-scale, 1)); }
+  .rank-keyboard-order strong { color: var(--on-dark); font-size: calc(13px * var(--font-scale, 1)); }
+  .rank-keyboard-order small { margin-left: 6px; color: var(--on-dark-muted); font-size: calc(12px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
     padding: calc(5px * var(--lineup-layout-scale, 1)) calc(7px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(223, 246, 108, 0.4);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.4);
     border-radius: 6px;
-    background: #24311d;
-    color: #ecf6b8;
+    background: var(--workspace-highlight);
+    color: var(--on-dark);
     cursor: pointer;
     font-size: calc(11px * var(--font-scale, 1));
     font-weight: 800;
@@ -4591,7 +4630,7 @@
 
   .ranked-user-list > p {
     padding: 12px 3px;
-    color: var(--lineup-dim-on-light);
+    color: var(--on-dark-muted);
     font-size: calc(11px * var(--font-scale, 1));
     text-align: center;
   }
@@ -4605,13 +4644,13 @@
   .rank-zone.unranked-zone {
     margin-top: calc(13px * var(--lineup-layout-scale, 1));
     padding-top: calc(9px * var(--lineup-layout-scale, 1));
-    border-top: 1px solid rgba(247, 214, 109, 0.28);
+    border-top: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.28);
     transition: border-color 120ms ease, background 120ms ease;
   }
 
   .rank-zone.unranked-zone.drop-active {
-    border-top-color: #7a842f;
-    background: rgba(122, 132, 47, 0.08);
+    border-top-color: var(--accent-strong);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.08);
   }
 
   .rank-zone-heading {
@@ -4623,13 +4662,13 @@
   }
 
   .rank-zone-heading strong {
-    color: #f7e5a7;
+    color: var(--on-dark);
     font-size: calc(15px * var(--font-scale, 1));
     letter-spacing: 0.08em;
   }
 
   .rank-zone-heading span {
-    color: #d7dfa7;
+    color: var(--on-dark-muted);
     font-size: calc(12px * var(--font-scale, 1));
     text-align: right;
   }
@@ -4638,10 +4677,10 @@
     display: grid;
     min-height: 76px;
     padding: 10px;
-    border: 1px dashed rgba(122, 132, 47, 0.32);
+    border: 1px dashed rgb(var(--app-accent-rgb, 231 255 114) / 0.32);
     border-radius: 10px;
-    background: rgba(122, 132, 47, 0.04);
-    color: #69722a;
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.04);
+    color: var(--on-dark-muted);
     font-size: calc(11px * var(--font-scale, 1));
     line-height: 1.45;
     text-align: center;
@@ -4649,8 +4688,8 @@
   }
 
   .empty-ranked-drop.active {
-    border-color: #7a842f;
-    background: rgba(122, 132, 47, 0.13);
+    border-color: var(--accent-strong);
+    background: rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
   }
 
   .ranked-user-list article {
@@ -4662,12 +4701,12 @@
     align-items: center;
     gap: calc(4px + 4px * var(--font-scale, 1));
     padding: calc(4px + 8px * var(--font-scale, 1)) calc(3px + 8px * var(--font-scale, 1));
-    border: 1px solid rgba(247, 214, 109, 0.52);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.52);
     border-radius: 14px;
     overflow: hidden;
     background:
-      radial-gradient(circle at 96% 0%, rgba(247, 214, 109, 0.2), transparent 29%),
-      linear-gradient(135deg, #fffdf4, #f3ecd3);
+      radial-gradient(circle at 96% 0%, rgb(var(--app-accent-rgb, 231 255 114) / 0.16), transparent 29%),
+      linear-gradient(135deg, var(--surface-field), var(--color-app-surface));
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -4679,8 +4718,8 @@
   .ranked-user-list article:active { cursor: grabbing; }
 
   .ranked-user-list article:hover {
-    border-color: rgba(223, 246, 108, 0.82);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 0 18px rgba(223, 246, 108, 0.11);
+    border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.82);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 0 18px rgb(var(--app-accent-rgb, 231 255 114) / 0.11);
   }
 
   .ranked-user-list article.keyboard-selected {
@@ -4710,13 +4749,13 @@
   }
 
   .ranked-user-list article.insert-before {
-    border-top-color: #7a842f;
-    box-shadow: inset 0 5px rgba(122, 132, 47, 0.3);
+    border-top-color: var(--accent-strong);
+    box-shadow: inset 0 5px rgb(var(--app-accent-rgb, 231 255 114) / 0.3);
   }
 
   .ranked-user-list article.insert-after {
-    border-bottom-color: #7a842f;
-    box-shadow: inset 0 -5px rgba(122, 132, 47, 0.3);
+    border-bottom-color: var(--accent-strong);
+    box-shadow: inset 0 -5px rgb(var(--app-accent-rgb, 231 255 114) / 0.3);
   }
 
   .ranked-user-list article.replace-target {
@@ -4732,9 +4771,9 @@
     height: var(--rank-number-size);
     align-self: center;
     justify-self: center;
-    border: 1px solid rgba(247, 214, 109, 0.78);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.78);
     border-radius: calc(8px + 4px * var(--font-scale, 1));
-    background: linear-gradient(145deg, #24341d, #111a13);
+    background: linear-gradient(145deg, var(--workspace-highlight), var(--workspace-deep));
     color: var(--rank-lime);
     font-family: var(--font-mono);
     font-size: calc(19px * var(--font-scale, 1));
@@ -4774,7 +4813,7 @@
     width: 66.666%;
     min-width: 0;
     overflow: visible;
-    color: #172018;
+    color: var(--color-app-text);
     font-size: calc(18px * var(--font-scale, 1));
     font-weight: 950;
     line-height: calc(26px * var(--font-scale, 1));
@@ -4790,7 +4829,7 @@
     align-items: center;
     gap: 4px;
     padding: 4px 0 4px 14px;
-    background: linear-gradient(90deg, rgba(255, 254, 247, 0.97), #f3f2d8 14px);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--surface-field) 97%, transparent), var(--accent-soft) 14px);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -4802,10 +4841,10 @@
   .delete-user,
   .clear-aliases {
     padding: 4px 5px !important;
-    border: 1px solid rgba(93, 115, 36, 0.34) !important;
+    border: 1px solid color-mix(in srgb, var(--accent-strong) 34%, transparent) !important;
     border-radius: 6px;
-    background: #edf3ce !important;
-    color: #4f5f19;
+    background: var(--accent-soft) !important;
+    color: var(--accent-ink);
     font-size: calc(11px * var(--font-scale, 1));
   }
 
@@ -4831,7 +4870,7 @@
     color: #8f382b;
   }
 
-  .alias-action:hover { color: #4f5819; }
+  .alias-action:hover { color: var(--accent-ink); }
   .delete-user:hover,
   .clear-aliases:hover { color: #a92f1b; }
 
@@ -4907,8 +4946,8 @@
     padding: 0;
     border: 1px solid rgba(36, 37, 31, 0.12);
     border-radius: 6px;
-    background: #f4f2eb;
-    color: #68752b;
+    background: var(--color-app-surface-raised);
+    color: var(--accent-ink);
     cursor: pointer;
   }
 
@@ -4928,7 +4967,7 @@
     z-index: 3;
     display: grid;
     grid-template-rows: 1fr 2fr 1fr;
-    background: rgba(255, 253, 248, 0.76);
+    background: color-mix(in srgb, var(--surface-field) 76%, transparent);
     pointer-events: none;
   }
 
@@ -4962,11 +5001,11 @@
     align-items: center;
     gap: 8px;
     padding: 9px 13px;
-    border: 1px solid rgba(231, 255, 114, 0.58);
+    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.58);
     border-radius: 10px;
     overflow: hidden;
-    background: rgba(35, 37, 29, 0.94);
-    color: #f6f3e9;
+    background: color-mix(in srgb, var(--workspace-deep) 94%, transparent);
+    color: var(--on-dark);
     font-size: calc(13px * var(--font-scale, 1));
     font-weight: 800;
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
@@ -4976,79 +5015,9 @@
     white-space: nowrap;
   }
 
-  .history-dates {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: calc(7px * var(--lineup-layout-scale, 1));
-  }
-
-  .history-dates label { min-width: 0; }
-  .history-dates span { display: block; margin-bottom: calc(4px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(10px * var(--font-scale, 1)); }
-  .history-dates input {
-    width: 100%;
-    min-width: 0;
-    padding: calc(7px * var(--lineup-layout-scale, 1)) calc(5px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(36, 37, 31, 0.12);
-    border-radius: 7px;
-    outline: 0;
-    background: #fffdf8;
-    color: #55584f;
-    font-family: var(--font-mono);
-    font-size: calc(10px * var(--font-scale, 1));
-  }
-
-  .lineup-history-list {
-    display: grid;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    margin-top: calc(10px * var(--lineup-layout-scale, 1));
-  }
-
-  .lineup-history-list > p {
-    padding: 15px 4px;
-    color: var(--lineup-dim-on-light);
-    font-size: calc(11px * var(--font-scale, 1));
-    text-align: center;
-  }
-
-  .lineup-history-list > article {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
-    border: 1px solid rgba(36, 37, 31, 0.08);
-    border-radius: calc(8px * var(--lineup-layout-scale, 1));
-    overflow: hidden;
-    background: #fffdf8;
-  }
-
-  .lineup-history-list .history-view {
-    display: grid;
-    width: 100%;
-    gap: calc(3px * var(--lineup-layout-scale, 1));
-    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1));
-    border: 0;
-    background: transparent;
-    color: #24251f;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .history-item-actions {
-    display: grid;
-    align-content: center;
-    gap: calc(4px * var(--lineup-layout-scale, 1));
-    padding: calc(5px * var(--lineup-layout-scale, 1));
-    border-left: 1px solid rgba(36, 37, 31, 0.08);
-  }
-
-  .lineup-history-list span { color: var(--lineup-dim-on-light); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
-  .lineup-history-list strong { overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  .lineup-history-list small { color: #7a842f; font-size: calc(10px * var(--font-scale, 1)); }
-
-  .history-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
-
   .history-import-status {
     margin-top: 7px;
-    color: #59651f;
+    color: var(--accent-ink);
     font-size: calc(10px * var(--font-scale, 1));
     text-align: right;
   }

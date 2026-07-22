@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   DEFAULT_STAY_SECONDS,
+  DEFAULT_UI_THEME,
   DEFAULT_FONT_SCALE,
   MAX_STAY_SECONDS,
   MAX_FONT_SCALE,
@@ -8,6 +9,7 @@ import {
   MIN_FONT_SCALE,
   normalizeFontScale,
   normalizeStaySeconds,
+  normalizeUiTheme,
   positiveNumberOrFallback,
 } from './ui-settings';
 
@@ -43,5 +45,13 @@ describe('界面字号设置', () => {
     expect(normalizeStaySeconds(0)).toBe(MIN_STAY_SECONDS);
     expect(normalizeStaySeconds(60)).toBe(MAX_STAY_SECONDS);
     expect(normalizeStaySeconds(7.5)).toBe(7.5);
+  });
+
+  test('界面风格只接受内置的三套主题', () => {
+    expect(normalizeUiTheme('classic')).toBe('classic');
+    expect(normalizeUiTheme('mist')).toBe('mist');
+    expect(normalizeUiTheme('sand')).toBe('sand');
+    expect(normalizeUiTheme('neon')).toBe(DEFAULT_UI_THEME);
+    expect(normalizeUiTheme(undefined)).toBe(DEFAULT_UI_THEME);
   });
 });

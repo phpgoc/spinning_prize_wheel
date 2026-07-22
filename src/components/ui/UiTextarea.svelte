@@ -30,7 +30,7 @@
     outline: 0;
     background: var(--color-app-surface-raised);
     color: var(--color-app-text);
-    font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Consolas, monospace),system-ui;
+    font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Consolas, monospace);
     font-size: calc(15px * var(--font-scale, 1));
     line-height: 1.7;
     transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
@@ -48,7 +48,7 @@
 
   .ui-textarea::placeholder { color: var(--text-dim); opacity: 1; }
   .ui-textarea:focus {
-    border-color: #8a993e;
-    box-shadow: 0 0 0 calc(3px * var(--app-component-scale, 1)) rgba(138, 153, 62, 0.12);
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 0 calc(3px * var(--app-component-scale, 1)) color-mix(in srgb, var(--accent-strong) 12%, transparent);
   }
 </style>

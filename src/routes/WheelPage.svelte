@@ -6,7 +6,9 @@
   import PrizeEditor from '../components/PrizeEditor.svelte';
   import UiButton from '../components/ui/UiButton.svelte';
   import UiConfirmDialog from '../components/ui/UiConfirmDialog.svelte';
+  import UiDateRange from '../components/ui/UiDateRange.svelte';
   import UiTextarea from '../components/ui/UiTextarea.svelte';
+  import UiThemePicker from '../components/ui/UiThemePicker.svelte';
   import Wheel from '../components/Wheel.svelte';
   import type { AppVariant } from '../lib/app-variant';
   import {
@@ -43,9 +45,12 @@
   import {
     DEFAULT_FONT_SCALE,
     DEFAULT_STAY_SECONDS,
+    DEFAULT_UI_THEME,
     normalizeFontScale,
     normalizeStaySeconds,
+    normalizeUiTheme,
     positiveNumberOrFallback,
+    type UiTheme,
   } from '../lib/ui-settings';
   import {
     createRouletteWheelSlots,
@@ -159,6 +164,7 @@
   };
   export let continuousRunning = false;
   export let fontScale = DEFAULT_FONT_SCALE;
+  export let uiTheme: UiTheme = DEFAULT_UI_THEME;
 
   let rotation = 0;
   export let isSpinning = false;
@@ -261,6 +267,7 @@
         continuousTarget,
         staySeconds,
         fontScale,
+        uiTheme,
       }),
     );
   }
@@ -282,6 +289,7 @@
           staySeconds: number;
           continuousIntervalSeconds: number;
           fontScale: number;
+          uiTheme: UiTheme;
         }>;
 
         if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
@@ -305,6 +313,7 @@
         staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds);
         continuousIntervalSeconds = staySeconds;
         fontScale = normalizeFontScale(parsed.fontScale);
+        uiTheme = normalizeUiTheme(parsed.uiTheme);
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -2038,6 +2047,15 @@
 
       <div class="section-divider"></div>
 
+      <section class="setting-block theme-setting">
+        <div class="setting-title-row compact">
+          <div><h3>界面风格</h3><small>对战签表使用独立配色</small></div>
+        </div>
+        <UiThemePicker bind:value={uiTheme} />
+      </section>
+
+      <div class="section-divider"></div>
+
       <section class="setting-block font-scale-setting">
         <div class="setting-title-row compact">
           <label for="font-scale">界面字号</label>
@@ -2556,10 +2574,7 @@
             <div class="common-error">{drawHistoryError}</div>
           {/if}
 
-          <div class="draw-history-dates">
-            <label><span>开始日期</span><input type="date" bind:value={drawHistoryStart} /></label>
-            <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={drawHistoryEnd} /></label>
-          </div>
+          <UiDateRange bind:start={drawHistoryStart} bind:end={drawHistoryEnd} />
 
           {#if drawHistories.length === 0}
             <div class="sidebar-empty-state"><i>◷</i><strong>还没有保存的抽奖</strong></div>

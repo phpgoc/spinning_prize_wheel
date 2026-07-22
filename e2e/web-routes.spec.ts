@@ -53,6 +53,21 @@ test.beforeEach(async ({ page }) => {
   await installTauriMock(page);
 });
 
+test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({ page }) => {
+  await page.goto('/wheel');
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ uiTheme: 'mist' })));
+  await page.goto('/battle');
+  const shellAccent = await page.locator('.app-shell').evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
+  ));
+  const battleAccent = await page.locator('.battle-result').evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
+  ));
+  expect(shellAccent).toBe('139 199 229');
+  expect(battleAccent).toBe('231 255 114');
+  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+});
+
 test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {
   await page.goto('/battle');
   const battleResult = page.locator('.battle-result');
@@ -188,36 +203,36 @@ test('宽屏并排显示三组对战选项', async ({ page }) => {
   expect(settingsBox!.height).toBeLessThan(page.viewportSize()!.height / 2);
 });
 
-test('对战预览操作控件等宽等高并按百分之一百六十六扩容', async ({ page }) => {
+test('对战预览控件放大后逐行铺满且文字不溢出', async ({ page }) => {
   const names = Array.from({ length: 16 }, (_, index) => `选手${index + 1}`).join('\n');
   const prepareSingleBattle = async () => {
     await page.locator('.battle-config textarea').fill(names);
     await page.locator('.battle-config textarea').press('Alt+Enter');
     await page.getByRole('radio', { name: '单败' }).check();
   };
-  const controlDimensions = () => page.locator('.battle-preview-settings label, .battle-preview-settings button').evaluateAll((elements) => (
-    elements.map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return {
-        width: rect.width,
-        height: rect.height,
-        fontSize: Number.parseFloat(style.fontSize),
-        fontWeight: Number.parseInt(style.fontWeight, 10),
-        overflow: element.scrollWidth - element.clientWidth,
-      };
-    })
-  ));
+  const boxes = (selector: string) => page.locator(selector).evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      overflow: element.scrollWidth - element.clientWidth,
+    };
+  }));
 
   await page.goto('/battle');
   await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L');
   await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();
-  const normal = await controlDimensions();
-  expect(normal).toHaveLength(12);
-  expect(Math.max(...normal.map((item) => item.width)) - Math.min(...normal.map((item) => item.width))).toBeLessThan(1);
-  expect(Math.max(...normal.map((item) => item.height)) - Math.min(...normal.map((item) => item.height))).toBeLessThan(1);
-  expect(normal.every((item) => item.fontSize === 15 && item.fontWeight === 900)).toBe(true);
+  const normalGroups = await boxes('.battle-option-groups > fieldset');
+  expect(normalGroups).toHaveLength(3);
+  expect(new Set(normalGroups.map((item) => Math.round(item.x))).size).toBe(3);
+  expect(Math.max(...normalGroups.map((item) => item.y)) - Math.min(...normalGroups.map((item) => item.y))).toBeLessThan(2);
+  const normalGenerate = (await boxes('.battle-generate-button'))[0];
+  const normalRadios = await boxes('.battle-option-groups label');
+  expect(Math.min(...normalRadios.map((item) => item.height))).toBeGreaterThanOrEqual(55);
+  expect(normalGenerate.height).toBeGreaterThanOrEqual(55);
   await expect(page.locator('.battle-option-actions .battle-generate-button')).toHaveCount(1);
   const normalSettingsWidth = await page.locator('.battle-preview-settings').evaluate((element) => ({
     client: element.clientWidth,
@@ -233,20 +248,23 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
   await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
   await page.reload();
   await prepareSingleBattle();
-  const large = await controlDimensions();
-  expect(large).toHaveLength(normal.length);
-  expect(Math.max(...large.map((item) => item.width)) - Math.min(...large.map((item) => item.width))).toBeLessThan(1);
-  expect(Math.max(...large.map((item) => item.height)) - Math.min(...large.map((item) => item.height))).toBeLessThan(1);
-  expect(large.every((item) => item.fontSize === 45 && item.fontWeight === 900 && item.overflow <= 1)).toBe(true);
-  expect(large[0].width / normal[0].width).toBeGreaterThan(1.65);
-  expect(large[0].width / normal[0].width).toBeLessThan(1.67);
-  expect(large[0].height / normal[0].height).toBeGreaterThan(1.65);
-  expect(large[0].height / normal[0].height).toBeLessThan(1.67);
+  const largeGroups = await boxes('.battle-option-groups > fieldset');
+  expect(new Set(largeGroups.map((item) => Math.round(item.x))).size).toBe(1);
+  expect(new Set(largeGroups.map((item) => Math.round(item.y))).size).toBe(3);
+  expect(Math.max(...largeGroups.map((item) => item.width)) - Math.min(...largeGroups.map((item) => item.width))).toBeLessThan(1);
+  const largeActions = await boxes('.battle-option-actions > label, .battle-option-actions > button');
+  expect(new Set(largeActions.map((item) => Math.round(item.x))).size).toBe(1);
+  expect(new Set(largeActions.map((item) => Math.round(item.y))).size).toBe(3);
+  expect(Math.max(...largeActions.map((item) => item.width)) - Math.min(...largeActions.map((item) => item.width))).toBeLessThan(1);
+  const largeRadios = await boxes('.battle-option-groups label');
+  expect(largeRadios.every((item) => item.overflow <= 1)).toBe(true);
+  const largeGenerate = (await boxes('.battle-generate-button'))[0];
+  expect(largeGenerate.height).toBeGreaterThan(normalGenerate.height * 1.45);
   const largeSettingsWidth = await page.locator('.battle-preview-settings').evaluate((element) => ({
     client: element.clientWidth,
     scroll: element.scrollWidth,
   }));
-  expect(largeSettingsWidth.scroll).toBeGreaterThan(largeSettingsWidth.client * 1.6);
+  expect(largeSettingsWidth.scroll - largeSettingsWidth.client).toBeLessThanOrEqual(1);
 });
 
 test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {

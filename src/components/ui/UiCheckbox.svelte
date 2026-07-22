@@ -36,14 +36,14 @@
     margin-top: calc(12px * var(--app-component-scale, 1));
     border-color: rgb(255 255 255 / 10%);
     background: rgb(255 255 255 / 3.5%);
-    color: #d9dbd2;
+    color: var(--on-dark-muted);
   }
   .battle-action {
-    grid-column: 2;
-    width: var(--battle-control-width, 100%);
-    height: var(--battle-control-height, auto);
-    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: var(--battle-control-height, auto);
     margin: 0;
+    padding: calc(10px * var(--app-component-scale, 1)) calc(12px * var(--app-component-scale, 1));
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 900;
   }
@@ -52,10 +52,11 @@
     height: calc(14px * var(--app-component-scale, 1));
     flex: 0 0 auto;
     margin: 0;
-    accent-color: #7d9134;
+    accent-color: var(--accent-strong);
   }
 
   span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ui-checkbox:has(input:checked) { border-color: #8a993e; background: #f2f6df; color: #465318; }
+  .battle-action span { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+  .ui-checkbox:has(input:checked) { border-color: var(--accent-strong); background: var(--accent-soft); color: var(--accent-ink); }
   .disabled { cursor: not-allowed; opacity: 0.48; }
 </style>

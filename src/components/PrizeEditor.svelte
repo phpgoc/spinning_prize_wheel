@@ -136,9 +136,9 @@
 
   .prize-row.selected {
     z-index: 1;
-    border-color: #899b36;
-    background: #fbffe8;
-    box-shadow: 0 0 0 2px rgba(231, 255, 114, 0.72), 0 7px 18px rgba(87, 99, 34, 0.14);
+    border-color: var(--accent-strong);
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 2px rgb(var(--app-accent-rgb, 231 255 114) / 0.72), 0 7px 18px rgba(87, 99, 34, 0.14);
     transform: translateX(3px);
   }
 
@@ -149,7 +149,7 @@
     left: -5px;
     width: 3px;
     border-radius: 999px;
-    background: #8da139;
+    background: var(--accent-strong);
     content: '';
   }
 

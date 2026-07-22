@@ -39,6 +39,38 @@ test('转盘音乐与音效可关闭并持久化', async ({ page }) => {
   await expect(page.getByRole('button', { name: '开启音乐与音效' })).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('三套界面风格即时切换并跨页面持久化', async ({ page }) => {
+  const shell = page.locator('.app-shell');
+  const classic = page.getByRole('button', { name: /经典.*深灰.*苔绿/u });
+  const mist = page.getByRole('button', { name: /雾蓝.*冷灰.*雾蓝/u });
+  const sand = page.getByRole('button', { name: /暖砂.*暖灰.*琥珀/u });
+  await expect(classic).toHaveAttribute('aria-pressed', 'true');
+
+  await mist.click();
+  await expect(shell).toHaveAttribute('data-ui-theme', 'mist');
+  await expect.poll(() => shell.evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--color-app-accent').trim()
+  ))).toBe('#8bc7e5');
+  await expect(page.locator('.candidate-board')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').uiTheme
+  ))).toBe('mist');
+
+  await page.goto('/grouping');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
+  await expect.poll(() => page.locator('.lineup-page').evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--color-app-workspace').trim()
+  ))).toBe('#192630');
+  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+
+  await page.goto('/wheel');
+  await sand.click();
+  await expect(shell).toHaveAttribute('data-ui-theme', 'sand');
+  await expect(page.locator('.candidate-board')).toHaveCSS('background-color', 'rgb(241, 233, 223)');
+  await page.reload();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'sand');
+});
+
 test('大窗口会继续放大转盘并保留候选栏空间', async ({ page }) => {
   const wheel = page.locator('.wheel-stage, .luxury-stage, .monopoly-stage');
   await expect(wheel).toHaveCount(1);

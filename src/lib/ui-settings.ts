@@ -4,6 +4,9 @@ export const MAX_FONT_SCALE = 3;
 export const DEFAULT_STAY_SECONDS = 3;
 export const MIN_STAY_SECONDS = 0.5;
 export const MAX_STAY_SECONDS = 10;
+export const UI_THEMES = ['classic', 'mist', 'sand'] as const;
+export type UiTheme = (typeof UI_THEMES)[number];
+export const DEFAULT_UI_THEME: UiTheme = 'classic';
 
 /** 把持久化或输入的字号倍率限制在界面支持范围内。 */
 export function normalizeFontScale(value: unknown): number {
@@ -27,4 +30,11 @@ export function normalizeStaySeconds(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_STAY_SECONDS;
   return Math.min(MAX_STAY_SECONDS, Math.max(MIN_STAY_SECONDS, parsed));
+}
+
+/** 只接受产品内置的界面风格，旧设置或异常值回退到经典主题。 */
+export function normalizeUiTheme(value: unknown): UiTheme {
+  return typeof value === 'string' && (UI_THEMES as readonly string[]).includes(value)
+    ? value as UiTheme
+    : DEFAULT_UI_THEME;
 }

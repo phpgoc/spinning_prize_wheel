@@ -132,7 +132,7 @@ test('排名字号放大时排名框同步扩容', async ({ page }) => {
   expect(Math.abs(largeAlignment.innerTop - largeAlignment.innerBottom)).toBeLessThan(1);
 });
 
-test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等宽', async ({ page }) => {
+test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整行展开', async ({ page }) => {
   const rankedUsers = Array.from({ length: 8 }, (_, index) => ({
     id: index + 1,
     name: `选手${index + 1}`,
@@ -147,7 +147,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await page.getByRole('radio', { name: '按排名' }).check();
   await expect(page.locator('.battle-preview-bracket .battle-preview-rounds')).toBeVisible();
   await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(0);
-  await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('插入');
+  await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('＋');
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 
   const orderControls = page.locator('.battle-order-group label, .battle-order-group button');
@@ -165,21 +165,13 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
     const rect = element.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
   }));
-  expect(Math.max(...sizes.map((size) => size.width)) - Math.min(...sizes.map((size) => size.width))).toBeLessThan(1);
-  expect(Math.max(...sizes.map((size) => size.height)) - Math.min(...sizes.map((size) => size.height))).toBeLessThan(1);
-  const groupGaps = await page.locator('.battle-option-groups').evaluate((root) => {
-    const rootRect = root.getBoundingClientRect();
-    const groups = [...root.querySelectorAll('fieldset')].map((group) => group.getBoundingClientRect());
-    return [
-      groups[0].left - rootRect.left,
-      groups[1].left - groups[0].right,
-      groups[2].left - groups[1].right,
-      rootRect.right - groups[2].right,
-    ];
-  });
-  expect(Math.max(...groupGaps) - Math.min(...groupGaps)).toBeLessThan(1);
-  expect(groupGaps[0]).toBeGreaterThan(30);
-  const defaultGroupWidth = (await page.locator('.battle-format-group').boundingBox())!.width;
+  expect(Math.min(...sizes.map((size) => size.height))).toBeGreaterThanOrEqual(55);
+  const normalGroups = await page.locator('.battle-option-groups > fieldset').evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width };
+  }));
+  expect(new Set(normalGroups.map((group) => Math.round(group.x))).size).toBe(3);
+  expect(Math.max(...normalGroups.map((group) => group.y)) - Math.min(...normalGroups.map((group) => group.y))).toBeLessThan(2);
   const statusBox = await page.locator('.battle-count-status').boundingBox();
   const actionBox = await page.locator('.battle-option-actions > label').boundingBox();
   expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(actionBox!.y);
@@ -189,20 +181,21 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(8);
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
-  const largeGroupWidth = (await page.locator('.battle-format-group').boundingBox())!.width;
-  expect(largeGroupWidth / defaultGroupWidth).toBeGreaterThan(1.65);
-  expect(largeGroupWidth / defaultGroupWidth).toBeLessThan(1.67);
-  const largeGroupGaps = await page.locator('.battle-option-groups').evaluate((root) => {
-    const rootRect = root.getBoundingClientRect();
-    const groups = [...root.querySelectorAll('fieldset')].map((group) => group.getBoundingClientRect());
-    return [
-      groups[0].left - rootRect.left,
-      groups[1].left - groups[0].right,
-      groups[2].left - groups[1].right,
-      rootRect.right - groups[2].right,
-    ];
-  });
-  expect(Math.max(...largeGroupGaps)).toBeLessThan(2);
+  const largeGroups = await page.locator('.battle-option-groups > fieldset').evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width };
+  }));
+  expect(new Set(largeGroups.map((group) => Math.round(group.x))).size).toBe(1);
+  expect(new Set(largeGroups.map((group) => Math.round(group.y))).size).toBe(3);
+  expect(Math.max(...largeGroups.map((group) => group.width)) - Math.min(...largeGroups.map((group) => group.width))).toBeLessThan(1);
+  const largeActions = await page.locator('.battle-option-actions > label, .battle-option-actions > button').evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width };
+  }));
+  expect(new Set(largeActions.map((action) => Math.round(action.x))).size).toBe(1);
+  expect(Math.max(...largeActions.map((action) => action.width)) - Math.min(...largeActions.map((action) => action.width))).toBeLessThan(1);
+  const settingsOverflow = await page.locator('.battle-preview-settings').evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(settingsOverflow).toBeLessThanOrEqual(1);
 });
 
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
@@ -453,7 +446,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   await expect(historyToggle).toContainText('展开');
   await historyToggle.click();
   await expect(historyToggle).toContainText('收起');
-  await expect(page.locator('.battle-state-actions').getByRole('button', { name: '加载当前' })).toBeEnabled();
+  await expect(page.locator('.history-panel .ui-history-footer').getByRole('button', { name: '加载当前' })).toBeEnabled();
   await historyToggle.click();
   await expect(loadCurrent).toHaveCSS('visibility', 'hidden');
   expect(await saveCount()).toBe(generatedSaveCount);
@@ -475,7 +468,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   expect(originalHistory.snapshot.matches[0].downResult).toBeNull();
 
   await historyToggle.click();
-  const historyLoad = page.locator('.battle-history-list article').first().getByRole('button', { name: '编辑' });
+  const historyLoad = page.locator('.history-panel .ui-history-row').first().getByRole('button', { name: '编辑' });
   const beforeDirectHistoryLoad = await saveCount();
   await historyLoad.click();
   await expect(page.getByRole('heading', { name: /用.*历史签表替换编辑区/u })).toHaveCount(0);
@@ -598,7 +591,7 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
 
   await page.getByRole('button', { name: /对战历史/u }).click();
-  await page.locator('.battle-history-list .history-view').first().click();
+  await page.locator('.history-panel .ui-history-summary').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   const historyMatch = page.locator('.battle-history-bracket .battle-round').first().locator('.battle-match').first();
@@ -825,7 +818,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await page.getByRole('button', { name: /分组历史/u }).click();
   const lineupHistoryPanel = page.locator('.history-panel');
   await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
-  await lineupHistoryPanel.locator('.history-view').first().click();
+  await lineupHistoryPanel.locator('.ui-history-summary').first().click();
   await expect(page.locator('.lineup-result tbody tr')).toHaveCount(1);
   await expect(page.locator('.lineup-result').getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
   await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
@@ -1020,6 +1013,12 @@ test('未识别预览可按数字选排名并用空格关联，Enter 不会误�
   const mysteryInput = page.getByLabel('第 2 个名称');
   const unknownRow = page.locator('.preview-row.unknown').filter({ has: mysteryInput });
   await expect(unknownRow).toBeVisible();
+  const nameAlignment = await unknownRow.evaluate((row) => {
+    const rowRect = row.getBoundingClientRect();
+    const nameRect = row.querySelector('.preview-name')!.getBoundingClientRect();
+    return Math.abs((rowRect.left + rowRect.width / 2) - (nameRect.left + nameRect.width / 2));
+  });
+  expect(nameAlignment).toBeLessThan(1);
   await unknownRow.getByRole('button', { name: '关联' }).click();
 
   await page.keyboard.press('1');

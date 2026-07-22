@@ -17,7 +17,12 @@
     type AppPage,
     type AppVariant,
   } from './lib/app-variant';
-  import { normalizeFontScale } from './lib/ui-settings';
+  import {
+    DEFAULT_UI_THEME,
+    normalizeFontScale,
+    normalizeUiTheme,
+    type UiTheme,
+  } from './lib/ui-settings';
   import type { DrawMode } from './lib/types';
 
   const STORAGE_KEY = 'wheel-settings-v1';
@@ -31,6 +36,7 @@
   let wheelSpinning = false;
   let continuousRunning = false;
   let fontScale = initialFontScale();
+  let uiTheme: UiTheme = initialUiTheme();
   let removeCloseRequestedListener: (() => void) | null = null;
   let appUnmounted = false;
   let closingWindow = false;
@@ -82,6 +88,18 @@
       return normalizeFontScale(saved.fontScale);
     } catch {
       return 1;
+    }
+  }
+
+  function initialUiTheme(): UiTheme {
+    if (typeof window === 'undefined') return DEFAULT_UI_THEME;
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
+      ) as { uiTheme?: unknown };
+      return normalizeUiTheme(saved.uiTheme);
+    } catch {
+      return DEFAULT_UI_THEME;
     }
   }
 
@@ -151,6 +169,7 @@
   class:desktop-runtime={desktopRuntime}
   class:wheel-active={page === 'wheel'}
   class="app-shell"
+  data-ui-theme={uiTheme}
   style={`--font-scale: ${fontScale}`}
 >
   <ExportNotice />
@@ -176,6 +195,7 @@
       bind:isSpinning={wheelSpinning}
       bind:continuousRunning
       bind:fontScale
+      bind:uiTheme
       active={page === 'wheel'}
       {desktopRuntime}
       {variant}

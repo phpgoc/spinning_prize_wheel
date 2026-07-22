@@ -55,7 +55,9 @@ test('清空名单会明确提示并同时清空名单预览', async ({ page }) 
 test('预览支持前插、末尾添加并用回车保存', async ({ page }) => {
   await confirmNames(page, ['甲', '乙']);
 
-  await page.getByRole('button', { name: '在 乙 前插入' }).click();
+  const insertBeforeSecond = page.getByRole('button', { name: '在 乙 前插入' });
+  await expect(insertBeforeSecond).toHaveText('＋');
+  await insertBeforeSecond.click();
   const beforeSecond = page.getByLabel('插入到 乙 前');
   await expect(beforeSecond).toBeFocused();
   await beforeSecond.fill('丙');

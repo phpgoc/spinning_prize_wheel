@@ -30,6 +30,6 @@
     box-shadow: var(--app-frame-shadow);
     text-align: center;
   }
-  .battle-web-unavailable strong { color: #e7ff72; font-size: 24px; }
+  .battle-web-unavailable strong { color: var(--accent); font-size: 24px; }
   .battle-web-unavailable p { color: #858b99; }
 </style>
