@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { installTauriMock } from './helpers/tauri-mock';
 
-async function clearWebBattle(page: Page) {
+async function clearDesktopBattle(page: Page) {
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.battle-config textarea')).toHaveValue('');
+  await expect(page.locator('.battle-config textarea')).toBeEnabled();
+  await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(0);
 }
 
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
@@ -47,7 +48,11 @@ test('网页版对战页只提示使用桌面版', async ({ page }) => {
   await expect(page.locator('.battle-config, .battle-result, .battle-sidebar')).toHaveCount(0);
 });
 
-test.describe.skip('网页版已停用的对战功能', () => {
+test.describe('桌面版对战显示与配置', () => {
+test.beforeEach(async ({ page }) => {
+  await installTauriMock(page);
+});
+
 test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {
   await page.goto('/battle');
   const battleResult = page.locator('.battle-result');
@@ -149,7 +154,7 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
   await expect(page.getByRole('group', { name: '名单顺序' })).toHaveCount(0);
 
   await page.getByRole('radio', { name: '单败' }).check();
-  await expect(page.getByRole('radio', { name: '按排名' })).toBeDisabled();
+  await expect(page.getByRole('radio', { name: '按排名' })).toBeEnabled();
   await expect(page.getByRole('radio', { name: '全随机' })).toBeChecked();
   await expect(page.getByRole('radio', { name: /^前 \d+ 固定$/ })).toHaveCount(5);
   await expect(previewSettings.getByRole('radio')).toHaveCount(11);
@@ -180,7 +185,7 @@ test('宽屏并排显示三组对战选项', async ({ page }) => {
   expect(new Set(boxes.map((box) => Math.round(box.x))).size).toBe(3);
   expect(Math.max(...boxes.map((box) => box.width)) - Math.min(...boxes.map((box) => box.width))).toBeLessThan(1);
   const settingsBox = await page.locator('.battle-preview-settings').boundingBox();
-  expect(settingsBox!.height).toBeLessThan(400);
+  expect(settingsBox!.height).toBeLessThan(page.viewportSize()!.height / 2);
 });
 
 test('对战预览操作控件等宽等高并按百分之一百六十六扩容', async ({ page }) => {
@@ -209,7 +214,7 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
   await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();
   const normal = await controlDimensions();
-  expect(normal).toHaveLength(11);
+  expect(normal).toHaveLength(12);
   expect(Math.max(...normal.map((item) => item.width)) - Math.min(...normal.map((item) => item.width))).toBeLessThan(1);
   expect(Math.max(...normal.map((item) => item.height)) - Math.min(...normal.map((item) => item.height))).toBeLessThan(1);
   expect(normal.every((item) => item.fontSize === 15 && item.fontWeight === 900)).toBe(true);
@@ -252,7 +257,8 @@ test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
   await page.getByRole('button', { name: /^抽签/ }).click();
 
   const firstMatch = page.locator('.single-bracket-side .battle-match').first();
-  const firstName = (await firstMatch.locator('.battle-side strong').first().textContent())!.trim();
+  const firstReveal = firstMatch.getByRole('button', { name: /^揭晓 /u }).first();
+  const firstName = (await firstReveal.getAttribute('aria-label'))!.replace(/^揭晓 /u, '');
   const firstInputs = firstMatch.locator('input[type="number"]');
   await firstInputs.nth(0).fill('4');
   await firstInputs.nth(1).fill('1');
@@ -292,10 +298,7 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
 
   await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
   await page.reload();
-  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
-  await page.locator('.battle-config textarea').press('Alt+Enter');
-  await page.getByRole('radio', { name: '单败' }).check();
-  await page.getByRole('button', { name: /^抽签/ }).click();
+  await expect(page.locator('.single-battle-bracket')).toBeVisible();
   const largeColumn = page.locator('.single-bracket-side.left .battle-round:first-child > div');
   const largeCard = await largeColumn.locator('.battle-match').first().boundingBox();
   const largeGap = await largeColumn.evaluate((element) => {
@@ -324,7 +327,11 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   expect(resultOverflow).toBeLessThanOrEqual(1);
 });
 
-test.describe.skip('网页版已停用的对战功能', () => {
+test.describe('桌面版对战签表交互', () => {
+test.beforeEach(async ({ page }) => {
+  await installTauriMock(page);
+});
+
 test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) => {
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
@@ -349,8 +356,8 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '前 4 固定' }).check();
 
-  await expect(page.locator('.battle-fixed-preview .battle-match')).toHaveCount(4);
-  await expect(page.locator('.battle-fixed-preview .fixed strong')).toHaveText([
+  await expect(page.locator('.battle-preview-bracket .battle-match')).toHaveCount(4);
+  await expect(page.locator('.battle-preview-bracket .fixed strong')).toHaveText([
     '选手1', '选手4', '选手2', '选手3',
   ]);
   await page.getByRole('button', { name: /^抽签/ }).click();
@@ -369,7 +376,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   expect(leftBox!.x + leftBox!.width).toBeLessThan(finalBox!.x);
   expect(finalBox!.x + finalBox!.width).toBeLessThan(rightBox!.x);
 
-  await clearWebBattle(page);
+  await clearDesktopBattle(page);
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -428,7 +435,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '总决赛', exact: true })).toHaveCount(1);
 
-  await clearWebBattle(page);
+  await clearDesktopBattle(page);
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -474,9 +481,10 @@ test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ pag
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('A1\nA2\nB1\nB2\nC1\nC2\nD1\nD2');
   await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('checkbox', { name: '悬念揭晓' }).uncheck();
   await page.getByRole('button', { name: /^抽签/ }).click();
 
-  const matches = page.locator('.battle-round .battle-match');
+  const matches = page.locator('[data-battle-stage="single"][data-battle-level="1"]');
   await expect(matches).toHaveCount(4);
   for (let index = 0; index < await matches.count(); index += 1) {
     const entries = await matches.nth(index).locator('.battle-side strong').allTextContents();
@@ -492,7 +500,7 @@ test('同组不对战至少需要四组八项', async ({ page }) => {
   const textarea = page.locator('.battle-config textarea');
   await textarea.fill('A1\nA2\nB1\nB2\nC1\nC2');
   await textarea.press('Alt+Enter');
-  await expect(page.getByText('需偶数且至少 8 项', { exact: true })).toBeVisible();
+  await expect(page.getByText('需 8 项', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 
   await textarea.fill('A1\nA2\nB1\nB2\nC1\nC2\nD1\nD2');
@@ -529,10 +537,12 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await page.locator('.battle-result').focus();
   await page.locator('.battle-result').press('ArrowRight');
   await expect(firstInputs.nth(0)).toBeFocused();
-  await firstInputs.nth(0).fill('4');
   await firstInputs.nth(0).press('ArrowDown');
   await expect(firstInputs.nth(1)).toBeFocused();
+  await firstInputs.nth(0).focus();
+  await firstInputs.nth(0).fill('4');
   await expect(firstInputs.nth(0)).toHaveValue('4');
+  await firstInputs.nth(1).focus();
   await firstInputs.nth(1).fill('1');
   await firstInputs.nth(1).press('Enter');
   await expect(matches.nth(0).locator('.battle-side.winner')).toHaveCount(1);
@@ -559,11 +569,12 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await expect(page.locator('.battle-result')).toHaveClass(/battle-fullscreen/u);
 });
 
-test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {
+test('桌面对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('checkbox', { name: '悬念揭晓' }).uncheck();
   await page.getByRole('button', { name: /^抽签/ }).click();
 
   const firstRoundMatches = page.locator('.single-bracket-side .battle-match');
@@ -586,23 +597,32 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   await expect(lockedSourceInputs.nth(0)).toHaveAttribute('title', '下游已有比分');
   await expect(lockedSourceInputs.nth(1)).toBeEnabled();
 
-  const jsonDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'JSON', exact: true }).click();
-  const jsonDownload = await jsonDownloadPromise;
-  expect(jsonDownload.suggestedFilename()).toMatch(/^对战状态-\d{4}-\d{2}-\d{2}\.json$/);
-  const jsonPath = await jsonDownload.path();
-  const exported = JSON.parse(await readFile(jsonPath!, 'utf8'));
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_text_file').length
+  ))).toBe(1);
+  const jsonExport = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_text_file').at(-1).args,
+  ));
+  expect(jsonExport).toMatchObject({ prefix: '对战状态', extension: 'json' });
+  const exported = JSON.parse(jsonExport.content);
   expect(exported.kind).toBe('battle-tmp');
   expect(exported.matches[0]).toMatchObject({ stage: 'single', level: 1, position: 1 });
   expect(exported.state_json).toBeUndefined();
 
-  const excelDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Excel', exact: true }).click();
-  const excelDownload = await excelDownloadPromise;
-  expect(excelDownload.suggestedFilename()).toMatch(/^对战签表-\d{4}-\d{2}-\d{2}\.xlsx$/);
-  const excelPath = await excelDownload.path();
-  const bytes = await readFile(excelPath!);
-  expect(Array.from(bytes.subarray(0, 2))).toEqual([0x50, 0x4b]);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file').length
+  ))).toBe(1);
+  const excelExport = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file').at(-1).args,
+  ));
+  expect(excelExport).toMatchObject({ prefix: '对战签表', extension: 'xlsx' });
+  expect(excelExport.bytes.slice(0, 2)).toEqual([0x50, 0x4b]);
 });
 });
 
