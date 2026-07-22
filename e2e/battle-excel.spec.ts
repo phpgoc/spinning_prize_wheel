@@ -78,6 +78,38 @@ test('同组不对战 1 对 2 使用相同左右签表并在完赛后原位写�
   expect(completedSheet.getCell('H16').value).toBe('冠军');
 });
 
+test('双败从上下向总决赛收拢并把总冠军固定在最右侧', async ({ page }) => {
+  test.setTimeout(60_000);
+  await drawDoubleBattle(page, eightNames);
+
+  const initialSheet = await exportBattleWorksheet(page);
+  expect(initialSheet.columnCount).toBe(17);
+  expect(initialSheet.getCell('A4').value).toBe('胜者组');
+  expect(initialSheet.getCell('A26').value).toBe('败者组');
+  expect(initialSheet.getCell('M24').value).toBe('总决赛');
+  expect(initialSheet.getCell('P24').value).toBe('总冠军');
+  expect(initialSheet.getCell('P25').value).toBe('等待总决赛');
+  expect(initialSheet.getCell('A10').value).toBeNull();
+  expect(initialSheet.getCell('A32').value).toBeNull();
+  expect(initialSheet.getCell('G6').value).toBeNull();
+  expect(initialSheet.getCell('G24').value).not.toBeNull();
+  expect(initialSheet.getCell('J28').value).not.toBeNull();
+  expect(initialSheet.getCell('J33').value).toBeNull();
+
+  const firstMatch = page.locator(
+    '[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]',
+  );
+  await enterBattleScore(firstMatch, 4, 1);
+  const partialSheet = await exportBattleWorksheet(page);
+  expect(excelLayoutSignature(partialSheet)).toEqual(excelLayoutSignature(initialSheet));
+
+  await completeBattleBracket(page, '.double-battle-bracket');
+  const completedSheet = await exportBattleWorksheet(page);
+  expect(excelLayoutSignature(completedSheet)).toEqual(excelLayoutSignature(initialSheet));
+  expect(completedSheet.getCell('P25').value).not.toBe('等待总决赛');
+  expect(completedSheet.getCell('Q25').value).toBe('冠军');
+});
+
 async function drawSingleBattle(page: Page, format: string, names: string[]) {
   await page.goto('/battle', { waitUntil: 'domcontentloaded' });
   const textarea = page.locator('.battle-config textarea');
@@ -89,6 +121,19 @@ async function drawSingleBattle(page: Page, format: string, names: string[]) {
   if (await suspense.isChecked()) await suspense.uncheck();
   await page.getByRole('button', { name: /^抽签/u }).click();
   await expect(page.locator('.single-battle-bracket')).toBeVisible();
+}
+
+async function drawDoubleBattle(page: Page, names: string[]) {
+  await page.goto('/battle', { waitUntil: 'domcontentloaded' });
+  const textarea = page.locator('.battle-config textarea');
+  await expect(textarea).toBeVisible({ timeout: 30_000 });
+  await textarea.fill(names.join('\n'));
+  await textarea.press('Alt+Enter');
+  await page.getByRole('radio', { name: '双败', exact: true }).check();
+  const suspense = page.getByRole('checkbox', { name: '悬念揭晓' });
+  if (await suspense.isChecked()) await suspense.uncheck();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await expect(page.locator('.double-battle-bracket')).toBeVisible();
 }
 
 async function enterBattleScore(match: Locator, up: number, down: number) {
@@ -103,8 +148,12 @@ async function enterBattleScore(match: Locator, up: number, down: number) {
 }
 
 async function completeSingleBattle(page: Page) {
+  await completeBattleBracket(page, '.single-battle-bracket');
+}
+
+async function completeBattleBracket(page: Page, bracketSelector: string) {
   for (let completed = 0; completed < 32; completed += 1) {
-    const readyMatchId = await page.locator('.single-battle-bracket .battle-match').evaluateAll((matches) => {
+    const readyMatchId = await page.locator(`${bracketSelector} .battle-match`).evaluateAll((matches) => {
       const ready = matches.find((match) => {
         const inputs = [...match.querySelectorAll<HTMLInputElement>('input[type="number"]')];
         return inputs.length === 2 && inputs.every((input) => !input.disabled && input.value === '');
@@ -113,7 +162,7 @@ async function completeSingleBattle(page: Page) {
     });
     if (readyMatchId === null) return;
     await enterBattleScore(
-      page.locator(`.single-battle-bracket .battle-match[data-battle-match-id="${readyMatchId}"]`),
+      page.locator(`${bracketSelector} .battle-match[data-battle-match-id="${readyMatchId}"]`),
       4,
       1,
     );

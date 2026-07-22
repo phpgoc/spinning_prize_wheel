@@ -32,9 +32,20 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
     ? groupedLevels(snapshot.matches.filter((match) => match.stage === 'single'), '第')
     : [];
   const singleLayout = singleLike ? createSingleExcelLayout(singleLevels.length) : null;
-  const sections = singleLike ? [] : battleExcelSections(snapshot);
-  const maxLevelCount = Math.max(...sections.map((section) => section.levels.length), 1);
-  const lastColumn = singleLayout?.lastColumn ?? maxLevelCount * 2 + 2;
+  const doubleLevels = snapshot.format === 'double-elimination'
+    ? {
+      winner: groupedLevels(snapshot.matches.filter((match) => match.stage === 'winner'), 'W'),
+      loser: groupedLevels(snapshot.matches.filter((match) => match.stage === 'loser'), 'L'),
+      final: groupedLevels(snapshot.matches.filter((match) => match.stage === 'final'), 'GF'),
+    }
+    : null;
+  const doubleLayout = doubleLevels
+    ? createDoubleExcelLayout(
+      Math.max(doubleLevels.winner.length, doubleLevels.loser.length),
+      doubleLevels.final.length,
+    )
+    : null;
+  const lastColumn = singleLayout?.lastColumn ?? doubleLayout?.lastColumn ?? 2;
 
   worksheet.mergeCells(1, 1, 1, lastColumn);
   const titleCell = worksheet.getCell(1, 1);
@@ -63,9 +74,9 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
   metadataCell.alignment = { vertical: 'middle', horizontal: 'center' };
   worksheet.getRow(2).height = 22;
 
-  let startRow = 4;
+  const startRow = 4;
   if (singleLayout) {
-    startRow = renderSingleEliminationSection(
+    renderSingleEliminationSection(
       worksheet,
       snapshot,
       singleLevels,
@@ -73,31 +84,15 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
       startRow,
       nameById,
     );
-  } else {
-    for (const section of sections) {
-      startRow = renderBattleSection(
-        worksheet,
-        section.title,
-        section.levels,
-        startRow,
-        lastColumn,
-        nameById,
-      );
-    }
-  }
-
-  const champion = battleChampionId(snapshot);
-  if (!singleLayout && champion !== null) {
-    const championRow = 3;
-    worksheet.getCell(championRow, lastColumn - 1).value = '冠军';
-    worksheet.getCell(championRow, lastColumn).value = nameById.get(champion) ?? `#${champion}`;
-    for (const column of [lastColumn - 1, lastColumn]) {
-      const cell = worksheet.getCell(championRow, column);
-      cell.font = { bold: true, color: { argb: 'FF3E4B16' } };
-      cell.fill = solidFill(HEADER_FILL);
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = thinBorder();
-    }
+  } else if (doubleLevels && doubleLayout) {
+    renderDoubleEliminationSection(
+      worksheet,
+      snapshot,
+      doubleLevels,
+      doubleLayout,
+      startRow,
+      nameById,
+    );
   }
 
   for (let column = 1; column <= lastColumn; column += 1) {
@@ -109,7 +104,13 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
           : column === singleLayout.final.score
             ? 10
             : singleLayout.scoreColumns.has(column) ? 8 : 18
-      : column % 2 === 1 ? 18 : 8;
+      : doubleLayout
+        ? doubleLayout.spacerColumns.has(column)
+          ? 3
+          : doubleLayout.emphasisColumns.has(column)
+            ? doubleLayout.scoreColumns.has(column) ? 10 : 24
+            : doubleLayout.scoreColumns.has(column) ? 8 : 18
+        : 18;
   }
   worksheet.properties.defaultRowHeight = 22;
   const buffer = await workbook.xlsx.writeBuffer();
@@ -157,6 +158,221 @@ function createSingleExcelLayout(levelCount: number): SingleExcelLayout {
     final.score,
   ]);
   return { lastColumn, left, right, final, spacerColumns, scoreColumns };
+}
+
+interface DoubleExcelLayout {
+  lastColumn: number;
+  groupRounds: SingleExcelRoundColumns[];
+  finals: SingleExcelRoundColumns[];
+  champion: SingleExcelRoundColumns;
+  spacerColumns: Set<number>;
+  scoreColumns: Set<number>;
+  emphasisColumns: Set<number>;
+}
+
+function createDoubleExcelLayout(groupLevelCount: number, finalLevelCount: number): DoubleExcelLayout {
+  const blockCount = groupLevelCount + finalLevelCount + 1;
+  const columns = Array.from({ length: blockCount }, (_, index) => ({
+    name: index * 3 + 1,
+    score: index * 3 + 2,
+  }));
+  const groupRounds = columns.slice(0, groupLevelCount);
+  const finals = columns.slice(groupLevelCount, groupLevelCount + finalLevelCount);
+  const champion = columns.at(-1)!;
+  const spacerColumns = new Set(
+    Array.from({ length: blockCount - 1 }, (_, index) => index * 3 + 3),
+  );
+  const scoreColumns = new Set(columns.map((round) => round.score));
+  const emphasisColumns = new Set([
+    ...finals.flatMap((round) => [round.name, round.score]),
+    champion.name,
+    champion.score,
+  ]);
+  return {
+    lastColumn: blockCount * 3 - 1,
+    groupRounds,
+    finals,
+    champion,
+    spacerColumns,
+    scoreColumns,
+    emphasisColumns,
+  };
+}
+
+function renderDoubleEliminationSection(
+  worksheet: ExcelJS.Worksheet,
+  snapshot: BattleTmpSnapshot,
+  levels: {
+    winner: BattleExcelSection['levels'];
+    loser: BattleExcelSection['levels'];
+    final: BattleExcelSection['levels'];
+  },
+  layout: DoubleExcelLayout,
+  startRow: number,
+  nameById: Map<number, string>,
+): number {
+  const groupLastColumn = layout.groupRounds.at(-1)?.score ?? 2;
+  const winnerTitleRow = startRow;
+  const winnerHeaderRow = winnerTitleRow + 1;
+  const winnerDataStartRow = winnerHeaderRow + 1;
+  const winnerDataRows = Math.max(4, ...levels.winner.map((level) => roundOccupiedRows(level.matches.length)));
+  const winnerDataEndRow = winnerDataStartRow + winnerDataRows - 1;
+
+  renderSectionTitle(worksheet, winnerTitleRow, groupLastColumn, '胜者组');
+  levels.winner.forEach((level, levelIndex) => {
+    const columns = layout.groupRounds[levelIndex];
+    renderRoundHeader(worksheet, winnerHeaderRow, columns, level.label);
+    renderAlignedRound(
+      worksheet,
+      level.matches,
+      columns,
+      winnerDataStartRow,
+      winnerDataRows,
+      'bottom',
+      nameById,
+    );
+  });
+
+  const loserTitleRow = winnerDataEndRow + 2;
+  const loserHeaderRow = loserTitleRow + 1;
+  const loserDataStartRow = loserHeaderRow + 1;
+  const loserDataRows = Math.max(4, ...levels.loser.map((level) => roundOccupiedRows(level.matches.length)));
+  const loserDataEndRow = loserDataStartRow + loserDataRows - 1;
+
+  renderSectionTitle(worksheet, loserTitleRow, groupLastColumn, '败者组');
+  levels.loser.forEach((level, levelIndex) => {
+    const columns = layout.groupRounds[levelIndex];
+    renderRoundHeader(worksheet, loserHeaderRow, columns, level.label);
+    renderAlignedRound(
+      worksheet,
+      level.matches,
+      columns,
+      loserDataStartRow,
+      loserDataRows,
+      'top',
+      nameById,
+    );
+  });
+
+  const winnerFinalStartRow = winnerDataEndRow - 3;
+  const loserFinalStartRow = loserDataStartRow;
+  const convergingCenter = (
+    winnerFinalStartRow + 1.5 + loserFinalStartRow + 1.5
+  ) / 2;
+  const finalStartRow = Math.round(convergingCenter - 1.5);
+  const finalHeaderRow = finalStartRow - 1;
+  levels.final.forEach((level, levelIndex) => {
+    const columns = layout.finals[levelIndex];
+    renderRoundHeader(
+      worksheet,
+      finalHeaderRow,
+      columns,
+      levelIndex === 0 ? '总决赛' : '必要时重赛',
+    );
+    renderSingleRound(
+      worksheet,
+      level.matches,
+      columns,
+      finalStartRow,
+      4,
+      nameById,
+    );
+  });
+
+  renderRoundHeader(worksheet, finalHeaderRow, layout.champion, '总冠军');
+  renderDoubleChampion(
+    worksheet,
+    snapshot,
+    layout.champion,
+    finalStartRow,
+    finalStartRow + 3,
+    nameById,
+  );
+  return loserDataEndRow + 2;
+}
+
+function roundOccupiedRows(matchCount: number): number {
+  return Math.max(0, matchCount * 4 + Math.max(0, matchCount - 1));
+}
+
+function renderSectionTitle(
+  worksheet: ExcelJS.Worksheet,
+  row: number,
+  lastColumn: number,
+  title: string,
+) {
+  worksheet.mergeCells(row, 1, row, lastColumn);
+  const sectionCell = worksheet.getCell(row, 1);
+  sectionCell.value = title;
+  sectionCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  sectionCell.fill = solidFill(SECTION_FILL);
+  sectionCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+}
+
+function renderAlignedRound(
+  worksheet: ExcelJS.Worksheet,
+  matches: BattleTmpMatch[],
+  columns: SingleExcelRoundColumns,
+  dataStartRow: number,
+  dataRows: number,
+  alignment: 'top' | 'bottom',
+  nameById: Map<number, string>,
+) {
+  const occupiedRows = roundOccupiedRows(matches.length);
+  const alignedStartRow = dataStartRow + (alignment === 'bottom' ? dataRows - occupiedRows : 0);
+  matches.forEach((match, matchIndex) => {
+    const matchStartRow = alignedStartRow + matchIndex * 5;
+    renderBattleSlot(
+      worksheet,
+      matchStartRow,
+      matchStartRow + 1,
+      columns.name,
+      columns.score,
+      match.up,
+      match.upResult,
+      battleTmpWinnerId(match) === match.up,
+      nameById,
+    );
+    renderBattleSlot(
+      worksheet,
+      matchStartRow + 2,
+      matchStartRow + 3,
+      columns.name,
+      columns.score,
+      match.down,
+      match.downResult,
+      battleTmpWinnerId(match) === match.down,
+      nameById,
+    );
+  });
+}
+
+function renderDoubleChampion(
+  worksheet: ExcelJS.Worksheet,
+  snapshot: BattleTmpSnapshot,
+  columns: SingleExcelRoundColumns,
+  startRow: number,
+  endRow: number,
+  nameById: Map<number, string>,
+) {
+  worksheet.mergeCells(startRow, columns.name, endRow, columns.name);
+  worksheet.mergeCells(startRow, columns.score, endRow, columns.score);
+  const championId = battleChampionId(snapshot);
+  const nameCell = worksheet.getCell(startRow, columns.name);
+  const labelCell = worksheet.getCell(startRow, columns.score);
+  nameCell.value = championId === null
+    ? '等待总决赛'
+    : nameById.get(championId) ?? `#${championId}`;
+  labelCell.value = '冠军';
+  for (const cell of [nameCell, labelCell]) {
+    cell.font = {
+      bold: true,
+      color: { argb: championId === null ? 'FF69705D' : 'FF3E4B16' },
+    };
+    cell.fill = solidFill(HEADER_FILL);
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder();
+  }
 }
 
 function renderSingleEliminationSection(
@@ -299,23 +515,6 @@ function renderSingleRound(
   });
 }
 
-function battleExcelSections(snapshot: BattleTmpSnapshot): BattleExcelSection[] {
-  if (snapshot.format === 'single-elimination') {
-    return [{ title: '单败', levels: groupedLevels(snapshot.matches.filter((match) => match.stage === 'single'), '第') }];
-  }
-  if (snapshot.format === 'avoid-first-pair') {
-    return [{ title: '同组不对战1对2', levels: [{ label: '对战', matches: snapshot.matches }] }];
-  }
-  return [
-    { title: '胜者组', levels: groupedLevels(snapshot.matches.filter((match) => match.stage === 'winner'), 'W') },
-    { title: '败者组', levels: groupedLevels(snapshot.matches.filter((match) => match.stage === 'loser'), 'L') },
-    {
-      title: '总决赛',
-      levels: groupedLevels(snapshot.matches.filter((match) => match.stage === 'final'), 'GF'),
-    },
-  ];
-}
-
 function groupedLevels(matches: BattleTmpMatch[], prefix: string) {
   const byLevel = new Map<number, BattleTmpMatch[]>();
   for (const match of matches) {
@@ -329,66 +528,6 @@ function groupedLevels(matches: BattleTmpMatch[], prefix: string) {
       label: prefix === '第' ? `第 ${level} 轮` : `${prefix}${level}`,
       matches: levelMatches.sort((left, right) => left.position - right.position),
     }));
-}
-
-function renderBattleSection(
-  worksheet: ExcelJS.Worksheet,
-  title: string,
-  levels: BattleExcelSection['levels'],
-  startRow: number,
-  lastColumn: number,
-  nameById: Map<number, string>,
-): number {
-  const baseRows = Math.max(...levels.map((level) => level.matches.length * 2), 2);
-  worksheet.mergeCells(startRow, 1, startRow, lastColumn);
-  const sectionCell = worksheet.getCell(startRow, 1);
-  sectionCell.value = title;
-  sectionCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  sectionCell.fill = solidFill(SECTION_FILL);
-  sectionCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-
-  const headerRow = startRow + 1;
-  const dataStartRow = startRow + 2;
-  levels.forEach((level, levelIndex) => {
-    const nameColumn = levelIndex * 2 + 1;
-    const scoreColumn = nameColumn + 1;
-    worksheet.mergeCells(headerRow, nameColumn, headerRow, scoreColumn);
-    const header = worksheet.getCell(headerRow, nameColumn);
-    header.value = level.label;
-    header.font = { bold: true, color: { argb: 'FF30352A' } };
-    header.fill = solidFill(HEADER_FILL);
-    header.alignment = { vertical: 'middle', horizontal: 'center' };
-    header.border = thinBorder();
-
-    const blockRows = Math.max(2, Math.floor(baseRows / Math.max(level.matches.length, 1)));
-    level.matches.forEach((match, matchIndex) => {
-      const matchStart = dataStartRow + matchIndex * blockRows;
-      const halfRows = Math.max(1, Math.floor(blockRows / 2));
-      renderBattleSlot(
-        worksheet,
-        matchStart,
-        matchStart + halfRows - 1,
-        nameColumn,
-        scoreColumn,
-        match.up,
-        match.upResult,
-        battleTmpWinnerId(match) === match.up,
-        nameById,
-      );
-      renderBattleSlot(
-        worksheet,
-        matchStart + halfRows,
-        matchStart + blockRows - 1,
-        nameColumn,
-        scoreColumn,
-        match.down,
-        match.downResult,
-        battleTmpWinnerId(match) === match.down,
-        nameById,
-      );
-    });
-  });
-  return dataStartRow + baseRows + 1;
 }
 
 function renderBattleSlot(

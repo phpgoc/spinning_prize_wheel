@@ -118,7 +118,7 @@ describe('对战签表 Excel', () => {
     expect(completedSheet.getCell('H16').value).toBe('冠军');
   });
 
-  test('双败把胜者组、败者组和总决赛分区展示', async () => {
+  test('八人双败逐轮空列并让胜者组向下、败者组向上收拢', async () => {
     const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
       format: 'double-elimination',
       orderMode: 'input',
@@ -132,25 +132,90 @@ describe('对战签表 Excel', () => {
     expect(values).toContain('胜者组');
     expect(values).toContain('败者组');
     expect(values).toContain('总决赛');
-    expect(worksheet.model.merges.length).toBeGreaterThan(15);
+    expect(worksheet.columnCount).toBe(17);
+    expect(worksheet.model.merges).toEqual(expect.arrayContaining([
+      'A5:B5',
+      'D5:E5',
+      'G5:H5',
+      'A27:B27',
+      'D27:E27',
+      'G27:H27',
+      'J27:K27',
+      'M24:N24',
+      'P24:Q24',
+    ]));
+    expect(worksheet.getCell('A10').value).toBeNull();
+    expect(worksheet.getCell('A15').value).toBeNull();
+    expect(worksheet.getCell('A20').value).toBeNull();
+    expect(worksheet.getCell('D20').value).toBeNull();
+    expect(worksheet.getCell('G6').value).toBeNull();
+    expect(worksheet.getCell('A32').value).toBeNull();
+    expect(worksheet.getCell('D32').value).toBeNull();
+    expect(worksheet.getCell('J33').value).toBeNull();
+    expect(worksheet.getCell('A24').value).not.toBeNull();
+    expect(worksheet.getCell('D24').value).not.toBeNull();
+    expect(worksheet.getCell('G24').value).not.toBeNull();
+    expect(worksheet.getCell('A28').value).not.toBeNull();
+    expect(worksheet.getCell('D28').value).not.toBeNull();
+    expect(worksheet.getCell('G28').value).not.toBeNull();
+    expect(worksheet.getCell('J28').value).not.toBeNull();
+    for (const spacerColumn of [3, 6, 9, 12, 15]) {
+      expect(worksheet.getColumn(spacerColumn).width).toBe(3);
+      expect(worksheet.getCell(5, spacerColumn).value).toBeNull();
+      expect(worksheet.getCell(27, spacerColumn).value).toBeNull();
+    }
+    expect(worksheet.getCell('M24').value).toBe('总决赛');
+    expect(worksheet.getCell('P24').value).toBe('总冠军');
+    expect(worksheet.getCell('P25').value).toBe('等待总决赛');
+    expect(worksheet.getCell('Q25').value).toBe('冠军');
+    expect(worksheet.getColumn(13).width).toBe(24);
+    expect(worksheet.getColumn(16).width).toBe(24);
   });
 
-  test('未启用第二场总决赛时第一场结果直接产生冠军', async () => {
-    let snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
+  test('双败未比赛、部分比分和完赛时坐标不变且冠军写在最右侧', async () => {
+    const initial = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
       format: 'double-elimination',
       orderMode: 'input',
-      fixedSeedCount: 0,
+      fixedSeedCount: 4,
       random: () => 0.25,
     }), 1_700_000_000_000);
-    snapshot = updateBattleTmpResult(snapshot, 'W1-M1', 4, 1, 1_700_000_000_001);
-    snapshot = updateBattleTmpResult(snapshot, 'W1-M2', 4, 1, 1_700_000_000_002);
-    snapshot = updateBattleTmpResult(snapshot, 'L1-M1', 4, 1, 1_700_000_000_003);
-    snapshot = updateBattleTmpResult(snapshot, 'W2-M1', 4, 1, 1_700_000_000_004);
-    snapshot = updateBattleTmpResult(snapshot, 'L2-M1', 4, 1, 1_700_000_000_005);
-    snapshot = updateBattleTmpResult(snapshot, 'GF-M1', 4, 1, 1_700_000_000_006);
+    const first = initial.matches.find((match) => match.status === 'ready')!;
+    const partial = updateBattleTmpResult(initial, first.matchId, 4, 1, 1_700_000_000_001);
+    const completed = completeBattle(initial);
 
-    const workbook = await loadWorkbook(await createBattleBracketWorkbook(snapshot));
-    expect(worksheetValues(workbook.getWorksheet('对战签表')!)).toContain('冠军');
+    const initialSheet = await loadBattleWorksheet(initial);
+    const partialSheet = await loadBattleWorksheet(partial);
+    const completedSheet = await loadBattleWorksheet(completed);
+    expect(layoutSignature(partialSheet)).toEqual(layoutSignature(initialSheet));
+    expect(layoutSignature(completedSheet)).toEqual(layoutSignature(initialSheet));
+
+    const grandFinal = completed.matches.find((match) => match.stage === 'final' && match.level === 1)!;
+    const championId = battleTmpWinnerId(grandFinal);
+    const championName = completed.participants.find((participant) => participant.id === championId)?.name;
+    expect(initialSheet.getCell('P25').value).toBe('等待总决赛');
+    expect(completedSheet.getCell('P25').value).toBe(championName);
+    expect(completedSheet.getCell('Q25').value).toBe('冠军');
+    expect(completedSheet.getCell('P37').value).toBeNull();
+  });
+
+  test('双总决赛把重赛和总冠军继续排在最右边', async () => {
+    const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
+      format: 'double-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 4,
+      doubleGrandFinal: true,
+      random: () => 0.25,
+    }), 1_700_000_000_000);
+
+    const worksheet = await loadBattleWorksheet(snapshot);
+    expect(worksheet.columnCount).toBe(20);
+    expect(worksheet.getCell('M24').value).toBe('总决赛');
+    expect(worksheet.getCell('P24').value).toBe('必要时重赛');
+    expect(worksheet.getCell('S24').value).toBe('总冠军');
+    expect(worksheet.getCell('S25').value).toBe('等待总决赛');
+    expect(worksheet.getCell('T25').value).toBe('冠军');
+    expect(worksheet.getColumn(15).width).toBe(3);
+    expect(worksheet.getColumn(18).width).toBe(3);
   });
 });
 
