@@ -874,12 +874,12 @@ p {
 }
 
 .stage-panel {
-  --stage-gutter: clamp(16px, 1.5vw, 28px);
+  --stage-gutter: calc(clamp(16px, 1.5vw, 28px) * var(--draw-shell-scale, 1));
   position: relative;
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: 27px var(--stage-gutter) 19px;
+  padding: calc(27px * var(--draw-shell-scale, 1)) var(--stage-gutter) calc(19px * var(--draw-shell-scale, 1));
   overflow: hidden;
   background:
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
@@ -1682,31 +1682,36 @@ kbd {
 
 /* 双栏抽奖工作区与折叠导航。 */
 .workspace {
-  grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
-  grid-template-rows: repeat(5, 58px) 1fr;
+  /* 字号从 100% 放大到 300% 时，左右载具最多放大到 150%。 */
+  --draw-shell-scale: calc(0.75 + var(--font-scale, 1) * 0.25);
+  --draw-sidebar-min: calc(310px * var(--draw-shell-scale));
+  --draw-sidebar-max: calc(360px * var(--draw-shell-scale));
+  --draw-row-height: calc(58px * var(--draw-shell-scale));
+  grid-template-columns: minmax(var(--draw-sidebar-min), var(--draw-sidebar-max)) minmax(0, 1fr);
+  grid-template-rows: repeat(5, var(--draw-row-height)) 1fr;
   height: 100%;
   min-height: 0;
   align-content: stretch;
 }
 
 .workspace.settings-open {
-  grid-template-rows: minmax(58px, 1fr) repeat(4, 58px) 0;
+  grid-template-rows: minmax(var(--draw-row-height), 1fr) repeat(4, var(--draw-row-height)) 0;
 }
 
 .workspace.common-open {
-  grid-template-rows: 58px minmax(58px, 1fr) repeat(3, 58px) 0;
+  grid-template-rows: var(--draw-row-height) minmax(var(--draw-row-height), 1fr) repeat(3, var(--draw-row-height)) 0;
 }
 
 .workspace.batch-open {
-  grid-template-rows: repeat(2, 58px) minmax(58px, 1fr) repeat(2, 58px) 0;
+  grid-template-rows: repeat(2, var(--draw-row-height)) minmax(var(--draw-row-height), 1fr) repeat(2, var(--draw-row-height)) 0;
 }
 
 .workspace.history-open {
-  grid-template-rows: repeat(3, 58px) minmax(58px, 1fr) 58px 0;
+  grid-template-rows: repeat(3, var(--draw-row-height)) minmax(var(--draw-row-height), 1fr) var(--draw-row-height) 0;
 }
 
 .workspace.shortcuts-open {
-  grid-template-rows: repeat(4, 58px) minmax(58px, 1fr) 0;
+  grid-template-rows: repeat(4, var(--draw-row-height)) minmax(var(--draw-row-height), 1fr) 0;
 }
 
 .accordion-item {
@@ -1736,12 +1741,12 @@ kbd {
   z-index: 2;
   display: grid;
   width: 100%;
-  min-height: 58px;
+  min-height: var(--draw-row-height);
   flex: none;
-  grid-template-columns: 31px minmax(0, 1fr) 22px;
+  grid-template-columns: calc(31px * var(--draw-shell-scale)) minmax(0, 1fr) calc(22px * var(--draw-shell-scale));
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
+  gap: calc(10px * var(--draw-shell-scale));
+  padding: calc(8px * var(--draw-shell-scale)) calc(16px * var(--draw-shell-scale));
   border: 0;
   background: transparent;
   color: var(--text);
@@ -1762,9 +1767,9 @@ kbd {
 
 .accordion-icon {
   display: grid;
-  width: 29px;
-  height: 29px;
-  border-radius: 9px;
+  width: calc(29px * var(--draw-shell-scale));
+  height: calc(29px * var(--draw-shell-scale));
+  border-radius: calc(9px * var(--draw-shell-scale));
   background: #dedbd2;
   color: #77796f;
   font-family: var(--font-mono);
@@ -1821,7 +1826,7 @@ kbd {
 .accordion-content {
   min-height: 0;
   flex: 1;
-  padding: 19px 18px 24px;
+  padding: calc(19px * var(--draw-shell-scale)) calc(18px * var(--draw-shell-scale)) calc(24px * var(--draw-shell-scale));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: #c2bfb6 transparent;
@@ -2224,11 +2229,16 @@ kbd {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(380px, 1fr) minmax(320px, 370px);
+  grid-template-columns:
+    minmax(min(380px, 55%), 1fr)
+    minmax(
+      min(calc(320px * var(--draw-shell-scale, 1)), 45%),
+      min(calc(370px * var(--draw-shell-scale, 1)), 58%)
+    );
   min-height: 0;
   flex: 1;
   align-items: stretch;
-  gap: clamp(10px, 1vw, 18px);
+  gap: calc(clamp(10px, 1vw, 18px) * var(--draw-shell-scale, 1));
   width: calc(100% + var(--stage-gutter));
   margin: 14px calc(-1 * var(--stage-gutter)) -19px 0;
 }
@@ -2301,7 +2311,7 @@ kbd {
   min-width: 0;
   min-height: 0;
   max-height: none;
-  padding: 21px 22px;
+  padding: calc(21px * var(--draw-shell-scale, 1)) calc(22px * var(--draw-shell-scale, 1));
   overflow-x: hidden;
   overflow-y: auto;
   border: 0;
@@ -2856,6 +2866,10 @@ kbd {
     margin-bottom: 0;
   }
 
+  .draw-core {
+    min-height: min(calc(420px * var(--draw-shell-scale, 1)), 70vh);
+  }
+
   .candidate-board {
     width: 100%;
     max-height: 70vh;
@@ -2866,12 +2880,17 @@ kbd {
 
 @media (max-width: 1100px) {
   .workspace {
-    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-columns:
+      minmax(
+        min(calc(280px * var(--draw-shell-scale)), 40vw),
+        min(calc(320px * var(--draw-shell-scale)), 45vw)
+      )
+      minmax(0, 1fr);
   }
 
   .stage-panel {
-    --stage-gutter: 23px;
-    padding-inline: 23px;
+    --stage-gutter: calc(23px * var(--draw-shell-scale));
+    padding-inline: var(--stage-gutter);
   }
 }
 
@@ -2896,7 +2915,7 @@ kbd {
   }
 
   .accordion-item {
-    min-height: 58px;
+    min-height: var(--draw-row-height);
     flex: none;
     border-right: 0;
   }
