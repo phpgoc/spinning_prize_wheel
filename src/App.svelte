@@ -6,7 +6,7 @@
   import AppHeader from './lib/AppHeader.svelte';
   import BattlePage from './lib/BattlePage.svelte';
   import CaimiBanner from './lib/CaimiBanner.svelte';
-  import DrawPage from './lib/DrawPage.svelte';
+  import WheelPage from './lib/WheelPage.svelte';
   import ExportNotice from './lib/ExportNotice.svelte';
   import RandomLineup from './lib/RandomLineup.svelte';
   import {
@@ -22,12 +22,12 @@
   const STORAGE_KEY = 'wheel-settings-v1';
   const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
 
-  let page: AppPage = 'draw';
+  let page: AppPage = 'wheel';
   let variant: AppVariant = BUILD_VARIANT;
   let desktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  let drawPage: DrawPage | null = null;
+  let wheelPage: WheelPage | null = null;
   let drawMode: DrawMode = 'selected';
-  let drawSpinning = false;
+  let wheelSpinning = false;
   let continuousRunning = false;
   let fontScale = initialFontScale();
   let removeCloseRequestedListener: (() => void) | null = null;
@@ -51,14 +51,14 @@
     try {
       const currentWindow = getCurrentWindow();
       const unlisten = await currentWindow.onCloseRequested(async (event) => {
-        const currentDrawPage = drawPage;
-        if (!currentDrawPage?.shouldHandleWindowClose()) return;
+        const currentWheelPage = wheelPage;
+        if (!currentWheelPage?.shouldHandleWindowClose()) return;
         event.preventDefault();
         if (closingWindow) return;
 
         closingWindow = true;
         try {
-          if (await currentDrawPage.prepareForWindowClose()) {
+          if (await currentWheelPage.prepareForWindowClose()) {
             await currentWindow.destroy();
           }
         } finally {
@@ -87,7 +87,7 @@
   function pageFromHash(hash: string): AppPage {
     if (hash.endsWith('/battle')) return 'battle';
     // 继续识别旧地址，避免升级后已有书签失效。
-    return hash.endsWith('/grouping') || hash.endsWith('/lineup') ? 'grouping' : 'draw';
+    return hash.endsWith('/grouping') || hash.endsWith('/lineup') ? 'grouping' : 'wheel';
   }
 
   function syncRoute() {
@@ -96,7 +96,7 @@
   }
 
   function navigatePage(nextPage: AppPage) {
-    if (nextPage === page || (nextPage !== 'draw' && (drawSpinning || continuousRunning))) return;
+    if (nextPage === page || (nextPage !== 'wheel' && (wheelSpinning || continuousRunning))) return;
     window.location.hash = variantRoute(variant, nextPage);
   }
 
@@ -107,7 +107,7 @@
   }
 
   function changeDrawMode(mode: DrawMode) {
-    drawPage?.setMode(mode);
+    wheelPage?.setMode(mode);
   }
 
   function saveFontScale() {
@@ -139,7 +139,7 @@
 <svelte:window on:keydown={handleGlobalFontScaleShortcut} />
 
 <svelte:head>
-  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'draw' ? '转盘抽签' : page === 'grouping' ? '分组' : '对战'} · 转盘</title>
+  <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'wheel' ? '转盘' : page === 'grouping' ? '分组' : '对战'}{page === 'wheel' ? '' : ' · 转盘'}</title>
   <link
     rel="icon"
     type={variant === 'caimi' ? 'image/png' : 'image/svg+xml'}
@@ -150,7 +150,7 @@
 <div
   class:caimi-variant={variant === 'caimi'}
   class:desktop-runtime={desktopRuntime}
-  class:draw-active={page === 'draw'}
+  class:wheel-active={page === 'wheel'}
   class="app-shell"
   style={`--font-scale: ${fontScale}`}
 >
@@ -159,7 +159,7 @@
     {page}
     {variant}
     {desktopRuntime}
-    drawBusy={drawSpinning || continuousRunning}
+    wheelBusy={wheelSpinning || continuousRunning}
     mode={drawMode}
     onNavigatePage={navigatePage}
     onNavigateVariant={navigateVariant}
@@ -170,14 +170,14 @@
     <CaimiBanner />
   {/if}
 
-  <div class:page-hidden={page !== 'draw'} class="draw-page-host" aria-hidden={page !== 'draw'}>
-    <DrawPage
-      bind:this={drawPage}
+  <div class:page-hidden={page !== 'wheel'} class="wheel-page-host" aria-hidden={page !== 'wheel'}>
+    <WheelPage
+      bind:this={wheelPage}
       bind:mode={drawMode}
-      bind:isSpinning={drawSpinning}
+      bind:isSpinning={wheelSpinning}
       bind:continuousRunning
       bind:fontScale
-      active={page === 'draw'}
+      active={page === 'wheel'}
       {desktopRuntime}
       {variant}
     />

@@ -74,6 +74,7 @@
   type LineupHistoryDeletion =
     | { kind: 'one'; history: SavedLineup }
     | { kind: 'all'; confirmation: 1 | 2 };
+  type BattleHistory = { id: string; createdAt: number; snapshot: BattleTmpSnapshot };
 
   const BATTLE_COLOR_PRESETS: Record<BattleColorPresetName, {
     label: string;
@@ -187,6 +188,12 @@
   let battleFixedSeedCount = 2;
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
+  let battleHistories: BattleHistory[] = [];
+  let battleHistoryStart = '';
+  let battleHistoryEnd = '';
+  let battleHistoryFileInput: HTMLInputElement | null = null;
+  let battleHistoryImporting = false;
+  let battleHistoryDeleteConfirmation: 0 | 1 | 2 = 0;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
   let battleFullscreen = false;
   let battleFullscreenChanging = false;
@@ -227,6 +234,11 @@
     keyboardRankLabel = keyboardRankDropLabel();
   }
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
+  $: visibleBattleHistories = battleHistories.filter((history) => {
+    const day = new Date(history.createdAt).toISOString().slice(0, 10);
+    return (!battleHistoryStart || day >= battleHistoryStart)
+      && (!battleHistoryEnd || day < battleHistoryEnd);
+  });
   $: hiddenLineupCellKeys = (() => {
     if (!result || !slowRevealEnabled || allLineupCellsRevealed) {
       return new Set<string>();
@@ -313,6 +325,7 @@
 
   onMount(() => {
     mounted = true;
+    if (battlePage) loadBattleHistories();
     return () => {
       if (battleFullscreen) {
         document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
@@ -412,6 +425,7 @@
 
   async function initializeDesktop() {
     desktopInitialized = true;
+    loadBattleHistories();
     await Promise.all([
       loadRankedUsers(),
       battlePage ? loadBattleTmpState() : loadLineupHistories(),
@@ -610,6 +624,8 @@
       } else {
         battleSyncStatus = 'saved';
       }
+      await tick();
+      focusLineupResult();
     } catch (reason) {
       battleTmpSnapshot = null;
       error = messageFrom(reason, '无法生成对战');
@@ -654,15 +670,48 @@
     if (!result) return;
     error = '';
     try {
-      await downloadExcel('分组结果', [
-        ['档位', ...result.groupNames.map((group) => `${group}组`)],
-        ...result.tiers.map((tier, tierIndex) => [
-          `t${tierIndex + 1}`,
-          ...tier.map((entry) => entry?.name ?? ''),
-        ]),
-      ]);
+      await downloadExcel('分组结果', lineupExcelRows(result));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 Excel');
+    }
+  }
+
+  function lineupExcelRows(lineup: RandomLineup): (string | number)[][] {
+    return [
+      ['档位', ...lineup.groupNames.map((group) => `${group}组`)],
+      ...lineup.tiers.map((tier, tierIndex) => [
+        `t${tierIndex + 1}`,
+        ...tier.map((entry) => entry?.name ?? ''),
+      ]),
+    ];
+  }
+
+  function historyResult(history: SavedLineup): RandomLineup | null {
+    const candidate = history.result as Partial<RandomLineup>;
+    if (!Array.isArray(candidate.groupNames) || !Array.isArray(candidate.tiers)) return null;
+    return candidate as RandomLineup;
+  }
+
+  async function exportLineupHistoryJson(history: SavedLineup) {
+    error = '';
+    try {
+      await downloadFormattedJson('分组结果', createLineupHistoryTransfer(history, variant));
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出分组历史 JSON');
+    }
+  }
+
+  async function exportLineupHistoryExcel(history: SavedLineup) {
+    const historicalResult = historyResult(history);
+    if (!historicalResult) {
+      historyError = '这条历史记录内容不完整';
+      return;
+    }
+    error = '';
+    try {
+      await downloadExcel('分组结果', lineupExcelRows(historicalResult));
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出分组历史 Excel');
     }
   }
 
@@ -760,6 +809,96 @@
       battleSyncStatus = 'error';
       error = messageFrom(reason, '无法读取对战临时状态');
     }
+  }
+
+  function battleHistoryStorageKey(): string {
+    return `battle-history-v1:${variant}`;
+  }
+
+  function loadBattleHistories() {
+    battleHistories = [];
+    try {
+      const value = JSON.parse(localStorage.getItem(battleHistoryStorageKey()) ?? '[]') as unknown;
+      if (!Array.isArray(value)) return;
+      battleHistories = value.flatMap((entry): BattleHistory[] => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+        const record = entry as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
+        if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) return [];
+        try {
+          return [{
+            id: record.id,
+            createdAt: Number(record.createdAt),
+            snapshot: parseBattleTmpSnapshot(record.snapshot, variant),
+          }];
+        } catch {
+          return [];
+        }
+      }).slice(0, 20);
+    } catch {
+      battleHistories = [];
+    }
+  }
+
+  function saveBattleHistories() {
+    try {
+      localStorage.setItem(battleHistoryStorageKey(), JSON.stringify(battleHistories));
+    } catch {
+      // 浏览器禁用本地存储时仍允许当前页面继续使用对战。
+    }
+  }
+
+  function archiveBattleHistory(snapshot: BattleTmpSnapshot) {
+    const record: BattleHistory = {
+      id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
+      createdAt: snapshot.updatedAt,
+      snapshot: structuredClone(snapshot),
+    };
+    battleHistories = [record, ...battleHistories.filter((item) => item.snapshot.updatedAt !== snapshot.updatedAt)].slice(0, 20);
+    saveBattleHistories();
+  }
+
+  async function importBattleHistoryFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || battleHistoryImporting) return;
+    if (file.name.split('.').pop()?.toLocaleLowerCase('zh-CN') !== 'json') {
+      showImportError('对战历史导入失败', '只支持 JSON 文件');
+      return;
+    }
+    battleHistoryImporting = true;
+    try {
+      const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as { snapshot?: unknown };
+      const snapshot = parseBattleTmpSnapshot(value && typeof value === 'object' && 'snapshot' in value ? value.snapshot : value, variant);
+      archiveBattleHistory(snapshot);
+    } catch (reason) {
+      showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
+    } finally {
+      battleHistoryImporting = false;
+    }
+  }
+
+  async function exportBattleHistoryJson(history: BattleHistory) {
+    await downloadFormattedJson('对战历史', { kind: 'battle-history', version: 1, snapshot: history.snapshot });
+  }
+
+  async function exportBattleHistoryExcel(history: BattleHistory) {
+    await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(history.snapshot));
+  }
+
+  function requestClearBattleHistories() {
+    if (battleHistories.length > 0) battleHistoryDeleteConfirmation = 1;
+  }
+
+  function confirmClearBattleHistories() {
+    if (battleHistoryDeleteConfirmation === 1) {
+      battleHistoryDeleteConfirmation = 2;
+      return;
+    }
+    if (battleHistoryDeleteConfirmation !== 2) return;
+    battleHistories = [];
+    saveBattleHistories();
+    battleHistoryDeleteConfirmation = 0;
   }
 
   async function loadLineupHistories() {
@@ -1090,12 +1229,12 @@
   }
 
   async function viewHistory(history: SavedLineup) {
-    const historicalResult = history.result as Partial<RandomLineup>;
-    if (!Array.isArray(historicalResult.groupNames) || !Array.isArray(historicalResult.tiers)) {
+    const historicalResult = historyResult(history);
+    if (!historicalResult) {
       historyError = '这条历史记录内容不完整';
       return;
     }
-    result = historicalResult as RandomLineup;
+    result = historicalResult;
     resultHistory = history;
     const input = history.input as Partial<{
       orderMode: LineupOrderMode;
@@ -1115,6 +1254,32 @@
     resetLineupReveal();
     await tick();
     focusLineupResult();
+  }
+
+  async function editLineupHistory(history: SavedLineup) {
+    const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number }>;
+    const sourceNames = Array.isArray(input.sourceNames)
+      ? input.sourceNames.filter((name): name is string => typeof name === 'string' && Boolean(name.trim()))
+      : [];
+    if (sourceNames.length === 0) {
+      historyError = '这条历史记录没有名单';
+      return;
+    }
+    const text = sourceNames.join('\n');
+    sourceText = text;
+    confirmedSourceText = text;
+    groupCount = Number.isInteger(input.groupCount) && Number(input.groupCount) >= 2
+      ? Number(input.groupCount)
+      : groupCount;
+    result = null;
+    resultHistory = null;
+    resultSourceNames = [];
+    resultOrderedNames = [];
+    historyStatus = 'idle';
+    historyError = '';
+    await resolveNames();
+    await tick();
+    sourceTextarea?.focus({ preventScroll: true });
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -1685,6 +1850,17 @@
       return;
     }
 
+    if (battleHistoryDeleteConfirmation) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        battleHistoryDeleteConfirmation = 0;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        confirmClearBattleHistories();
+      }
+      return;
+    }
+
     if (pendingLineupHistoryDeletion) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -1776,10 +1952,19 @@
     }
 
     if (isTextEditingTarget(event.target)) return;
+    if (battlePage && battleFullscreen && ['a', 'z', 'w'].includes(key)) {
+      event.preventDefault();
+      return;
+    }
     if (key === 'x') {
       event.preventDefault();
       cancelKeyboardRankMove();
       focusLineupResult();
+      return;
+    }
+    if (battlePage && key === 'w') {
+      event.preventDefault();
+      sourceTextarea?.focus({ preventScroll: true });
       return;
     }
     if (!desktopRuntime) return;
@@ -2056,6 +2241,7 @@
   }
 
   async function clearAll() {
+    if (battlePage && battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
     if (desktopRuntime && battlePage) {
       clearingBattleTmp = true;
       try {
@@ -2514,6 +2700,7 @@
           {#if desktopPanel === 'history'}
             {#if battlePage}
               <div class="desktop-accordion-content history-panel battle-state-panel">
+                <input bind:this={battleHistoryFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importBattleHistoryFile} />
                 {#if battleTmpSnapshot}
                   <div class:error={battleSyncStatus === 'error'} class:saving={battleSyncStatus === 'saving'} class="battle-state-sync" role="status">
                     <i></i><strong>{battleSyncStatusLabel()}</strong><span>{formatHistoryDate(battleTmpSnapshot.updatedAt)}</span>
@@ -2533,6 +2720,33 @@
                 {:else}
                   <p class="battle-state-empty">抽签后，这里会显示实时数据库状态。</p>
                 {/if}
+                <div class="history-dates battle-history-dates">
+                  <label><span>开始日期</span><input type="date" bind:value={battleHistoryStart} /></label>
+                  <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={battleHistoryEnd} /></label>
+                </div>
+                <div class="lineup-history-list battle-history-list">
+                  {#if visibleBattleHistories.length === 0}
+                    <p>日期范围内没有对战记录。</p>
+                  {:else}
+                    {#each visibleBattleHistories as history (history.id)}
+                      <article>
+                        <div class="history-view">
+                          <span>{formatHistoryDate(history.createdAt)}</span>
+                          <strong>{history.snapshot.participantCount} 人 · {battleTmpFormatLabel(history.snapshot.format)}</strong>
+                        </div>
+                        <div class="history-item-actions">
+                          <button type="button" on:click={() => void exportBattleHistoryExcel(history)}>Excel</button>
+                          <button type="button" on:click={() => void exportBattleHistoryJson(history)}>JSON</button>
+                        </div>
+                      </article>
+                    {/each}
+                  {/if}
+                </div>
+                <div class="history-export-actions battle-state-actions">
+                  <button type="button" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</button>
+                  <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
+                  <button type="button" class="history-delete-all" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</button>
+                </div>
               </div>
             {:else}
               <div class="desktop-accordion-content history-panel">
@@ -2556,6 +2770,9 @@
                         <small>预览 →</small>
                       </button>
                       <div class="history-item-actions">
+                        <button type="button" on:click={() => void editLineupHistory(history)}>编辑</button>
+                        <button type="button" on:click={() => void exportLineupHistoryExcel(history)}>Excel</button>
+                        <button type="button" on:click={() => void exportLineupHistoryJson(history)}>JSON</button>
                         <button
                           type="button"
                           class="history-delete"
@@ -2681,7 +2898,7 @@
               {/if}
             </fieldset>
             {#if battleFormat !== 'avoid-first-pair'}
-              <fieldset class="battle-radio-group">
+              <fieldset class="battle-radio-group battle-order-group">
                 <legend>名单顺序</legend>
                 <label title={desktopRuntime ? '' : '网页版没有排名数据库'}><input type="radio" name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} /><span>按排名</span></label>
                 <label><input type="radio" name="battle-order" value="input" bind:group={battleOrderMode} /><span>按输入顺序</span></label>
@@ -2757,6 +2974,7 @@
       >
         {#if battlePage}
           <div class="battle-result-toolbar">
+            <button type="button" class="battle-clear-button" disabled={!battleTmpSnapshot || clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
             <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
@@ -2788,6 +3006,7 @@
                 {/if}
                 <button type="button" class="result-export-button" on:click={exportBattleTmpExcel}>Excel</button>
                 <button type="button" class="result-export-button" on:click={exportBattleTmpJson}>JSON</button>
+                <button type="button" class="result-export-button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
               </div>
             {/if}
           </div>
@@ -2907,7 +3126,9 @@
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false"></textarea></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
-        <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText && !battleTmpSnapshot} on:click={requestClearAll}>{battlePage ? '清空对战' : '清空'}</button>
+        {#if !battlePage}
+          <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
+        {/if}
       </div>
       {#if !battlePage}
         <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
@@ -2933,6 +3154,20 @@
 {#if draggingUserId !== null}
   <div class="rank-drag-ghost" style={`left: ${rankDragX}px; top: ${rankDragY}px;`} aria-hidden="true">
     {rankedUsers.find((user) => user.id === draggingUserId)?.name ?? '选项'}
+  </div>
+{/if}
+
+{#if battleHistoryDeleteConfirmation}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-battle-history-title" aria-describedby="clear-battle-history-detail" tabindex="-1">
+      <span class="delete-confirm-icon">×</span>
+      <h2 id="clear-battle-history-title">{battleHistoryDeleteConfirmation === 1 ? '删除全部对战历史？' : '真的删除全部对战历史？'}</h2>
+      <p id="clear-battle-history-detail">{battleHistoryDeleteConfirmation === 1 ? '全部对战历史都会删除。' : '删除后无法恢复。'}</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (battleHistoryDeleteConfirmation = 0)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmClearBattleHistories}><span>确认</span></button>
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -3186,7 +3421,7 @@
   .battle-format-group { grid-template-columns: minmax(0, 1fr); }
   .battle-fixed-group { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
   .battle-radio-group legend { width: 100%; margin-bottom: 7px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-radio-group label { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid rgba(36, 37, 31, 0.13); border-radius: 8px; background: #f8f6f0; color: #34362f; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-group label { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid rgba(36, 37, 31, 0.13); border-radius: 8px; background: #f8f6f0; color: #34362f; font-size: calc(13px * var(--font-scale, 1)); font-weight: 700; }
   .battle-radio-group input { accent-color: #7d9134; }
   .battle-radio-group label:has(input:disabled) { cursor: not-allowed; opacity: 0.48; }
   .battle-radio-empty { grid-column: 1 / -1; padding: 9px 10px; border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: 8px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
@@ -3195,7 +3430,7 @@
   .battle-preview-settings {
     display: grid;
     grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.72fr) minmax(250px, 1.28fr);
-    gap: 10px;
+    gap: 7px;
     margin-top: 18px;
     padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -3203,17 +3438,19 @@
   .battle-preview-settings .battle-radio-group {
     align-content: start;
     margin: 0;
-    padding: 10px;
+    padding: 6px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.025);
   }
   .battle-preview-settings .battle-format-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .battle-preview-settings .battle-format-group > label:first-of-type { grid-column: 1 / -1; }
+  .battle-preview-settings .battle-order-group { grid-template-columns: minmax(0, 1fr); }
   .battle-preview-settings .battle-double-final-option { grid-column: 1 / -1; }
   .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .battle-preview-settings .battle-radio-group label { padding: 7px 8px; }
+  .battle-preview-settings .battle-radio-group label { padding: 4px 6px; line-height: 1.15; }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
+  .battle-preview-settings .battle-reveal-setting { min-height: 0; padding: 5px 8px; }
   .battle-preview-settings .battle-count-status { grid-column: 1 / -1; margin-top: 0; }
   .battle-preview-settings .battle-count-status { border: 1px solid rgba(218, 91, 63, 0.18); background: rgba(218, 91, 63, 0.08); color: #e1a092; }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
@@ -3285,6 +3522,23 @@
     gap: 14px;
     margin-bottom: 18px;
   }
+
+  .battle-clear-button {
+    min-width: 92px;
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 155, 140, 0.52);
+    border-radius: 9px;
+    background: rgba(196, 69, 52, 0.22);
+    color: #ffd6ce;
+    cursor: pointer;
+    font-size: calc(13px * var(--font-scale, 1));
+    font-weight: 850;
+  }
+  .battle-clear-button:hover:not(:disabled) {
+    border-color: #ff9b8c;
+    background: rgba(196, 69, 52, 0.38);
+  }
+  .battle-clear-button:disabled { cursor: not-allowed; opacity: 0.42; }
 
   .battle-fullscreen-button {
     min-width: 68px;
@@ -3453,6 +3707,7 @@
   .double-battle-bracket .battle-round > div { flex: 1; }
   .double-winner-section .battle-round > div { align-content: end; }
   .double-loser-section .battle-round > div { align-content: start; }
+  .double-loser-section .battle-round:nth-child(n + 3) { transform: translateY(-2px); }
   .double-battle-bracket .battle-match { padding: 6px; }
   .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
   .double-battle-bracket .battle-match > div { padding: 4px 6px; }

@@ -1,5 +1,5 @@
 export type AppVariant = 'standard' | 'caimi';
-export type AppPage = 'draw' | 'grouping' | 'battle';
+export type AppPage = 'wheel' | 'grouping' | 'battle';
 
 export const BUILD_VARIANT: AppVariant = import.meta.env.VITE_APP_VARIANT === 'caimi'
   ? 'caimi'

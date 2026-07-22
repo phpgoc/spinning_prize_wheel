@@ -5,7 +5,7 @@
   export let page: AppPage;
   export let variant: AppVariant;
   export let desktopRuntime = false;
-  export let drawBusy = false;
+  export let wheelBusy = false;
   export let mode: DrawMode = 'selected';
   export let onNavigatePage: (page: AppPage) => void;
   export let onNavigateVariant: (variant: AppVariant) => void;
@@ -13,7 +13,7 @@
 </script>
 
 <header class="topbar">
-  <a class="brand" href={variantRoute(variant, 'draw')} aria-label="转盘首页">
+  <a class="brand" href={variantRoute(variant, 'wheel')} aria-label="转盘首页">
     <span class="brand-mark"><i></i></span>
     <span><strong>转盘</strong></span>
   </a>
@@ -27,17 +27,17 @@
     {/if}
 
     <nav class="page-switch" aria-label="工具页面">
-      <button type="button" class:active={page === 'draw'} on:click={() => onNavigatePage('draw')}>抽奖</button>
+      <button type="button" class:active={page === 'wheel'} on:click={() => onNavigatePage('wheel')}>转盘</button>
       <button
         type="button"
         class:active={page === 'grouping'}
-        disabled={drawBusy}
+        disabled={wheelBusy}
         on:click={() => onNavigatePage('grouping')}
       >分组</button>
       <button
         type="button"
         class:active={page === 'battle'}
-        disabled={drawBusy}
+        disabled={wheelBusy}
         on:click={() => onNavigatePage('battle')}
       >对战</button>
     </nav>
@@ -45,12 +45,12 @@
   </div>
 
   <div class="topbar-meta">
-    {#if page === 'draw'}
+    {#if page === 'wheel'}
       <div class="mode-switch" aria-label="抽奖模式">
         <button
           type="button"
           class:active={mode === 'selected'}
-          disabled={drawBusy}
+          disabled={wheelBusy}
           on:click={() => onModeChange('selected')}
         >
           <span class="mode-dot"></span>
@@ -59,7 +59,7 @@
         <button
           type="button"
           class:active={mode === 'roulette'}
-          disabled={drawBusy}
+          disabled={wheelBusy}
           on:click={() => onModeChange('roulette')}
         >
           <span class="crosshair">＋</span>

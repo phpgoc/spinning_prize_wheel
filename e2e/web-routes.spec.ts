@@ -11,10 +11,10 @@ async function clearWebBattle(page: Page) {
 
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
   const routes = [
-    { path: '/#/draw', title: '转盘抽签 · 转盘', caimi: false },
+    { path: '/#/wheel', title: '转盘', caimi: false },
     { path: '/#/grouping', title: '分组 · 转盘', caimi: false },
     { path: '/#/battle', title: '对战 · 转盘', caimi: false },
-    { path: '/#/caimi/draw', title: '猜蜜版 · 转盘抽签 · 转盘', caimi: true },
+    { path: '/#/caimi/wheel', title: '猜蜜版 · 转盘', caimi: true },
     { path: '/#/caimi/grouping', title: '猜蜜版 · 分组 · 转盘', caimi: true },
     { path: '/#/caimi/battle', title: '猜蜜版 · 对战 · 转盘', caimi: true },
   ];
@@ -37,7 +37,7 @@ test('旧分组地址仍可兼容打开', async ({ page }) => {
 
 test('抽奖、分组和对战切换时头部保持在同一位置', async ({ page }) => {
   const positions: number[] = [];
-  for (const route of ['/#/draw', '/#/grouping', '/#/battle']) {
+  for (const route of ['/#/wheel', '/#/grouping', '/#/battle']) {
     await page.goto(route);
     const box = await page.locator('.topbar-controls').boundingBox();
     positions.push(box!.x + box!.width / 2);

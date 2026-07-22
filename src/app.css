@@ -89,7 +89,7 @@ button:not(:disabled):active { filter: brightness(0.94); }
 .app-shell.caimi-variant { --draw-page-offset: 291px; }
 
 /* 抽奖页严格使用窗口剩余高度；横幅和字体变高时不再依赖固定偏移量。 */
-.app-shell.draw-active {
+.app-shell.wheel-active {
   display: flex;
   width: 100%;
   max-width: none;
@@ -99,17 +99,17 @@ button:not(:disabled):active { filter: brightness(0.94); }
   overflow: hidden;
 }
 
-.app-shell.draw-active > .topbar,
-.app-shell.draw-active > .caimi-banner {
+.app-shell.wheel-active > .topbar,
+.app-shell.wheel-active > .caimi-banner {
   flex: none;
 }
 
-.draw-page-host {
+.wheel-page-host {
   min-height: 0;
   flex: 1;
 }
 
-.app-shell.draw-active .draw-page-host .workspace {
+.app-shell.wheel-active .wheel-page-host .workspace {
   height: 100%;
   min-height: 0;
 }

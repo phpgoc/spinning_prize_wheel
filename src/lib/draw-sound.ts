@@ -11,6 +11,7 @@ export interface DrawSoundController {
 export function createDrawSoundController(): DrawSoundController {
   let context: AudioContext | null = null;
   let spinSources: AudioScheduledSourceNode[] = [];
+  let spinTimer: ReturnType<typeof setInterval> | null = null;
 
   function audioContext(): AudioContext | null {
     if (context) return context;
@@ -27,6 +28,10 @@ export function createDrawSoundController(): DrawSoundController {
   }
 
   function stopSpin() {
+    if (spinTimer !== null) {
+      clearInterval(spinTimer);
+      spinTimer = null;
+    }
     for (const source of spinSources) {
       try {
         source.stop();
@@ -43,31 +48,24 @@ export function createDrawSoundController(): DrawSoundController {
     if (!current) return;
     resume(current);
 
-    const now = current.currentTime;
-    const end = now + Math.max(0.2, durationMs / 1000);
-    const oscillator = current.createOscillator();
-    const pulse = current.createOscillator();
-    const pulseDepth = current.createGain();
-    const volume = current.createGain();
-
-    oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(105, now);
-    oscillator.frequency.exponentialRampToValueAtTime(185, end);
-    pulse.type = 'sine';
-    pulse.frequency.setValueAtTime(7, now);
-    pulseDepth.gain.setValueAtTime(16, now);
-    volume.gain.setValueAtTime(0.0001, now);
-    volume.gain.exponentialRampToValueAtTime(0.035, now + 0.04);
-    volume.gain.setValueAtTime(0.035, Math.max(now + 0.04, end - 0.08));
-    volume.gain.exponentialRampToValueAtTime(0.0001, end);
-
-    pulse.connect(pulseDepth).connect(oscillator.frequency);
-    oscillator.connect(volume).connect(current.destination);
-    oscillator.start(now);
-    pulse.start(now);
-    oscillator.stop(end);
-    pulse.stop(end);
-    spinSources = [oscillator, pulse];
+    // 短促节拍比持续低频轰鸣更适合长时间转动，也不会盖住揭晓音。
+    const playTick = () => {
+      const now = current.currentTime;
+      const oscillator = current.createOscillator();
+      const volume = current.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(620, now);
+      oscillator.frequency.exponentialRampToValueAtTime(260, now + 0.045);
+      volume.gain.setValueAtTime(0.0001, now);
+      volume.gain.exponentialRampToValueAtTime(0.035, now + 0.006);
+      volume.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+      oscillator.connect(volume).connect(current.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.06);
+      spinSources.push(oscillator);
+    };
+    playTick();
+    spinTimer = setInterval(playTick, Math.max(90, Math.min(180, durationMs / 18)));
   }
 
   function playResult(outcome: DrawSoundOutcome) {

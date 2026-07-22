@@ -3,8 +3,8 @@ import { createServer } from 'node:net';
 import { chromium, expect, test, type Browser } from '@playwright/test';
 
 const applications = [
-  { name: '普通版', path: process.env.TAURI_E2E_STANDARD_APP, title: '转盘抽签 · 转盘' },
-  { name: '猜蜜版', path: process.env.TAURI_E2E_CAIMI_APP, title: '猜蜜版 · 转盘抽签 · 转盘' },
+  { name: '普通版', path: process.env.TAURI_E2E_STANDARD_APP, title: '转盘' },
+  { name: '猜蜜版', path: process.env.TAURI_E2E_CAIMI_APP, title: '猜蜜版 · 转盘' },
 ];
 
 for (const application of applications) {
@@ -37,7 +37,7 @@ for (const application of applications) {
 
       await expect(page).toHaveTitle(application.title);
       await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
-      await expect(page.getByRole('button', { name: '抽奖', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '转盘', exact: true })).toBeVisible();
       await page.getByRole('button', { name: '分组', exact: true }).click();
       await expect(page).toHaveURL(/#\/(?:caimi\/)?lineup$/);
       await expect(page.locator('.desktop-accordion-toggle').filter({ hasText: '排名' })).toBeVisible();

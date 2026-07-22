@@ -2632,7 +2632,7 @@
         </section>
 
         <section class="shortcut-group shortcut-draw">
-          <h3>抽奖</h3>
+          <h3>转盘</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
