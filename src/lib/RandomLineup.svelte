@@ -2506,7 +2506,7 @@
   </article>
 {/snippet}
 
-<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'}>
+<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W F I J K L' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
@@ -2999,7 +2999,7 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
+            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}{#if battlePage}<small class="battle-shortcut-hint">A排名 · Z历史 · X对战 · W名单 · F全屏</small>{/if}</p></div></div>
             {#if battleTmpSnapshot}
               <div class="result-output-actions">
                 {#if hiddenBattleSlotCount > 0}
@@ -3305,27 +3305,27 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
     align-items: stretch;
-    gap: clamp(18px, 2.5vw, 34px);
+    gap: calc(clamp(18px, 2.5vw, 34px) * var(--lineup-layout-scale, 1));
     max-width: 1580px;
     margin: 0 auto;
   }
 
   .lineup-workbench.desktop {
     grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
-    gap: clamp(14px, 1.7vw, 25px);
+    gap: calc(clamp(14px, 1.7vw, 25px) * var(--lineup-layout-scale, 1));
   }
 
   .lineup-config,
   .preview-panel,
   .lineup-result {
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 19px;
+    border-radius: calc(19px * var(--lineup-layout-scale, 1));
   }
 
   .lineup-config {
     min-width: 0;
     align-self: start;
-    padding: 22px;
+    padding: calc(22px * var(--lineup-layout-scale, 1));
     background: #efede6;
     color: #24251f;
   }
@@ -3334,25 +3334,25 @@
   .result-heading {
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: calc(16px * var(--lineup-layout-scale, 1));
   }
 
-  .config-heading > div { display: flex; align-items: baseline; gap: 9px; }
+  .config-heading > div { display: flex; align-items: baseline; gap: calc(9px * var(--lineup-layout-scale, 1)); }
   .config-heading h2,
   .result-heading h2 { font-size: calc(23px * var(--font-scale, 1)); letter-spacing: -0.04em; }
   .config-heading > strong { font-size: calc(27px * var(--font-scale, 1)); }
   .config-heading small { margin-left: 2px; color: var(--lineup-dim-on-light); font-size: calc(12px * var(--font-scale, 1)); }
 
-  .names-field { display: block; margin-top: 18px; }
+  .names-field { display: block; margin-top: calc(18px * var(--lineup-layout-scale, 1)); }
   .names-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .lineup-file-input { display: none; }
   textarea {
     width: 100%;
-    min-height: 270px;
-    margin-top: 8px;
-    padding: 13px;
+    min-height: calc(270px * var(--lineup-layout-scale, 1));
+    margin-top: calc(8px * var(--lineup-layout-scale, 1));
+    padding: calc(13px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(36, 37, 31, 0.13);
-    border-radius: 11px;
+    border-radius: calc(11px * var(--lineup-layout-scale, 1));
     outline: 0;
     resize: vertical;
     background: #f8f6f0;
@@ -3364,9 +3364,9 @@
   textarea::placeholder { color: var(--lineup-dim-on-light); opacity: 1; }
   textarea:focus { border-color: #8a993e; box-shadow: 0 0 0 3px rgba(138, 153, 62, 0.12); }
 
-  .list-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 7px; }
+  .list-actions { display: flex; justify-content: flex-end; gap: calc(7px * var(--lineup-layout-scale, 1)); margin-top: calc(7px * var(--lineup-layout-scale, 1)); }
   .list-actions button {
-    padding: 6px 9px;
+    padding: calc(6px * var(--lineup-layout-scale, 1)) calc(9px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(36, 37, 31, 0.24);
     border-radius: 7px;
     background: #fffdf8;
@@ -3444,14 +3444,19 @@
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.025);
   }
-  .battle-preview-settings .battle-format-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .battle-preview-settings .battle-format-group { grid-template-columns: minmax(0, 1fr); }
   .battle-preview-settings .battle-format-group > label:first-of-type { grid-column: 1 / -1; }
   .battle-preview-settings .battle-order-group { grid-template-columns: minmax(0, 1fr); }
   .battle-preview-settings .battle-double-final-option { grid-column: 1 / -1; }
-  .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .battle-preview-settings .battle-radio-group label { padding: 4px 6px; line-height: 1.15; }
+  .battle-preview-settings .battle-radio-group label,
+  .battle-preview-settings .battle-reveal-setting {
+    box-sizing: border-box;
+    min-height: 34px;
+  }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
-  .battle-preview-settings .battle-reveal-setting { min-height: 0; padding: 5px 8px; }
+  .battle-preview-settings .battle-reveal-setting { padding: 5px 8px; }
   .battle-preview-settings .battle-count-status { grid-column: 1 / -1; margin-top: 0; }
   .battle-preview-settings .battle-count-status { border: 1px solid rgba(218, 91, 63, 0.18); background: rgba(218, 91, 63, 0.08); color: #e1a092; }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
@@ -3485,7 +3490,7 @@
 
   .lineup-result {
     min-width: 0;
-    padding: clamp(20px, 3vw, 34px);
+    padding: calc(clamp(20px, 3vw, 34px) * var(--lineup-layout-scale, 1));
     background: rgba(11, 12, 9, 0.27);
   }
 
@@ -3636,18 +3641,19 @@
     display: grid;
     min-width: 0;
     align-content: start;
-    gap: 18px;
+    gap: calc(18px * var(--lineup-layout-scale, 1));
   }
 
   .preview-panel {
     min-width: 0;
     margin: 0;
-    padding: clamp(20px, 2.4vw, 30px);
+    padding: calc(clamp(20px, 2.4vw, 30px) * var(--lineup-layout-scale, 1));
     background: rgba(11, 12, 9, 0.27);
   }
   .result-heading > div { align-items: center; gap: 11px; }
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-shortcut-hint { display: block; margin-top: 5px; color: color-mix(in srgb, var(--lineup-muted-on-dark) 74%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); font-weight: 650; letter-spacing: 0.01em; }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
@@ -4187,6 +4193,14 @@
     min-height: 48px;
     flex: 1;
     margin-top: 0;
+  }
+
+  .battle-page .lineup-actions .generate-button,
+  .battle-page .lineup-actions .rank-preview-button,
+  .battle-page .lineup-actions .input-order-button {
+    box-sizing: border-box;
+    min-height: 34px;
+    padding-block: 7px;
   }
 
   .lineup-actions .rank-generate-button {
@@ -5171,6 +5185,7 @@
     .ranked-user-list { height: min(540px, 56vh); flex: none; }
     textarea { min-height: 220px; }
     .battle-preview-settings { grid-template-columns: minmax(0, 1fr); }
+    .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @media (max-width: 600px) {
