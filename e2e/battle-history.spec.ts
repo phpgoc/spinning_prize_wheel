@@ -41,6 +41,10 @@ async function importBattleHistory(page: Page, name: string, value: unknown) {
   });
 }
 
+function battleHistoryCards(page: Page) {
+  return page.locator('.history-panel article');
+}
+
 test('对战历史 JSON 导出导入可完整复现并能从查看切回当前', async ({ page }) => {
   await openDesktopBattle(page);
   const currentMatch = await createScoredBattle(page);
@@ -55,7 +59,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   ))).toBe(1);
 
   await page.getByRole('button', { name: /对战历史/u }).click();
-  const historyCard = page.locator('.battle-history-list article');
+  const historyCard = battleHistoryCards(page);
   await expect(historyCard).toHaveCount(1);
   await historyCard.getByRole('button', { name: 'JSON', exact: true }).click();
   await expect.poll(() => page.evaluate(() => {
@@ -74,7 +78,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   const exported = JSON.parse(exportedJson);
   expect(exported).toEqual({ kind: 'battle-history', version: 1, snapshot: expectedSnapshot });
 
-  await historyCard.locator('.history-view').click();
+  await historyCard.getByRole('button').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
   const viewedMatch = page.locator('.battle-history-bracket .battle-round').first().locator('.battle-match').first();
   await expect(viewedMatch.locator('.battle-side strong')).toHaveText(expectedNames);
@@ -82,7 +86,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   await expect(viewedMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
   await expect(page.locator('.battle-history-bracket input:not(:disabled)')).toHaveCount(0);
 
-  await page.locator('.battle-state-actions').getByRole('button', { name: '加载当前' }).click();
+  await page.locator('.history-panel').getByRole('button', { name: '加载当前' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
   await expect(page.locator('.single-battle-bracket:not(.read-only)')).toBeVisible();
   await expect(currentMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
@@ -103,7 +107,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   ));
   expect(importedSnapshot).toEqual(expectedSnapshot);
 
-  await historyCard.locator('.history-view').click();
+  await historyCard.getByRole('button').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
   await expect(viewedMatch.locator('.battle-side strong')).toHaveText(expectedNames);
   await expect(viewedMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
@@ -119,7 +123,7 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
 
   await page.getByRole('button', { name: '保存历史' }).click();
   await page.getByRole('button', { name: /对战历史/u }).click();
-  const historyCard = page.locator('.battle-history-list article');
+  const historyCard = battleHistoryCards(page);
   await expect(historyCard).toHaveCount(1);
 
   const validTransfer = {
@@ -183,9 +187,9 @@ test('对战历史限制最近二十条并按日期筛选和二次确认删除�
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /对战历史/u }).click();
 
-  const historyCards = page.locator('.battle-history-list article');
+  const historyCards = battleHistoryCards(page);
   await expect(historyCards).toHaveCount(20);
-  const dateInputs = page.locator('.battle-history-dates input[type="date"]');
+  const dateInputs = page.locator('.history-panel input[type="date"]');
   await dateInputs.nth(0).fill('2026-01-10');
   await dateInputs.nth(1).fill('2026-01-12');
   await expect(historyCards).toHaveCount(2);
@@ -214,7 +218,7 @@ test('历史覆盖临时表时可在三层确认分别取消且不改变当前�
   await page.getByRole('button', { name: '保存历史' }).click();
   await page.getByRole('button', { name: /对战历史/u }).click();
 
-  const editHistory = page.locator('.battle-history-list article').getByRole('button', { name: '编辑' });
+  const editHistory = battleHistoryCards(page).getByRole('button', { name: '编辑' });
   const expectCurrentUnchanged = async () => {
     expect(await page.evaluate(() => structuredClone(
       (window as any).__E2E_TAURI_STATE__.battleTmpState,
@@ -294,7 +298,7 @@ test('历史覆盖写入失败会保留当前临时表并归档当前比分', as
     (window as any).__E2E_TAURI_STATE__.commandFailures.save_battle_tmp_state = ['模拟历史覆盖失败'];
   });
 
-  await page.locator('.battle-history-list article').first()
+  await battleHistoryCards(page).first()
     .getByRole('button', { name: '编辑' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
@@ -306,5 +310,5 @@ test('历史覆盖写入失败会保留当前临时表并归档当前比分', as
   ))).toEqual(currentSnapshot);
   await expect(firstMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
   await expect(firstMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
-  await expect(page.locator('.battle-history-list article')).toHaveCount(2);
+  await expect(battleHistoryCards(page)).toHaveCount(2);
 });
