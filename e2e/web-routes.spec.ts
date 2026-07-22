@@ -30,12 +30,6 @@ test('网页版各个正式地址均可直接打开', async ({ page }) => {
   }
 });
 
-test('旧分组地址仍可兼容打开', async ({ page }) => {
-  await page.goto('/#/lineup');
-  await expect(page).toHaveTitle('分组 · 转盘');
-  await expect(page.locator('.lineup-page')).toBeVisible();
-});
-
 test('抽奖、分组和对战切换时头部保持在同一位置', async ({ page }) => {
   const positions: number[] = [];
   for (const route of ['/#/wheel', '/#/grouping', '/#/battle']) {

@@ -1,13 +1,13 @@
 <script lang="ts">
   import type { AppVariant } from '../lib/app-variant';
-  import RandomLineup from '../components/RandomLineup.svelte';
+  import GroupingWorkspace from '../components/GroupingWorkspace.svelte';
 
   export let desktopRuntime = false;
   export let variant: AppVariant = 'standard';
 </script>
 
 {#if desktopRuntime}
-  <RandomLineup purpose="battle" {desktopRuntime} {variant} />
+  <GroupingWorkspace purpose="battle" {desktopRuntime} {variant} />
 {:else}
   <main class="battle-web-unavailable">
     <strong>对战仅支持桌面版</strong>

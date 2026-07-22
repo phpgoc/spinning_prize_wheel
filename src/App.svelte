@@ -8,7 +8,7 @@
   import CaimiBanner from './components/CaimiBanner.svelte';
   import WheelPage from './routes/WheelPage.svelte';
   import ExportNotice from './components/ExportNotice.svelte';
-  import RandomLineup from './components/RandomLineup.svelte';
+  import GroupingWorkspace from './components/GroupingWorkspace.svelte';
   import {
     BUILD_VARIANT,
     variantFromHash,
@@ -86,8 +86,7 @@
 
   function pageFromHash(hash: string): AppPage {
     if (hash.endsWith('/battle')) return 'battle';
-    // 继续识别旧地址，避免升级后已有书签失效。
-    return hash.endsWith('/grouping') || hash.endsWith('/lineup') ? 'grouping' : 'wheel';
+    return hash.endsWith('/grouping') ? 'grouping' : 'wheel';
   }
 
   function syncRoute() {
@@ -184,7 +183,7 @@
   </div>
 
   {#if page === 'grouping'}
-    <RandomLineup {desktopRuntime} {variant} />
+    <GroupingWorkspace {desktopRuntime} {variant} />
   {/if}
 
   {#if page === 'battle'}
