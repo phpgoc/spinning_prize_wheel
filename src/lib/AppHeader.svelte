@@ -34,12 +34,14 @@
         disabled={wheelBusy}
         on:click={() => onNavigatePage('grouping')}
       >分组</button>
-      <button
-        type="button"
-        class:active={page === 'battle'}
-        disabled={wheelBusy}
-        on:click={() => onNavigatePage('battle')}
-      >对战</button>
+      {#if desktopRuntime}
+        <button
+          type="button"
+          class:active={page === 'battle'}
+          disabled={wheelBusy}
+          on:click={() => onNavigatePage('battle')}
+        >对战</button>
+      {/if}
     </nav>
 
   </div>

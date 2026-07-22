@@ -189,6 +189,7 @@
   let battleFixedSeedCount = 0;
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
+  let battleTmpAvailable = false;
   let battleHistories: BattleHistory[] = [];
   let battleHistoryPreview: BattleHistory | null = null;
   let battleHistoryStart = '';
@@ -616,6 +617,7 @@
         });
       lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
+      battleTmpAvailable = true;
       resetBattleReveal();
       if (desktopRuntime) {
         battleSyncStatus = 'saving';
@@ -789,6 +791,7 @@
 
   function applyBattleTmpSnapshot(state: BattleTmpSnapshot) {
     battleTmpSnapshot = structuredClone(state);
+    battleTmpAvailable = true;
     resetBattleReveal();
     battleFormat = state.format;
     battleOrderMode = state.orderMode;
@@ -814,6 +817,7 @@
       const state = await readBattleTmpState();
       if (state === null) {
         battleSyncStatus = 'idle';
+        battleTmpAvailable = false;
         if (showEmptyError) error = '当前临时表为空，没有可以加载的对战';
         return false;
       }
@@ -880,6 +884,7 @@
       } else {
         const snapshot = parseBattleTmpSnapshot(structuredClone(target.history.snapshot), variant);
         const current = await readBattleTmpState();
+        battleTmpAvailable = current !== null;
         if (current) archiveBattleHistory(current);
         else if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
         battleSyncStatus = 'saving';
@@ -1941,7 +1946,7 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
-      && ['i', 'j', 'k', 'l'].includes(key)
+      && ['u', 'j', 'h', 'k'].includes(key)
     ) {
       event.preventDefault();
       scrollBattleByKey(key);
@@ -2108,7 +2113,22 @@
     }
 
     if (isTextEditingTarget(event.target)) return;
-    if (battlePage && battleFullscreen && ['a', 'z', 'w'].includes(key)) {
+    if (battleFocusActive && key === 's' && (battleTmpSnapshot?.format ?? battleFormat) === 'single-elimination') {
+      event.preventDefault();
+      focusBattleScoreGroup('single');
+      return;
+    }
+    if (battleFocusActive && key === 'w' && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination') {
+      event.preventDefault();
+      focusBattleScoreGroup('winner');
+      return;
+    }
+    if (battleFocusActive && key === 'l' && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination') {
+      event.preventDefault();
+      focusBattleScoreGroup('loser');
+      return;
+    }
+    if (battlePage && battleFullscreen && ['a', 'z'].includes(key)) {
       event.preventDefault();
       return;
     }
@@ -2123,6 +2143,7 @@
       sourceTextarea?.focus({ preventScroll: true });
       return;
     }
+    if (battleFocusActive) return;
     if (!desktopRuntime) return;
     if (key === 'n') {
       event.preventDefault();
@@ -2202,20 +2223,30 @@
 
   function scrollBattleByKey(key: string) {
     if (!lineupResultElement) return;
-    if (key === 'j' || key === 'l') {
+    if (key === 'h' || key === 'k') {
       const scroller = lineupResultElement.querySelector<HTMLElement>(
         '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
       );
       scroller?.scrollBy({
-        left: (key === 'j' ? -1 : 1) * Math.max(280, scroller.clientWidth * 0.7),
+        left: (key === 'h' ? -1 : 1) * 36,
         behavior: 'smooth',
       });
       return;
     }
     lineupResultElement.scrollBy({
-      top: (key === 'i' ? -1 : 1) * Math.max(240, lineupResultElement.clientHeight * 0.65),
+      top: (key === 'u' ? -1 : 1) * 36,
       behavior: 'smooth',
     });
+  }
+
+  function focusBattleScoreGroup(group: 'single' | 'winner' | 'loser') {
+    if (!lineupResultElement) return;
+    const selector = group === 'single'
+      ? '.single-battle-bracket .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)'
+      : `.double-${group}-section .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)`;
+    const target = lineupResultElement.querySelector<HTMLInputElement>(selector);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }
 
   function handleBattleMatchKeydown(event: KeyboardEvent) {
@@ -2419,6 +2450,7 @@
     result = null;
     resultHistory = null;
     battleTmpSnapshot = null;
+    battleTmpAvailable = false;
     battleHistoryPreview = null;
     resetBattleReveal();
     lastConfirmedBattleScore = null;
@@ -2547,7 +2579,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W' : undefined}>
+<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
@@ -2984,7 +3016,7 @@
               </div>
               <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
               {#if desktopRuntime && !battleTmpSnapshot}
-                <button type="button" class="battle-load-current-button" disabled={battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
+                <button type="button" class="battle-load-current-button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
               {/if}
               <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
             </div>
@@ -3023,7 +3055,7 @@
 
       {#if battlePage && desktopRuntime && battleTmpSnapshot}
         <div class="battle-load-current-strip">
-          <button type="button" class="battle-load-current-button" disabled={battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
+          <button type="button" class="battle-load-current-button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
         </div>
       {/if}
 
@@ -3034,7 +3066,7 @@
         class="lineup-result"
         style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
         tabindex="-1"
-        aria-keyshortcuts={battlePage ? 'F I J K L' : undefined}
+        aria-keyshortcuts={battlePage ? 'F U J H K L W S' : undefined}
       >
         {#if battlePage}
           <div class="battle-result-toolbar">
@@ -3062,7 +3094,7 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}<small class="battle-shortcut-hint"><span><b>对战页</b>A排名 · Z历史 · X对战 · W名单</span><span><b>对战区</b>F全屏 · I/K上下 · J/L左右</span></small></p></div></div>
+            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}<small class="battle-shortcut-hint"><span><b>对战页</b>A排名 · Z历史 · X对战 · W名单</span><span><b>对战区</b>F全屏 · U/J上下 · H/K微调左右 · S单败 · W/L分组聚焦</span></small></p></div></div>
             {#if battleHistoryPreview}
               <div class="result-output-actions">
                 <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前</button>
@@ -3531,6 +3563,7 @@
     align-items: stretch;
     gap: calc(6px * var(--lineup-layout-scale, 1));
   }
+  .battle-option-actions .battle-count-status { grid-column: 1 / -1; }
   .battle-option-actions.desktop-actions {
     min-width: calc(var(--battle-control-width) * 4 + 18px * var(--lineup-layout-scale, 1));
     grid-template-columns: minmax(var(--battle-control-width), 1fr) repeat(3, var(--battle-control-width));

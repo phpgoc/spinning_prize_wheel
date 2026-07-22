@@ -26,6 +26,7 @@ test('网页版各个正式地址均可直接打开', async ({ page }) => {
       route.caimi ? /caimi-variant/ : /^(?!.*caimi-variant).*$/,
     );
     await expect(page.locator('.app-shell')).not.toHaveClass(/desktop-runtime/);
+    await expect(page.locator('.page-switch').getByRole('button', { name: '对战' })).toHaveCount(0);
   }
 });
 
@@ -45,12 +46,13 @@ test('抽奖、分组和对战切换时头部保持在同一位置', async ({ pa
   expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(1);
 });
 
-test('网页版对战页不显示桌面专用排名和历史栏', async ({ page }) => {
+test('网页版对战页只提示使用桌面版', async ({ page }) => {
   await page.goto('/#/battle');
-  await expect(page.locator('.battle-sidebar')).toHaveCount(0);
-  await expect(page.locator('.battle-config')).toBeVisible();
+  await expect(page.getByRole('main').getByText('对战仅支持桌面版')).toBeVisible();
+  await expect(page.locator('.battle-config, .battle-result, .battle-sidebar')).toHaveCount(0);
 });
 
+test.describe.skip('网页版已停用的对战功能', () => {
 test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {
   await page.goto('/#/battle');
   const battleResult = page.locator('.battle-result');
@@ -210,10 +212,10 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
   await page.goto('/#/battle');
   await expect(page.locator('.battle-shortcut-hint span')).toHaveText([
     '对战页A排名 · Z历史 · X对战 · W名单',
-    '对战区F全屏 · I/K上下 · J/L左右',
+    '对战区F全屏 · U/J上下 · H/K微调左右 · S单败 · W/L分组聚焦',
   ]);
-  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W');
-  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F I J K L');
+  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L');
+  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();
   const normal = await controlDimensions();
   expect(normal).toHaveLength(11);
@@ -312,6 +314,7 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
   expect(largeCard!.width).toBeGreaterThan(normalCard!.width * 1.4);
   expect(largeGap).toBeGreaterThan(normalGap * 1.4);
 });
+});
 
 test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   await page.goto('/#/grouping');
@@ -330,6 +333,7 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   expect(resultOverflow).toBeLessThanOrEqual(1);
 });
 
+test.describe.skip('网页版已停用的对战功能', () => {
 test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
@@ -420,7 +424,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
     .toContainText('W1 P1');
   await doubleScroll.focus();
   const scrollBefore = await doubleScroll.evaluate((element) => element.scrollLeft);
-  await doubleScroll.press('l');
+  await doubleScroll.press('k');
   await expect.poll(() => doubleScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(scrollBefore);
   const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
   await firstWinnerMatch.focus();
@@ -608,6 +612,7 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   const excelPath = await excelDownload.path();
   const bytes = await readFile(excelPath!);
   expect(Array.from(bytes.subarray(0, 2))).toEqual([0x50, 0x4b]);
+});
 });
 
 async function enterBattleScore(match: import('@playwright/test').Locator, up: number, down: number) {

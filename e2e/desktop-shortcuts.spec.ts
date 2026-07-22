@@ -95,10 +95,12 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
 
   const battleAreaShortcuts = page.locator('.shortcut-battle-area');
   await expect(battleAreaShortcuts.getByRole('heading', { name: '对战区' })).toBeVisible();
-  await expect(battleAreaShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(3);
+  await expect(battleAreaShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(5);
   await expect(battleAreaShortcuts).toContainText('进入 / 返回全屏');
-  await expect(battleAreaShortcuts).toContainText('比分框上 / 下');
-  await expect(battleAreaShortcuts).toContainText('比分框左 / 右');
+  await expect(battleAreaShortcuts).toContainText('微调比分框上 / 下');
+  await expect(battleAreaShortcuts).toContainText('微调比分框左 / 右');
+  await expect(battleAreaShortcuts).toContainText('聚焦单败未完成比分');
+  await expect(battleAreaShortcuts).toContainText('聚焦胜者 / 败者未完成比分');
 });
 
 test('排名字号放大时排名框同步扩容', async ({ page }) => {
@@ -154,6 +156,9 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   }));
   expect(Math.max(...sizes.map((size) => size.width)) - Math.min(...sizes.map((size) => size.width))).toBeLessThan(1);
   expect(Math.max(...sizes.map((size) => size.height)) - Math.min(...sizes.map((size) => size.height))).toBeLessThan(1);
+  const statusBox = await page.locator('.battle-count-status').boundingBox();
+  const actionBox = await page.locator('.battle-option-actions > label').boundingBox();
+  expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(actionBox!.y);
 });
 
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
@@ -383,8 +388,7 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
 test('桌面对战加载当前和历史时保护非空临时表并保留历史原记录', async ({ page }) => {
   await openDesktopBattle(page);
 
-  await page.getByRole('button', { name: '加载当前' }).click();
-  await expect(page.getByRole('alert')).toHaveText('当前临时表为空，没有可以加载的对战');
+  await expect(page.getByRole('button', { name: '加载当前' })).toBeDisabled();
 
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
@@ -566,6 +570,83 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.getByRole('button', { name: '返回当前' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
   await expect(page.locator('.battle-match')).toHaveCount(0);
+});
+
+test('对战区数字不切排名并支持微调滚动和分组定位', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  const result = page.locator('.battle-result');
+  await result.focus();
+  const selectedCards = () => page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (
+    cards.map((card) => card.getAttribute('data-rank-user-id'))
+  ));
+  const selectedBefore = await selectedCards();
+  await page.keyboard.press('3');
+  await expect(result).toBeFocused();
+  expect(await selectedCards()).toEqual(selectedBefore);
+
+  await page.keyboard.press('s');
+  await expect(page.locator('.single-battle-bracket input:focus')).toHaveCount(1);
+  await expect(page.locator('.single-battle-bracket input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-status', 'ready');
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `选手${index + 1}`));
+  await page.getByRole('radio', { name: '双败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  await result.focus();
+  await page.keyboard.press('w');
+  await expect(page.locator('.double-winner-section input:focus')).toHaveCount(1);
+
+  const firstWinnerRound = page.locator('[data-battle-stage="winner"][data-battle-level="1"]');
+  await expect(firstWinnerRound).toHaveCount(4);
+  for (let index = 0; index < 4; index += 1) {
+    await enterDesktopBattleScore(firstWinnerRound.nth(index), 4, 1);
+  }
+  await expect(page.locator('[data-battle-stage="loser"][data-battle-level="1"][data-battle-status="ready"]')).not.toHaveCount(0);
+  await firstWinnerRound.first().focus();
+  await firstWinnerRound.first().press('l');
+  await expect(page.locator('.double-loser-section input:focus')).toHaveCount(1);
+  await expect(page.locator('.double-loser-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-status', 'ready');
+
+  await firstWinnerRound.first().focus();
+  await firstWinnerRound.first().press('w');
+  await expect(page.locator('.double-winner-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-level', '2');
+  await expect(page.locator('.double-loser-section .battle-round').nth(0).getByRole('heading')).toHaveText('第 1 轮');
+  await expect(page.locator('.double-loser-section .battle-round').nth(1).getByRole('heading')).toHaveText('第 2 轮');
+
+  const scroller = page.locator('.double-battle-scroll');
+  await scroller.focus();
+  const before = await scroller.evaluate((element) => element.scrollLeft);
+  await scroller.press('k');
+  await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(before);
+  const after = await scroller.evaluate((element) => element.scrollLeft);
+  expect(after - before).toBeLessThanOrEqual(60);
+});
+
+test('桌面对战悬念揭晓支持逐格显示晋级选手', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await expect(page.getByText('悬念揭晓', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  const firstMatch = page.locator('.single-bracket-side .battle-match').first();
+  const firstName = (await firstMatch.locator('.battle-side strong').first().textContent())!.trim();
+  await enterDesktopBattleScore(firstMatch, 4, 1);
+
+  const finalMatch = page.locator('.single-bracket-final .battle-match');
+  await expect(finalMatch.getByRole('button', { name: `揭晓 ${firstName}` })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
+  await finalMatch.getByRole('button', { name: `揭晓 ${firstName}` }).click();
+  await expect(finalMatch.getByRole('button', { name: `揭晓 ${firstName}` })).toHaveCount(0);
+  await expect(finalMatch.locator('.battle-side strong').filter({ hasText: firstName })).toHaveCount(1);
 });
 
 test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page, context }) => {

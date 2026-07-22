@@ -90,6 +90,7 @@
   ): string {
     if (stage === 'pairing') return '1对2';
     if (stage === 'final') return level === 2 ? '重赛' : '总决赛';
+    if (stage === 'loser') return `第 ${level} 轮`;
     if (matchCount === 1) return '决赛';
     if (matchCount === 2) return '半决赛';
     return `1/${matchCount}`;
@@ -143,9 +144,6 @@
     return (side === 'up' ? match.upResult : match.downResult) ?? '';
   }
 
-  function slotHidden(match: BattleTmpMatch, side: BattleSide): boolean {
-    return !readOnly && hiddenSlotKeys.has(`${match.matchId}:${side}`);
-  }
 </script>
 
 {#snippet battleMatchCard(match: BattleTmpMatch)}
@@ -159,6 +157,7 @@
     data-battle-stage={match.stage}
     data-battle-level={match.level}
     data-battle-position={match.position}
+    data-battle-status={match.status}
     on:keydown={readOnly ? undefined : onMatchKeydown}
   >
     <small>{battleTmpMatchCode(match)}</small>
@@ -170,7 +169,7 @@
         class="battle-side"
       >
         <div>
-          {#if slotHidden(match, side)}
+          {#if !readOnly && hiddenSlotKeys.has(`${match.matchId}:${side}`)}
             <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, side)}`} on:click|stopPropagation={() => onReveal?.(match, side)}>·</button>
             <span class="visually-hidden">{battleTmpSlotName(match, side)}</span>
           {:else}
@@ -224,7 +223,7 @@
     tabindex={readOnly ? undefined : 0}
     role={readOnly ? undefined : 'application'}
     aria-label={readOnly ? '双败签表预览' : '双败横向签表'}
-    aria-keyshortcuts={readOnly ? undefined : 'I J K L'}
+    aria-keyshortcuts={readOnly ? undefined : 'U J H K L'}
   >
     <div class="double-battle-bracket">
       <div class="double-battle-groups">
@@ -287,7 +286,7 @@
   .mask-unfixed .battle-match.read-only input { visibility: hidden; }
   .mask-unfixed .battle-match.read-only .battle-side:not(.fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
   .battle-match { min-width: 0; padding: calc(9px * var(--battle-layout-scale, 1)); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: calc(11px * var(--battle-layout-scale, 1)); background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
-  .battle-match > small { display: block; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > small { display: block; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
   .battle-match > div { width: 100%; min-width: 0; padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1)); border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
   .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
   .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
