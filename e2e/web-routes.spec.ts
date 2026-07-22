@@ -65,8 +65,8 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   expect(toolbarBox).not.toBeNull();
   expect(colorBox).not.toBeNull();
   expect(fullscreenButtonBox).not.toBeNull();
-  expect(fullscreenButtonBox!.x).toBeGreaterThan(colorBox!.x + colorBox!.width);
-  expect(Math.abs(fullscreenButtonBox!.x + fullscreenButtonBox!.width - toolbarBox!.x - toolbarBox!.width)).toBeLessThan(1);
+  expect(fullscreenButtonBox!.x + fullscreenButtonBox!.width).toBeLessThan(colorBox!.x);
+  expect(Math.abs(fullscreenButtonBox!.x - toolbarBox!.x)).toBeLessThan(1);
   expect(Math.abs(fullscreenButtonBox!.y - toolbarBox!.y)).toBeLessThan(1);
 
   await presets.getByRole('button', { name: 'Tokyo' }).click();
