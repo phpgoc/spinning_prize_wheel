@@ -4309,11 +4309,11 @@
     position: relative;
     display: grid;
     min-width: 0;
-    min-height: 94px;
-    grid-template-columns: 46px minmax(0, 1fr);
+    min-height: calc(70px + 24px * var(--font-scale, 1));
+    grid-template-columns: calc(31px + 9px * var(--font-scale, 1)) minmax(0, 1fr);
     align-items: center;
-    gap: 8px;
-    padding: 12px 11px;
+    gap: calc(4px + 4px * var(--font-scale, 1));
+    padding: calc(4px + 8px * var(--font-scale, 1)) calc(3px + 8px * var(--font-scale, 1));
     border: 1px solid rgba(247, 214, 109, 0.52);
     border-radius: 14px;
     overflow: hidden;
@@ -4380,10 +4380,10 @@
 
   .rank-number {
     display: grid;
-    width: 40px;
-    height: 40px;
+    width: calc(31px + 9px * var(--font-scale, 1));
+    height: calc(31px + 9px * var(--font-scale, 1));
     border: 1px solid rgba(247, 214, 109, 0.78);
-    border-radius: 12px;
+    border-radius: calc(8px + 4px * var(--font-scale, 1));
     background: linear-gradient(145deg, #24341d, #111a13);
     color: var(--rank-lime);
     font-family: var(--font-mono);

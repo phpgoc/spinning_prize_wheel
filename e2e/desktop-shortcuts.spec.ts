@@ -58,6 +58,21 @@ test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page 
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
 });
 
+test('排名字号放大时排名框同步扩容', async ({ page }) => {
+  await openDesktopLineup(page);
+  const normalNumber = page.locator('.ranked-user-list .rank-number').first();
+  const normalBox = await normalNumber.boundingBox();
+  expect(normalBox).not.toBeNull();
+
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
+  const largeNumber = page.locator('.ranked-user-list .rank-number').first();
+  const largeBox = await largeNumber.boundingBox();
+  expect(largeBox!.width).toBeGreaterThan(normalBox!.width * 1.3);
+  expect(largeBox!.height).toBeGreaterThan(normalBox!.height * 1.3);
+});
+
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
   await installTauriMock(page);
   await page.goto('/#/draw');
