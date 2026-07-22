@@ -4,12 +4,14 @@ import { installTauriMock, mockedRankedNames } from './helpers/tauri-mock';
 async function openDesktopLineup(page: Page) {
   await installTauriMock(page);
   await page.goto('/grouping', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
 async function openDesktopBattle(page: Page) {
   await installTauriMock(page);
   await page.goto('/battle', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
