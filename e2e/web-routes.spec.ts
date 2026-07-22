@@ -59,6 +59,16 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await expect(presets.getByRole('button')).toHaveCount(3);
   await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
 
+  const toolbarBox = await page.locator('.battle-result-toolbar').boundingBox();
+  const colorBox = await page.locator('.battle-color-controls').boundingBox();
+  const fullscreenButtonBox = await page.getByRole('button', { name: '全屏' }).boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(colorBox).not.toBeNull();
+  expect(fullscreenButtonBox).not.toBeNull();
+  expect(fullscreenButtonBox!.x).toBeGreaterThan(colorBox!.x + colorBox!.width);
+  expect(Math.abs(fullscreenButtonBox!.x + fullscreenButtonBox!.width - toolbarBox!.x - toolbarBox!.width)).toBeLessThan(1);
+  expect(Math.abs(fullscreenButtonBox!.y - toolbarBox!.y)).toBeLessThan(1);
+
   await presets.getByRole('button', { name: 'Tokyo' }).click();
   await expect(page.getByLabel('背景框颜色')).toHaveValue('#1a1b26');
   await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#c0caf5');

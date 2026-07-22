@@ -2987,7 +2987,6 @@
         {#if battlePage}
           <div class="battle-result-toolbar">
             <button type="button" class="battle-clear-button" disabled={!battleTmpSnapshot || clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
-            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
               <div class="battle-color-presets" role="group" aria-label="配色预设">
@@ -3008,6 +3007,7 @@
                 <label><span>对战</span><input type="color" aria-label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} /></label>
               </div>
             </fieldset>
+            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
           </div>
           <div class="result-heading">
             <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}{#if battlePage}<small class="battle-shortcut-hint">A排名 · Z历史 · X对战 · W名单 · F全屏 · I/K上下 · J/L左右</small>{/if}</p></div></div>
@@ -3650,6 +3650,8 @@
   .battle-clear-button:disabled { cursor: not-allowed; opacity: 0.42; }
 
   .battle-fullscreen-button {
+    align-self: flex-start;
+    margin-left: auto;
     min-width: 68px;
     padding: 8px 13px;
     border: 1px solid color-mix(in srgb, var(--battle-text-color) 38%, transparent);

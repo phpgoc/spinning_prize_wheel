@@ -59,19 +59,24 @@ async function rankNumberAlignment(number: Locator) {
   });
 }
 
-test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page }) => {
+test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async ({ page }) => {
   await installTauriMock(page);
   await page.goto('/#/draw');
 
   await expect(page.getByRole('button', { name: '关闭自动保存历史' })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__DESKTOP_S_DEFAULT_PREVENTED__ = null;
+    window.addEventListener('keydown', (event) => {
+      if (event.key.toLowerCase() === 's') {
+        (window as any).__DESKTOP_S_DEFAULT_PREVENTED__ = event.defaultPrevented;
+      }
+    }, { once: true });
+  });
   await page.keyboard.press('s');
-  await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__DESKTOP_S_DEFAULT_PREVENTED__)).toBe(false);
+  await expect(page.getByRole('button', { name: '关闭自动保存历史' })).toBeVisible();
 
-  await page.keyboard.press('w');
-  const textarea = page.locator('.import-box textarea');
-  await textarea.fill('甲');
-  await textarea.press('s');
-  await expect(textarea).toHaveValue('甲s');
+  await page.getByRole('button', { name: '关闭自动保存历史' }).click();
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
 });
 

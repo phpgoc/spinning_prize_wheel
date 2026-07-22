@@ -1833,8 +1833,7 @@
     const globalShortcut = !editing && !modifier && !event.altKey && !event.shiftKey;
     if (!globalShortcut) return;
 
-    if (!['w', 'e', 'r', 't', 'a', 'z', 'x', 'm', 's', 'space'].includes(shortcutKey)) return;
-    if (!desktopRuntime && shortcutKey === 's') return;
+    if (!['w', 'e', 'r', 't', 'a', 'z', 'x', 'm', 'space'].includes(shortcutKey)) return;
     event.preventDefault();
 
     if (shortcutKey === 'w') {
@@ -1853,8 +1852,6 @@
       togglePanel('shortcuts');
     } else if (shortcutKey === 'space') {
       spin();
-    } else if (shortcutKey === 's' && desktopRuntime) {
-      void toggleAutoSaveHistory();
     } else if (shortcutKey === 'x') {
       void enterCandidateKeyboard();
     } else if (shortcutKey === 'm') {
@@ -2627,6 +2624,7 @@
             <div><span>列表下一项</span><kbd>↓</kbd></div>
             <div><span>候选 / 排名编辑</span><kbd>回车</kbd></div>
             <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
+            <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
             <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
         </section>
@@ -2709,15 +2707,6 @@
           </div>
         </section>
 
-        <section class="shortcut-group shortcut-settings">
-          <h3>设置</h3>
-          <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
-            {#if desktopRuntime}
-              <div><span>切换自动保存历史</span><kbd>S</kbd></div>
-            {/if}
-          </div>
-        </section>
       </div>
       {/if}
     </aside>
