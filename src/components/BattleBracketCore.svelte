@@ -427,7 +427,7 @@
   .double-winner-section { grid-column: 1; grid-row: 1; }
   .double-loser-section { grid-column: 1; grid-row: 2; }
   .double-final-section { grid-column: 2; grid-row: 2; align-self: start; transform: translateY(-50%); }
-  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; }
+  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; transform: translateY(6px); }
   .double-final-section .battle-round { position: relative; justify-content: center; }
   .double-final-section .battle-round > h3 { position: absolute; bottom: calc(100% + 9px); left: 0; }
   .double-final-section .battle-round > div { margin-top: 0; }
