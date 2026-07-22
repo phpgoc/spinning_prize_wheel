@@ -1032,15 +1032,12 @@
     }
   }
 
-  async function openLineupDatabaseFolder(source: 'ranking' | 'history' = 'history') {
-    if (source === 'ranking') rankingError = '';
-    else historyError = '';
+  async function openLineupDatabaseFolder() {
+    rankingError = '';
     try {
-      await invoke(source === 'history' ? 'open_download_folder' : 'open_database_folder');
+      await invoke('open_database_folder');
     } catch (reason) {
-      const message = messageFrom(reason, source === 'history' ? '无法打开下载文件夹' : '无法打开数据库文件夹');
-      if (source === 'ranking') rankingError = message;
-      else historyError = message;
+      rankingError = messageFrom(reason, '无法打开数据库文件夹');
     }
   }
 
@@ -2261,7 +2258,7 @@
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}
-                  <button type="button" class="database-folder-button" on:click={() => openLineupDatabaseFolder('ranking')}>打开文件夹</button>
+                  <button type="button" class="database-folder-button" on:click={openLineupDatabaseFolder}>打开文件夹</button>
                 {/if}
               {/if}
               <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
@@ -2497,7 +2494,6 @@
               </div>
               <div class="history-export-actions">
                 <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</button>
-                <button type="button" on:click={() => openLineupDatabaseFolder('history')}>打开下载文件夹</button>
                 <button type="button" class="history-delete-all" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</button>
               </div>
               {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
