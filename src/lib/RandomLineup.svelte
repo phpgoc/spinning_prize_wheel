@@ -235,7 +235,8 @@
   }
   $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
   $: visibleBattleHistories = battleHistories.filter((history) => {
-    const day = new Date(history.createdAt).toISOString().slice(0, 10);
+    const date = new Date(history.createdAt);
+    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return (!battleHistoryStart || day >= battleHistoryStart)
       && (!battleHistoryEnd || day < battleHistoryEnd);
   });
