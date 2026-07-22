@@ -205,6 +205,36 @@ test('对战选手名默认字号加倍', async ({ page }) => {
   await expect(page.locator('.battle-match strong').first()).toHaveCSS('font-size', '24px');
 });
 
+test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  const firstColumn = page.locator('.single-bracket-side.left .battle-round:first-child > div');
+  const normalCard = await firstColumn.locator('.battle-match').first().boundingBox();
+  const normalGap = await firstColumn.evaluate((element) => {
+    const rects = [...element.querySelectorAll<HTMLElement>('.battle-match')].map((match) => match.getBoundingClientRect());
+    return rects[1].top - rects[0].bottom;
+  });
+  expect(normalCard).not.toBeNull();
+
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  const largeColumn = page.locator('.single-bracket-side.left .battle-round:first-child > div');
+  const largeCard = await largeColumn.locator('.battle-match').first().boundingBox();
+  const largeGap = await largeColumn.evaluate((element) => {
+    const rects = [...element.querySelectorAll<HTMLElement>('.battle-match')].map((match) => match.getBoundingClientRect());
+    return rects[1].top - rects[0].bottom;
+  });
+  expect(largeCard!.width).toBeGreaterThan(normalCard!.width * 1.4);
+  expect(largeGap).toBeGreaterThan(normalGap * 1.4);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(

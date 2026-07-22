@@ -3237,6 +3237,8 @@
 
   .lineup-result.battle-result {
     --accent: var(--battle-participant-color);
+    /* 字号放大时，载具按三分之一幅度扩张，避免同比例撑爆签表。 */
+    --battle-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
 
     background: var(--battle-background-color);
     color: var(--battle-text-color);
@@ -3404,8 +3406,8 @@
   .single-bracket-side { display: flex; align-items: stretch; gap: 13px; }
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
-  .single-bracket-side .battle-round { display: flex; min-width: 220px; flex-direction: column; justify-content: center; }
-  .single-bracket-final { min-width: 220px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--accent) 4.5%, transparent); }
+  .single-bracket-side .battle-round { display: flex; min-width: calc(220px * var(--battle-layout-scale, 1)); flex-direction: column; justify-content: center; }
+  .single-bracket-final { min-width: calc(220px * var(--battle-layout-scale, 1)); padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--accent) 4.5%, transparent); }
   .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
   .single-bracket-side.right .battle-match { direction: rtl; }
   .single-bracket-side.right .battle-match > * { direction: ltr; }
@@ -3440,22 +3442,24 @@
   .battle-fullscreen .result-heading > div:first-child { display: none; }
   .battle-fullscreen .battle-result-toolbar { margin-bottom: 8px; }
   .battle-fullscreen .double-battle-scroll { margin-top: 10px; }
-  .battle-round { flex: 0 0 min(235px, 74vw); }
+  .battle-round { flex: 0 0 min(calc(235px * var(--battle-layout-scale, 1)), 74vw); }
   .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
-  .battle-round > div { display: grid; gap: 10px; margin-top: 9px; }
+  .battle-round > div { display: grid; gap: calc(10px * var(--battle-layout-scale, 1)); margin-top: 9px; }
+  .single-bracket-side.left .battle-round:first-child > div,
+  .single-bracket-side.right .battle-round:last-child > div { gap: calc(16px * var(--battle-layout-scale, 1)); }
   .battle-fixed-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 18px; }
-  .battle-match { min-width: 0; padding: 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 11px; background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
-  .battle-match > small { display: block; margin-bottom: 6px; color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
-  .battle-match > div { width: 100%; min-width: 0; padding: 8px 9px; border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
-  .battle-match > div + div { margin-top: 5px; }
+  .battle-match { min-width: 0; padding: calc(9px * var(--battle-layout-scale, 1)); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: calc(11px * var(--battle-layout-scale, 1)); background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
+  .battle-match > small { display: block; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 72%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > div { width: 100%; min-width: 0; padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1)); border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
+  .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
   .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .battle-match > div.waiting { color: var(--lineup-dim-on-dark); }
   .battle-match > .battle-side { display: flex; align-items: center; gap: 8px; }
   .battle-side > div { min-width: 0; flex: 1; }
   .battle-side.winner { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .battle-side input {
-    width: 48px;
-    min-height: 36px;
+    width: calc(48px * var(--battle-layout-scale, 1));
+    min-height: calc(36px * var(--battle-layout-scale, 1));
     padding: 4px 5px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 7px;
