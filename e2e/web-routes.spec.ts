@@ -235,6 +235,23 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
   expect(largeGap).toBeGreaterThan(normalGap * 1.4);
 });
 
+test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
+  await page.goto('/#/grouping');
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await page.locator('.names-field textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
+  await page.locator('.names-field textarea').press('Alt+Enter');
+  const preview = page.locator('.preview-panel');
+  const rows = page.locator('.preview-row');
+  await expect(rows).toHaveCount(8);
+  const previewOverflow = await preview.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(previewOverflow).toBeLessThanOrEqual(1);
+  await page.getByRole('button', { name: '开始分组' }).click();
+  const result = page.locator('.lineup-result');
+  const resultOverflow = await result.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(resultOverflow).toBeLessThanOrEqual(1);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
