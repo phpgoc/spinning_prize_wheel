@@ -82,7 +82,7 @@ describe('对战签位', () => {
   });
 
   test('关系化临时状态把首层位置双方写满并保留空结果', () => {
-    const plan = createSeededBattlePlan(names(2), {
+    const plan = createSeededBattlePlan(names(4), {
       format: 'single-elimination',
       orderMode: 'input',
       fixedSeedCount: 0,
@@ -98,7 +98,19 @@ describe('对战签位', () => {
       downResult: null,
       status: 'ready',
     });
-    expect([firstMatch.up, firstMatch.down].sort()).toEqual([1, 2]);
+    expect(firstMatch.up).not.toBeNull();
+    expect(firstMatch.down).not.toBeNull();
+    expect(firstMatch.up).not.toBe(firstMatch.down);
+  });
+
+  test('单败和双败都拒绝少于四名参赛者', () => {
+    for (const format of ['single-elimination', 'double-elimination'] as const) {
+      expect(() => createSeededBattlePlan(names(3), {
+        format,
+        orderMode: 'input',
+        fixedSeedCount: 0,
+      })).toThrow('至少需要 4 名');
+    }
   });
 
   test('下游有比分后拒绝修改上游赛果', () => {

@@ -500,6 +500,23 @@ test('同组不对战至少需要四组八项', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeEnabled();
 });
 
+test('单败和双败至少需要四项', async ({ page }) => {
+  await page.goto('/#/battle');
+  const textarea = page.locator('.battle-config textarea');
+  await textarea.fill('甲\n乙\n丙');
+  await textarea.press('Alt+Enter');
+
+  for (const format of ['单败', '双败']) {
+    await page.getByRole('radio', { name: format, exact: true }).check();
+    await expect(page.getByText('至少 4 项', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^抽签/u })).toBeDisabled();
+  }
+
+  await textarea.fill('甲\n乙\n丙\n丁');
+  await textarea.press('Alt+Enter');
+  await expect(page.getByRole('button', { name: /^抽签/u })).toBeEnabled();
+});
+
 test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取消', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');

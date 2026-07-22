@@ -291,7 +291,7 @@
   $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
   $: battleRankedNameCount = rankedBattleLineupNameCount(names, resolvedNames);
   $: battleRankCountReady = desktopRuntime
-    && names.length >= 2
+    && names.length >= 4
     && battleRankedNameCount >= battleConfiguredFixedCount;
   $: battleRankReady = battleRankCountReady && !resolvingNames && !sourceTextDirty;
   $: battleOrderedPreviewNames = battleOrderMode === 'rank'
@@ -301,7 +301,7 @@
   $: battleCanExecute = battleTmpSnapshot === null && !sourceTextDirty && (
     battleFormat === 'avoid-first-pair'
       ? names.length >= 8 && names.length % 2 === 0
-      : battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput
+      : names.length >= 4 && (battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput)
   );
   $: battleTmpGroups = groupBattleTmpMatches(battleTmpSnapshot);
   $: battleTmpWinnerGroups = battleTmpGroups.filter((group) => group.stage === 'winner');
@@ -593,7 +593,7 @@
         ? `需偶数名单且至少 8 项，现 ${names.length} 项`
         : battleOrderMode === 'rank'
           ? `固定前 ${battleConfiguredFixedCount} 名，现 ${battleRankedNameCount} 个排名`
-          : '至少确认 2 项';
+          : '至少确认 4 项';
       return;
     }
     try {
@@ -2936,7 +2936,7 @@
                 {:else if battleCanExecute}
                   可以抽签
                 {:else}
-                  至少 2 项
+                  至少 4 项
                 {/if}
               </div>
               <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>

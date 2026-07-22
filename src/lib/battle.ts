@@ -347,6 +347,7 @@ export function createSeededBattlePlan(
   options: SeededBattleOptions,
 ): BattlePlan {
   const participants = createParticipants(names);
+  if (participants.length < 4) throw new Error('单败、双败至少需要 4 名有效参赛者');
   validateFixedSeedCount(participants.length, options.fixedSeedCount);
   const bracketSize = nextBattleBracketSize(participants.length);
   const positions = fixedPositionsForParticipants(participants, options.fixedSeedCount);
