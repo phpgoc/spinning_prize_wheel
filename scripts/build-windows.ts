@@ -27,6 +27,9 @@ const versionedInstallerConfig = {
   },
   bundle: {
     externalBin: ['binaries/转盘-猜蜜版'],
+    resources: {
+      '../使用说明.md': '使用说明.md',
+    },
   },
 };
 

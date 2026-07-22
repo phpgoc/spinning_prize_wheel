@@ -149,7 +149,7 @@ bun run build:windows
 
 1. 构建猜蜜版网页和 `转盘-猜蜜版.exe`。
 2. 构建普通版网页和 `转盘.exe`。
-3. 把两个 EXE 打进同一个 NSIS 安装包。
+3. 把两个 EXE 和 `使用说明.md` 打进同一个 NSIS 安装包。
 
 第一次完整构建耗时较长。假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
 
@@ -157,7 +157,7 @@ bun run build:windows
 转盘-0.1.0-setup.exe
 ```
 
-Tauri 的原始产物仍会保留在 `src-tauri\target\release`。正式分发根目录中的 `setup.exe` 即可，它会把普通版和猜蜜版两个可执行文件安装到同一目录，并创建两个启动入口。项目不生成 MSI。
+Tauri 的原始产物仍会保留在 `src-tauri\target\release`。正式分发根目录中的 `setup.exe` 即可，它会把普通版、猜蜜版、`使用说明.md` 和卸载程序安装到同一目录，并创建两个启动入口。项目不生成 MSI。
 
 ## 8. 构建前检查
 
