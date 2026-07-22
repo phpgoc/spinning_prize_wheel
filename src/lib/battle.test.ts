@@ -285,6 +285,22 @@ describe('对战签位', () => {
       .every((match) => match.status === 'completed' || match.status === 'skipped')).toBe(true);
     expect(state.matches.find((match) => match.matchId === 'GF-M1')?.status).toBe('ready');
   });
+
+  test('标准双败 16 和 32 人败者组按轮次减半', () => {
+    const expected = new Map([[16, [4, 4, 2, 2, 1, 1]], [32, [8, 8, 4, 4, 2, 2, 1, 1]]]);
+    for (const [count, loserMatchCounts] of expected) {
+      const plan = createSeededBattlePlan(names(count), {
+        format: 'double-elimination',
+        orderMode: 'input',
+        fixedSeedCount: 2,
+        random: () => 0.25,
+      });
+      expect(plan.rounds.filter((round) => round.bracket === 'winner').map((round) => round.matches.length))
+        .toEqual(Array.from({ length: Math.log2(count) }, (_, index) => count / (2 ** (index + 1))));
+      expect(plan.rounds.filter((round) => round.bracket === 'loser').map((round) => round.matches.length))
+        .toEqual(loserMatchCounts);
+    }
+  });
 });
 
 function completeReadyMatches(
