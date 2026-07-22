@@ -1041,6 +1041,15 @@
     }
   }
 
+  async function openLineupDownloadFolder() {
+    error = '';
+    try {
+      await invoke('open_download_folder');
+    } catch (reason) {
+      error = messageFrom(reason, '无法打开下载目录');
+    }
+  }
+
   function isDatabaseFileError(message: string): boolean {
     return message.startsWith('数据库文件错误：');
   }
@@ -2265,6 +2274,7 @@
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
+                  <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
                   <button
                     type="button"
                     class="ranking-import-button"
@@ -2453,6 +2463,7 @@
                   <div class="history-export-actions battle-state-actions">
                     <button type="button" on:click={exportBattleTmpExcel}>导出 Excel</button>
                     <button type="button" on:click={exportBattleTmpJson}>导出 JSON</button>
+                    <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
                   </div>
                 {:else}
                   <p class="battle-state-empty">抽签后，这里会显示实时数据库状态。</p>
@@ -2772,6 +2783,7 @@
               {/if}
               <button type="button" class="result-export-button" on:click={exportLineupExcel}>Excel</button>
               <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
+              <button type="button" class="result-export-button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
               {#if desktopRuntime}
                 <div class="history-save-control">
                   <button

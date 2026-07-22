@@ -65,13 +65,13 @@ test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page 
 
   const actions = page.locator('.side-stats-actions button');
   await expect(actions).toHaveCount(3);
-  await expect(actions).toHaveText(['Excel', 'JSON', '打开下载文件夹']);
+  await expect(actions).toHaveText(['Excel', 'JSON', '打开下载']);
   const widths = await actions.evaluateAll((buttons) => (
     buttons.map((button) => button.getBoundingClientRect().width)
   ));
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
 
-  await page.getByRole('button', { name: '打开下载文件夹' }).click();
+  await page.getByRole('button', { name: '打开下载' }).click();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.invocations.some(
       (invocation: any) => invocation.cmd === 'open_download_folder',
@@ -173,6 +173,12 @@ test('按排名分组允许末档未排名', async ({ page }) => {
   ))).toEqual(['甲', '乙', '未录入']);
   await groupByRank.click();
   await expect(page.locator('.lineup-table-wrap tbody tr')).toHaveCount(2);
+  await page.getByRole('button', { name: '打开下载', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations.some(
+      (invocation: any) => invocation.cmd === 'open_download_folder',
+    )
+  ))).toBe(true);
 
   await confirmDesktopNames(page, ['甲', '未录入甲', '未录入乙']);
   await expect(sortPreview).toBeDisabled();

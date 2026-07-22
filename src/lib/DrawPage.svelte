@@ -2378,7 +2378,7 @@
                 title={desktopRuntime ? '在资源管理器中打开下载目录' : '网页版由浏览器管理下载目录'}
                 disabled={!desktopRuntime}
                 on:click={openDrawDownloadFolder}
-              >打开下载文件夹</button>
+              >打开下载</button>
             </div>
           {/if}
         </aside>
