@@ -46,6 +46,34 @@
   let singleConnectorHeight = 0;
 
   $: layout = createBattleBracketLayout(snapshot);
+  $: byeExplanation = createByeExplanation(snapshot);
+
+  function automaticAdvanceParticipant(match: BattleTmpMatch): number | null {
+    if (match.status !== 'completed') return null;
+    if (match.up === null && match.down !== null) return match.down;
+    if (match.down === null && match.up !== null) return match.up;
+    return null;
+  }
+
+  function createByeExplanation(current: BattleTmpSnapshot): { count: number; text: string } | null {
+    const firstStage = current.format === 'double-elimination' ? 'winner' : 'single';
+    const byeMatches = current.matches.filter((match) => (
+      match.stage === firstStage
+      && match.level === 1
+      && automaticAdvanceParticipant(match) !== null
+    ));
+    if (byeMatches.length === 0) return null;
+    if (current.format === 'double-elimination') {
+      return {
+        count: byeMatches.length,
+        text: `${byeMatches.length} 个胜者组首轮轮空：对应选手已自动进入胜者组第二轮；轮空不记作失败，也不会产生选手进入败者组。败者组的无败者空位会自动跳过。`,
+      };
+    }
+    return {
+      count: byeMatches.length,
+      text: `${byeMatches.length} 个首轮轮空：对应选手已自动进入第二轮；首轮仍保留轮空签位，不需要填写比分。`,
+    };
+  }
 
   function groupBattleTmpMatches(current: BattleTmpSnapshot): BattleRoundGroup[] {
     const groups = new Map<string, BattleRoundGroup>();
@@ -137,9 +165,31 @@
       if (maskUnfixed && (!participant || participant.seed > snapshot.fixedSeedCount)) return '待随机';
       return battleTmpParticipantName(participantId);
     }
-    if (!origin) return '待定';
+    if (match.stage === 'final' && match.level === 2 && match.status === 'skipped') return '无需重赛';
+    if (automaticAdvanceParticipant(match) !== null) return '轮空';
+    if (!origin) return match.status === 'skipped' ? '空签' : '待定';
     const originMatch = snapshot.matches.find((candidate) => candidate.matchId === origin.matchId);
+    if (originMatch?.status === 'skipped') return '上游空场';
+    if (originMatch && origin.outcome === 'loser' && automaticAdvanceParticipant(originMatch) !== null) {
+      return '上游轮空，无败者';
+    }
     return originMatch ? battleTmpMatchCode(originMatch) : '待定';
+  }
+
+  function battleTmpAutomaticStatus(match: BattleTmpMatch): string | null {
+    if (match.stage === 'final' && match.level === 2 && match.status === 'skipped') {
+      return '胜者组冠军已胜出，无需重赛';
+    }
+    const participantId = automaticAdvanceParticipant(match);
+    if (participantId !== null) {
+      const name = battleTmpParticipantName(participantId);
+      if (match.stage === 'single' && match.level === 1) return `${name} 轮空，自动进入第二轮`;
+      if (match.stage === 'winner' && match.level === 1) return `${name} 轮空，自动进入胜者组第二轮`;
+      if (match.stage === 'loser') return `${name} 无对手，自动进入败者组下一轮`;
+      return `${name} 无对手，自动晋级下一轮`;
+    }
+    if (match.status === 'skipped') return '没有可参赛选手，本场自动跳过';
+    return null;
   }
 
   function battleTmpParticipantWon(match: BattleTmpMatch, id: number | null): boolean {
@@ -223,10 +273,13 @@
 </script>
 
 {#snippet battleMatchCard(match: BattleTmpMatch)}
+  {@const automaticStatus = battleTmpAutomaticStatus(match)}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <article
     class:read-only={readOnly}
+    class:auto-advance={automaticAdvanceParticipant(match) !== null}
+    class:auto-skipped={match.status === 'skipped'}
     class="battle-match"
     tabindex={readOnly ? undefined : 0}
     aria-label={`${battleTmpMatchCode(match)} 对战`}
@@ -237,7 +290,12 @@
     data-battle-match-id={match.matchId}
     on:keydown={readOnly ? undefined : onMatchKeydown}
   >
-    <small>{battleTmpMatchCode(match)}</small>
+    <small>
+      <span>{battleTmpMatchCode(match)}</span>
+      {#if automaticStatus}
+        <em>{automaticStatus}</em>
+      {/if}
+    </small>
     {#each BATTLE_SIDES as side (side)}
       <div
         class:fixed={battleTmpParticipantFixed(match[side])}
@@ -272,6 +330,13 @@
     {/each}
   </article>
 {/snippet}
+
+{#if !previewOnly && byeExplanation}
+  <div class="battle-bye-explanation" role="note" data-battle-bye-count={byeExplanation.count}>
+    <strong>轮空说明</strong>
+    <span>{byeExplanation.text}</span>
+  </div>
+{/if}
 
 {#if previewOnly}
   <div class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="battle-bracket battle-preview-rounds">
@@ -334,6 +399,9 @@
 {/if}
 
 <style>
+  .battle-bye-explanation { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--battle-text-color, var(--lineup-text-on-dark)); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.55; }
+  .battle-bye-explanation strong { flex: 0 0 auto; color: var(--accent); }
+  .battle-bye-explanation span { min-width: 0; }
   .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
   .single-battle-bracket { position: relative; display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; isolation: isolate; transition: opacity 180ms ease; }
   .single-bracket-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
@@ -382,7 +450,9 @@
   .mask-unfixed .battle-match.read-only input { visibility: hidden; }
   .mask-unfixed .battle-match.read-only .battle-side:not(.fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
   .battle-match { min-width: 0; padding: calc(9px * var(--battle-layout-scale, 1)); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: calc(11px * var(--battle-layout-scale, 1)); background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
-  .battle-match > small { display: block; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > small { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
+  .battle-match > small em { padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 13%, transparent); color: color-mix(in srgb, var(--accent) 78%, var(--battle-text-color, white)); font-family: inherit; font-style: normal; font-weight: 750; }
+  .battle-match.auto-skipped > small em { background: rgba(255, 255, 255, 0.06); color: color-mix(in srgb, var(--battle-text-color, white) 62%, transparent); }
   .battle-match > div { width: 100%; min-width: 0; padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1)); border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
   .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
   .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
