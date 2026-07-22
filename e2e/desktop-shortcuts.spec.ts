@@ -73,6 +73,38 @@ test('排名字号放大时排名框同步扩容', async ({ page }) => {
   expect(largeBox!.height).toBeGreaterThan(normalBox!.height * 1.3);
 });
 
+test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等宽', async ({ page }) => {
+  const rankedUsers = Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1,
+    name: `选手${index + 1}`,
+    rank: index + 1,
+  }));
+  await installTauriMock(page, rankedUsers);
+  await page.goto('/#/battle', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(8);
+  await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('radio', { name: '按排名' }).check();
+
+  const orderControls = page.locator('.battle-order-group label, .battle-order-group button');
+  await expect(orderControls).toHaveCount(3);
+  const orderPositions = await orderControls.evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y };
+  }));
+  expect(new Set(orderPositions.map((position) => Math.round(position.x))).size).toBe(1);
+  expect(orderPositions[1].y).toBeGreaterThan(orderPositions[0].y);
+  expect(orderPositions[2].y).toBeGreaterThan(orderPositions[1].y);
+
+  const controls = page.locator('.battle-preview-settings label, .battle-preview-settings button');
+  const sizes = await controls.evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  }));
+  expect(Math.max(...sizes.map((size) => size.width)) - Math.min(...sizes.map((size) => size.width))).toBeLessThan(1);
+  expect(Math.max(...sizes.map((size) => size.height)) - Math.min(...sizes.map((size) => size.height))).toBeLessThan(1);
+});
+
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
   await installTauriMock(page);
   await page.goto('/#/draw');

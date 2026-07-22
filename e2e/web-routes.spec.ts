@@ -166,12 +166,73 @@ test('宽屏并排显示三组对战选项', async ({ page }) => {
   await expect(groups).toHaveCount(3);
   const boxes = await groups.evaluateAll((elements) => elements.map((element) => {
     const rect = element.getBoundingClientRect();
-    return { x: rect.x, y: rect.y };
+    return { x: rect.x, y: rect.y, width: rect.width };
   }));
   expect(Math.max(...boxes.map((box) => box.y)) - Math.min(...boxes.map((box) => box.y))).toBeLessThan(2);
   expect(new Set(boxes.map((box) => Math.round(box.x))).size).toBe(3);
+  expect(Math.max(...boxes.map((box) => box.width)) - Math.min(...boxes.map((box) => box.width))).toBeLessThan(1);
   const settingsBox = await page.locator('.battle-preview-settings').boundingBox();
-  expect(settingsBox!.height).toBeLessThan(240);
+  expect(settingsBox!.height).toBeLessThan(350);
+});
+
+test('对战预览操作控件等宽等高并按百分之一百六十六扩容', async ({ page }) => {
+  const names = Array.from({ length: 16 }, (_, index) => `选手${index + 1}`).join('\n');
+  const prepareSingleBattle = async () => {
+    await page.locator('.battle-config textarea').fill(names);
+    await page.locator('.battle-config textarea').press('Alt+Enter');
+    await page.getByRole('radio', { name: '单败' }).check();
+  };
+  const controlDimensions = () => page.locator('.battle-preview-settings label, .battle-preview-settings button').evaluateAll((elements) => (
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        width: rect.width,
+        height: rect.height,
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: Number.parseInt(style.fontWeight, 10),
+        overflow: element.scrollWidth - element.clientWidth,
+      };
+    })
+  ));
+
+  await page.goto('/#/battle');
+  await expect(page.locator('.battle-shortcut-hint')).toHaveText('A排名 · Z历史 · X对战 · W名单 · F全屏 · I/K上下 · J/L左右');
+  await prepareSingleBattle();
+  const normal = await controlDimensions();
+  expect(normal).toHaveLength(10);
+  expect(Math.max(...normal.map((item) => item.width)) - Math.min(...normal.map((item) => item.width))).toBeLessThan(1);
+  expect(Math.max(...normal.map((item) => item.height)) - Math.min(...normal.map((item) => item.height))).toBeLessThan(1);
+  expect(normal.every((item) => item.fontSize === 15 && item.fontWeight === 900)).toBe(true);
+  await expect(page.locator('.battle-option-actions .battle-generate-button')).toHaveCount(1);
+  const normalSettingsWidth = await page.locator('.battle-preview-settings').evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(normalSettingsWidth.scroll - normalSettingsWidth.client).toBeLessThanOrEqual(1);
+
+  const orderPositions = await page.locator('.battle-order-group label').evaluateAll((elements) => (
+    elements.map((element) => element.getBoundingClientRect().y)
+  ));
+  expect(orderPositions[1]).toBeGreaterThan(orderPositions[0]);
+
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await prepareSingleBattle();
+  const large = await controlDimensions();
+  expect(large).toHaveLength(normal.length);
+  expect(Math.max(...large.map((item) => item.width)) - Math.min(...large.map((item) => item.width))).toBeLessThan(1);
+  expect(Math.max(...large.map((item) => item.height)) - Math.min(...large.map((item) => item.height))).toBeLessThan(1);
+  expect(large.every((item) => item.fontSize === 45 && item.fontWeight === 900 && item.overflow <= 1)).toBe(true);
+  expect(large[0].width / normal[0].width).toBeGreaterThan(1.65);
+  expect(large[0].width / normal[0].width).toBeLessThan(1.67);
+  expect(large[0].height / normal[0].height).toBeGreaterThan(1.65);
+  expect(large[0].height / normal[0].height).toBeLessThan(1.67);
+  const largeSettingsWidth = await page.locator('.battle-preview-settings').evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(largeSettingsWidth.scroll).toBeGreaterThan(largeSettingsWidth.client * 1.6);
 });
 
 test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
@@ -201,6 +262,7 @@ test('对战选手名默认字号加倍', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-match strong').first()).toHaveCSS('font-size', '24px');
 });
@@ -308,18 +370,15 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await expect(page.locator('.battle-round')).toHaveCount(8);
   await expect(page.locator('.battle-side.waiting.winner')).toHaveCount(0);
   const doubleScroll = page.locator('.double-battle-scroll');
-  const winnerSection = page.locator('.double-winner-section');
-  const finalSection = page.locator('.double-final-section');
-  const loserSection = page.locator('.double-loser-section');
-  const [winnerSectionBox, loserSectionBox, doubleFinalBox] = await Promise.all([
-    winnerSection.boundingBox(), loserSection.boundingBox(), finalSection.boundingBox(),
+  const [winnerSectionBox, loserSectionBox, doubleFinalBox] = await battleElementBoxes(page, [
+    '.double-winner-section', '.double-loser-section', '.double-final-section',
   ]);
   expect(doubleFinalBox!.x).toBeGreaterThan(winnerSectionBox!.x + winnerSectionBox!.width);
   expect(Math.abs(doubleFinalBox!.y + doubleFinalBox!.height / 2 - loserSectionBox!.y)).toBeLessThan(2);
-  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await Promise.all([
-    page.locator('.double-winner-section .battle-round').last().locator('.battle-match').boundingBox(),
-    page.locator('.double-loser-section .battle-round').last().locator('.battle-match').boundingBox(),
-    page.locator('.double-final-section .battle-round').first().locator('.battle-match').boundingBox(),
+  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await battleElementBoxes(page, [
+    '.double-winner-section .battle-round:last-child .battle-match',
+    '.double-loser-section .battle-round:last-child .battle-match',
+    '.double-final-section .battle-round:first-child .battle-match',
   ]);
   const bracketFinalMiddle = (
     winnerFinalBox!.y + winnerFinalBox!.height / 2
@@ -388,10 +447,10 @@ test('16 人双败逐列向分界线收拢', async ({ page }) => {
   expect(Math.max(...winnerEdges.map((edge) => edge.lastBottom)) - Math.min(...winnerEdges.map((edge) => edge.lastBottom))).toBeLessThan(2);
   expect(Math.max(...loserEdges.map((edge) => edge.firstTop)) - Math.min(...loserEdges.map((edge) => edge.firstTop))).toBeLessThan(2);
 
-  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await Promise.all([
-    winnerRounds.last().locator('.battle-match').boundingBox(),
-    loserRounds.last().locator('.battle-match').boundingBox(),
-    page.locator('.double-final-section .battle-round').first().locator('.battle-match').boundingBox(),
+  const [winnerFinalBox, loserFinalBox, grandFinalBox] = await battleElementBoxes(page, [
+    '.double-winner-section .battle-round:last-child .battle-match',
+    '.double-loser-section .battle-round:last-child .battle-match',
+    '.double-final-section .battle-round:first-child .battle-match',
   ]);
   const bracketFinalMiddle = (
     winnerFinalBox!.y + winnerFinalBox!.height / 2
@@ -547,4 +606,20 @@ async function battleRoundMatchEdges(rounds: import('@playwright/test').Locator)
     const last = matches.at(-1)!.getBoundingClientRect();
     return { firstTop: first.top, lastBottom: last.bottom };
   }));
+}
+
+async function battleElementBoxes(page: Page, selectors: string[]): Promise<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}[]> {
+  return page.locator('.double-battle-bracket').evaluate((bracket, targetSelectors) => (
+    targetSelectors.map((selector) => {
+      const target = bracket.querySelector(selector);
+      if (!target) throw new Error(`找不到双败布局元素：${selector}`);
+      const rect = target.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    })
+  ), selectors);
 }

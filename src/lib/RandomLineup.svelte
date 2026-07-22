@@ -2889,46 +2889,60 @@
 
         {#if battlePage}
           <div class="battle-preview-settings">
-            <fieldset class="battle-radio-group battle-format-group">
-              <legend>赛制</legend>
-              <label><input type="radio" name="battle-format" value="avoid-first-pair" bind:group={battleFormat} /><span>同组不对战1对2</span></label>
-              <label><input type="radio" name="battle-format" value="single-elimination" bind:group={battleFormat} /><span>单败</span></label>
-              <label><input type="radio" name="battle-format" value="double-elimination" bind:group={battleFormat} /><span>双败</span></label>
-              {#if battleFormat === 'double-elimination'}
-                <label class="battle-double-final-option"><input type="checkbox" bind:checked={battleDoubleGrandFinal} /><span>双总决赛</span></label>
-              {/if}
-            </fieldset>
-            {#if battleFormat !== 'avoid-first-pair'}
-              <fieldset class="battle-radio-group battle-order-group">
-                <legend>名单顺序</legend>
-                <label title={desktopRuntime ? '' : '网页版没有排名数据库'}><input type="radio" name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} /><span>按排名</span></label>
-                <label><input type="radio" name="battle-order" value="input" bind:group={battleOrderMode} /><span>按输入顺序</span></label>
+            <div class="battle-option-groups">
+              <fieldset class="battle-radio-group battle-format-group">
+                <legend>赛制</legend>
+                <label><input type="radio" name="battle-format" value="avoid-first-pair" bind:group={battleFormat} /><span>同组不对战1对2</span></label>
+                <label><input type="radio" name="battle-format" value="single-elimination" bind:group={battleFormat} /><span>单败</span></label>
+                <label><input type="radio" name="battle-format" value="double-elimination" bind:group={battleFormat} /><span>双败</span></label>
+                {#if battleFormat === 'double-elimination'}
+                  <label class="battle-double-final-option"><input type="checkbox" bind:checked={battleDoubleGrandFinal} /><span>双总决赛</span></label>
+                {/if}
               </fieldset>
-              <fieldset class="battle-radio-group battle-fixed-group">
-                <legend>固定位置</legend>
-                {#each battleFixedOptions as count}
-                  <label><input type="radio" name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount} /><span>前 {count} 固定</span></label>
-                {:else}
-                  <div class="battle-radio-empty">确认至少 3 项后生成选项</div>
-                {/each}
-              </fieldset>
-            {/if}
-            <div class:valid={battleCanExecute} class="battle-count-status">
-              {#if battleTmpSnapshot}
-                已抽签，清空后重来
-              {:else if sourceTextDirty}
-                名单已改，请确认
-              {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
-                需偶数且至少 8 项
-              {:else if battleOrderMode === 'rank' && !battleRankReady}
-                固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名
-              {:else if battleCanExecute}
-                可以抽签
-              {:else}
-                至少 2 项
+              {#if battleFormat !== 'avoid-first-pair'}
+                <fieldset class="battle-radio-group battle-order-group">
+                  <legend>名单顺序</legend>
+                  <label><input type="radio" name="battle-order" value="input" bind:group={battleOrderMode} /><span>按输入顺序</span></label>
+                  <label title={desktopRuntime ? '' : '网页版没有排名数据库'}><input type="radio" name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} /><span>按排名</span></label>
+                  {#if desktopRuntime && battleOrderMode === 'rank'}
+                    <button
+                      type="button"
+                      class="rank-preview-button battle-rank-preview-button"
+                      title={sourceTextDirty ? '先确认名单' : battleRankReady ? `固定前 ${battleConfiguredFixedCount} 名` : `还差 ${Math.max(0, battleConfiguredFixedCount - battleRankedNameCount)} 个排名`}
+                      disabled={!battleRankReady}
+                      on:click={sortBattlePreviewByRank}
+                    >按排名预览</button>
+                  {/if}
+                </fieldset>
+                <fieldset class="battle-radio-group battle-fixed-group">
+                  <legend>固定位置</legend>
+                  {#each battleFixedOptions as count}
+                    <label><input type="radio" name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount} /><span>前 {count} 固定</span></label>
+                  {:else}
+                    <div class="battle-radio-empty">确认至少 3 项后生成选项</div>
+                  {/each}
+                </fieldset>
               {/if}
             </div>
-            <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+            <div class="battle-option-actions">
+              <div class:valid={battleCanExecute} class="battle-count-status">
+                {#if battleTmpSnapshot}
+                  已抽签，清空后重来
+                {:else if sourceTextDirty}
+                  名单已改，请确认
+                {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
+                  需偶数且至少 8 项
+                {:else if battleOrderMode === 'rank' && !battleRankReady}
+                  固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名
+                {:else if battleCanExecute}
+                  可以抽签
+                {:else}
+                  至少 2 项
+                {/if}
+              </div>
+              <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+              <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
+            </div>
           </div>
         {/if}
 
@@ -2949,20 +2963,17 @@
         {#if !battlePage}
           <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
         {/if}
-        <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
-          {#if battlePage}
-            {#if desktopRuntime && battleFormat !== 'avoid-first-pair' && battleOrderMode === 'rank'}
-              <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : battleRankReady ? `固定前 ${battleConfiguredFixedCount} 名` : `还差 ${Math.max(0, battleConfiguredFixedCount - battleRankedNameCount)} 个排名`} disabled={!battleRankReady} on:click={sortBattlePreviewByRank}>按排名预览</button>
-            {/if}
-            <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
-          {:else if desktopRuntime}
+        {#if !battlePage}
+          <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
+            {#if desktopRuntime}
             <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
-          {:else}
-            <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
-          {/if}
-        </div>
+            {:else}
+              <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
+            {/if}
+          </div>
+        {/if}
       </fieldset>
 
       <div
@@ -2999,7 +3010,7 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}{#if battlePage}<small class="battle-shortcut-hint">A排名 · Z历史 · X对战 · W名单 · F全屏</small>{/if}</p></div></div>
+            <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}{#if battlePage}<small class="battle-shortcut-hint">A排名 · Z历史 · X对战 · W名单 · F全屏 · I/K上下 · J/L左右</small>{/if}</p></div></div>
             {#if battleTmpSnapshot}
               <div class="result-output-actions">
                 {#if hiddenBattleSlotCount > 0}
@@ -3270,6 +3281,8 @@
     --lineup-muted-on-light: #34362f;
     --lineup-dim-on-light: #484b43;
     --lineup-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
+    --battle-control-width: calc(304px * var(--lineup-layout-scale, 1));
+    --battle-control-height: calc(42px * var(--lineup-layout-scale, 1));
     min-height: 0;
     padding: clamp(24px, 4vw, 58px);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -3311,7 +3324,10 @@
   }
 
   .lineup-workbench.desktop {
-    grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns:
+      minmax(calc(260px * var(--lineup-layout-scale, 1)), calc(310px * var(--lineup-layout-scale, 1)))
+      minmax(0, 1fr)
+      minmax(calc(300px * var(--lineup-layout-scale, 1)), calc(360px * var(--lineup-layout-scale, 1)));
     gap: calc(clamp(14px, 1.7vw, 25px) * var(--lineup-layout-scale, 1));
   }
 
@@ -3414,52 +3430,139 @@
   .battle-radio-group {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
-    margin: 17px 0 0;
+    gap: calc(7px * var(--lineup-layout-scale, 1));
+    margin: calc(17px * var(--lineup-layout-scale, 1)) 0 0;
     padding: 0;
     border: 0;
   }
   .battle-format-group { grid-template-columns: minmax(0, 1fr); }
   .battle-fixed-group { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
-  .battle-radio-group legend { width: 100%; margin-bottom: 7px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-radio-group label { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid rgba(36, 37, 31, 0.13); border-radius: 8px; background: #f8f6f0; color: #34362f; font-size: calc(13px * var(--font-scale, 1)); font-weight: 700; }
+  .battle-radio-group legend { width: 100%; margin-bottom: calc(7px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-group label {
+    display: flex;
+    width: var(--battle-control-width);
+    height: var(--battle-control-height);
+    min-width: var(--battle-control-width);
+    box-sizing: border-box;
+    align-items: center;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1));
+    border: 1px solid rgba(36, 37, 31, 0.13);
+    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    background: #f8f6f0;
+    color: #34362f;
+    font-size: calc(15px * var(--font-scale, 1));
+    font-weight: 900;
+    line-height: 1;
+  }
+  .battle-radio-group label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .battle-radio-group input { accent-color: #7d9134; }
+  .battle-radio-group input[type='radio'],
+  .battle-radio-group input[type='checkbox'] { width: calc(13px * var(--lineup-layout-scale, 1)); height: calc(13px * var(--lineup-layout-scale, 1)); margin: 0; flex: 0 0 auto; }
   .battle-radio-group label:has(input:disabled) { cursor: not-allowed; opacity: 0.48; }
-  .battle-radio-empty { grid-column: 1 / -1; padding: 9px 10px; border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: 8px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-count-status { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-empty { grid-column: 1 / -1; padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1)); border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: calc(8px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-count-status { margin-top: calc(10px * var(--lineup-layout-scale, 1)); padding: calc(9px * var(--lineup-layout-scale, 1)) calc(11px * var(--lineup-layout-scale, 1)); border-radius: calc(8px * var(--lineup-layout-scale, 1)); background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
   .battle-preview-settings {
     display: grid;
-    grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.72fr) minmax(250px, 1.28fr);
-    gap: 6px;
-    margin-top: 18px;
-    padding-top: 12px;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    margin-top: calc(18px * var(--lineup-layout-scale, 1));
+    padding-top: calc(12px * var(--lineup-layout-scale, 1));
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+    overflow-x: auto;
+  }
+  .battle-option-groups {
+    display: grid;
+    min-width: max-content;
+    grid-template-columns: repeat(3, max-content);
+    align-items: stretch;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+  }
+  .battle-option-actions {
+    display: grid;
+    min-width: calc(var(--battle-control-width) * 3 + 12px * var(--lineup-layout-scale, 1));
+    grid-template-columns: minmax(var(--battle-control-width), 1fr) repeat(2, var(--battle-control-width));
+    align-items: stretch;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
   }
   .battle-preview-settings .battle-radio-group {
+    flex: 0 0 auto;
     align-content: start;
     margin: 0;
-    padding: 6px;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    padding: calc(6px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    border-radius: calc(10px * var(--lineup-layout-scale, 1));
     background: rgba(255, 255, 255, 0.025);
   }
-  .battle-preview-settings .battle-format-group { grid-template-columns: minmax(0, 1fr); }
-  .battle-preview-settings .battle-format-group > label:first-of-type { grid-column: 1 / -1; }
-  .battle-preview-settings .battle-order-group { grid-template-columns: minmax(0, 1fr); }
-  .battle-preview-settings .battle-double-final-option { grid-column: 1 / -1; }
-  .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .battle-preview-settings .battle-radio-group label { padding: 4px 6px; line-height: 1.15; }
+  .battle-preview-settings .battle-format-group,
+  .battle-preview-settings .battle-order-group,
+  .battle-preview-settings .battle-fixed-group { grid-template-columns: var(--battle-control-width); }
+  .battle-preview-settings .battle-radio-group label {
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
+  }
   .battle-preview-settings .battle-radio-group label,
   .battle-preview-settings .battle-reveal-setting {
     box-sizing: border-box;
-    min-height: 34px;
   }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
-  .battle-preview-settings .battle-reveal-setting { padding: 5px 8px; }
-  .battle-preview-settings .battle-count-status { grid-column: 1 / -1; margin-top: 0; }
-  .battle-preview-settings .battle-count-status { border: 1px solid rgba(218, 91, 63, 0.18); background: rgba(218, 91, 63, 0.08); color: #e1a092; }
+  .battle-preview-settings .battle-reveal-setting {
+    width: var(--battle-control-width);
+    height: var(--battle-control-height);
+    min-height: 0;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    margin: 0;
+    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
+    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    font-size: calc(15px * var(--font-scale, 1));
+    font-weight: 900;
+    line-height: 1;
+  }
+  .battle-preview-settings .battle-reveal-setting input {
+    width: calc(13px * var(--lineup-layout-scale, 1));
+    height: calc(13px * var(--lineup-layout-scale, 1));
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .battle-preview-settings .battle-rank-preview-button {
+    width: var(--battle-control-width);
+    height: var(--battle-control-height);
+    min-height: 0;
+    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
+    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    font-size: calc(15px * var(--font-scale, 1));
+    font-weight: 900;
+    line-height: 1;
+  }
+  .battle-preview-settings .battle-count-status {
+    display: flex;
+    min-width: var(--battle-control-width);
+    height: var(--battle-control-height);
+    min-height: 0;
+    box-sizing: border-box;
+    align-items: center;
+    margin-top: 0;
+    border: 1px solid rgba(218, 91, 63, 0.18);
+    background: rgba(218, 91, 63, 0.08);
+    color: #e1a092;
+    font-weight: 800;
+    line-height: 1;
+    overflow: hidden;
+  }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
+  .battle-preview-settings .battle-generate-button {
+    width: var(--battle-control-width);
+    height: var(--battle-control-height);
+    min-height: 0;
+    margin: 0;
+    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
+    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    font-size: calc(15px * var(--font-scale, 1));
+    font-weight: 900;
+    line-height: 1;
+  }
+  .battle-preview-settings .battle-generate-button i { font-size: calc(15px * var(--font-scale, 1)); }
 
   .lineup-error,
   .outdated-notice {
@@ -3714,7 +3817,6 @@
   .double-battle-bracket .battle-round > div { flex: 1; }
   .double-winner-section .battle-round > div { align-content: end; }
   .double-loser-section .battle-round > div { align-content: start; }
-  .double-loser-section .battle-round:nth-child(n + 3) { transform: translateY(-2px); }
   .double-battle-bracket .battle-match { padding: 6px; }
   .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
   .double-battle-bracket .battle-match > div { padding: 4px 6px; }
@@ -4141,8 +4243,8 @@
   .lineup-actions {
     display: flex;
     align-items: stretch;
-    gap: 9px;
-    margin-top: 13px;
+    gap: calc(9px * var(--lineup-layout-scale, 1));
+    margin-top: calc(13px * var(--lineup-layout-scale, 1));
   }
 
   .lineup-actions.desktop-actions {
@@ -4193,14 +4295,6 @@
     min-height: 48px;
     flex: 1;
     margin-top: 0;
-  }
-
-  .battle-page .lineup-actions .generate-button,
-  .battle-page .lineup-actions .rank-preview-button,
-  .battle-page .lineup-actions .input-order-button {
-    box-sizing: border-box;
-    min-height: 34px;
-    padding-block: 7px;
   }
 
   .lineup-actions .rank-generate-button {
@@ -4281,7 +4375,7 @@
     min-width: 0;
     align-content: start;
     align-self: stretch;
-    gap: 9px;
+    gap: calc(9px * var(--lineup-layout-scale, 1));
     /* 排名只跟随右侧两排的高度，自身条目数量不能反向撑开页面。 */
     contain: size;
   }
@@ -4302,8 +4396,8 @@
     width: 100%;
     grid-template-columns: minmax(0, 1fr) auto 18px;
     align-items: center;
-    gap: 8px;
-    padding: 13px 14px;
+    gap: calc(8px * var(--lineup-layout-scale, 1));
+    padding: calc(13px * var(--lineup-layout-scale, 1)) calc(14px * var(--lineup-layout-scale, 1));
     border: 0;
     background: transparent;
     color: #33362f;
@@ -4336,7 +4430,7 @@
     flex-direction: column;
   }
 
-  .desktop-accordion-content { padding: 12px; }
+  .desktop-accordion-content { padding: calc(12px * var(--lineup-layout-scale, 1)); }
 
   .rank-manager {
     --rank-gold: #f7d66d;
@@ -4449,12 +4543,12 @@
   .ranking-transfer-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 6px;
-    margin: 3px 0 8px;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    margin: calc(3px * var(--lineup-layout-scale, 1)) 0 calc(8px * var(--lineup-layout-scale, 1));
   }
 
   .ranking-transfer-actions button {
-    padding: 6px 8px;
+    padding: calc(6px * var(--lineup-layout-scale, 1)) calc(8px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(223, 246, 108, 0.34);
     border-radius: 7px;
     background: linear-gradient(145deg, #26331f, #141d16);
@@ -4484,9 +4578,9 @@
     min-width: 0;
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 5px;
-    margin: 2px 0 7px;
-    padding: 7px 8px;
+    gap: calc(5px * var(--lineup-layout-scale, 1));
+    margin: calc(2px * var(--lineup-layout-scale, 1)) 0 calc(7px * var(--lineup-layout-scale, 1));
+    padding: calc(7px * var(--lineup-layout-scale, 1)) calc(8px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(247, 214, 109, 0.36);
     border-radius: 10px;
     background: linear-gradient(135deg, rgba(247, 214, 109, 0.15), rgba(223, 246, 108, 0.07));
@@ -4505,7 +4599,7 @@
   .rank-keyboard-order strong { color: #fff1ba; font-size: calc(13px * var(--font-scale, 1)); }
   .rank-keyboard-order small { margin-left: 6px; color: #e2e7c3; font-size: calc(12px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
-    padding: 5px 7px;
+    padding: calc(5px * var(--lineup-layout-scale, 1)) calc(7px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(223, 246, 108, 0.4);
     border-radius: 6px;
     background: #24311d;
@@ -4522,8 +4616,8 @@
     min-height: 240px;
     flex: 1;
     align-content: start;
-    margin-top: 4px;
-    padding: 9px 3px 13px 0;
+    margin-top: calc(4px * var(--lineup-layout-scale, 1));
+    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(3px * var(--lineup-layout-scale, 1)) calc(13px * var(--lineup-layout-scale, 1)) 0;
     overflow-y: auto;
   }
 
@@ -4542,12 +4636,12 @@
   .rank-zone {
     display: grid;
     align-content: start;
-    gap: 8px;
+    gap: calc(8px * var(--lineup-layout-scale, 1));
   }
 
   .rank-zone.unranked-zone {
-    margin-top: 13px;
-    padding-top: 9px;
+    margin-top: calc(13px * var(--lineup-layout-scale, 1));
+    padding-top: calc(9px * var(--lineup-layout-scale, 1));
     border-top: 1px solid rgba(247, 214, 109, 0.28);
     transition: border-color 120ms ease, background 120ms ease;
   }
@@ -5000,15 +5094,15 @@
   .history-dates {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
+    gap: calc(7px * var(--lineup-layout-scale, 1));
   }
 
   .history-dates label { min-width: 0; }
-  .history-dates span { display: block; margin-bottom: 4px; color: var(--lineup-muted-on-light); font-size: calc(10px * var(--font-scale, 1)); }
+  .history-dates span { display: block; margin-bottom: calc(4px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(10px * var(--font-scale, 1)); }
   .history-dates input {
     width: 100%;
     min-width: 0;
-    padding: 7px 5px;
+    padding: calc(7px * var(--lineup-layout-scale, 1)) calc(5px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(36, 37, 31, 0.12);
     border-radius: 7px;
     outline: 0;
@@ -5020,8 +5114,8 @@
 
   .lineup-history-list {
     display: grid;
-    gap: 6px;
-    margin-top: 10px;
+    gap: calc(6px * var(--lineup-layout-scale, 1));
+    margin-top: calc(10px * var(--lineup-layout-scale, 1));
   }
 
   .lineup-history-list > p {
@@ -5036,7 +5130,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: stretch;
     border: 1px solid rgba(36, 37, 31, 0.08);
-    border-radius: 8px;
+    border-radius: calc(8px * var(--lineup-layout-scale, 1));
     overflow: hidden;
     background: #fffdf8;
   }
@@ -5044,8 +5138,8 @@
   .lineup-history-list .history-view {
     display: grid;
     width: 100%;
-    gap: 3px;
-    padding: 9px 10px;
+    gap: calc(3px * var(--lineup-layout-scale, 1));
+    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1));
     border: 0;
     background: transparent;
     color: #24251f;
@@ -5056,13 +5150,13 @@
   .history-item-actions {
     display: grid;
     align-content: center;
-    gap: 4px;
-    padding: 5px;
+    gap: calc(4px * var(--lineup-layout-scale, 1));
+    padding: calc(5px * var(--lineup-layout-scale, 1));
     border-left: 1px solid rgba(36, 37, 31, 0.08);
   }
 
   .history-item-actions button {
-    padding: 3px 5px;
+    padding: calc(3px * var(--lineup-layout-scale, 1)) calc(5px * var(--lineup-layout-scale, 1));
     border: 1px solid rgba(84, 96, 36, 0.24);
     border-radius: 5px;
     background: #f3f4e8;
@@ -5163,7 +5257,9 @@
 
   @media (max-width: 1250px) {
     .lineup-workbench.desktop {
-      grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+      grid-template-columns:
+        minmax(calc(250px * var(--lineup-layout-scale, 1)), calc(290px * var(--lineup-layout-scale, 1)))
+        minmax(0, 1fr);
     }
 
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
