@@ -419,8 +419,8 @@ export function createAvoidSameGroupPlan(
   random: () => number = Math.random,
 ): BattlePlan {
   const participants = createParticipants(names);
-  if (participants.length < 4 || participants.length % 2 !== 0) {
-    throw new Error('同组不对战1对2需要偶数名单，且至少包含 2 个组');
+  if (participants.length < 8 || participants.length % 2 !== 0) {
+    throw new Error('同组不对战1对2需要偶数名单，且至少包含 4 个组');
   }
   const groupCount = participants.length / 2;
   const firstPlaces = participants.filter((_, index) => index % 2 === 0).map((participant, groupIndex) => ({

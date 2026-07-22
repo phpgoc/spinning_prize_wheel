@@ -396,6 +396,10 @@ describe('同组不对战1对2', () => {
   test('奇数名单会被拒绝', () => {
     expect(() => createAvoidSameGroupPlan(names(5))).toThrow('需要偶数名单');
   });
+
+  test('少于四组时即使是偶数名单也会被拒绝', () => {
+    expect(() => createAvoidSameGroupPlan(names(6))).toThrow('至少包含 4 个组');
+  });
 });
 
 function seededRandom(seed: number): () => number {

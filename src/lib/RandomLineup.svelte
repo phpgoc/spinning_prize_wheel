@@ -300,7 +300,7 @@
       : names;
   $: battleCanExecute = battleTmpSnapshot === null && !sourceTextDirty && (
     battleFormat === 'avoid-first-pair'
-      ? names.length >= 4 && names.length % 2 === 0
+      ? names.length >= 8 && names.length % 2 === 0
       : battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput
   );
   $: battleTmpGroups = groupBattleTmpMatches(battleTmpSnapshot);
@@ -590,7 +590,7 @@
     }
     if (!battleCanExecute) {
       error = battleFormat === 'avoid-first-pair'
-        ? `需偶数名单且至少 4 项，现 ${names.length} 项`
+        ? `需偶数名单且至少 8 项，现 ${names.length} 项`
         : battleOrderMode === 'rank'
           ? `固定前 ${battleConfiguredFixedCount} 名，现 ${battleRankedNameCount} 个排名`
           : '至少确认 2 项';
@@ -2919,7 +2919,7 @@
               {:else if sourceTextDirty}
                 名单已改，请确认
               {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
-                需偶数且至少 4 项
+                需偶数且至少 8 项
               {:else if battleOrderMode === 'rank' && !battleRankReady}
                 固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名
               {:else if battleCanExecute}
