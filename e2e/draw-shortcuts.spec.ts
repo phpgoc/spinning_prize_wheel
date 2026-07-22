@@ -12,7 +12,8 @@ async function importCandidates(page: Page, names: string[]) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/draw');
+  await page.goto('/wheel');
+  await expect(page.locator('.app-shell')).toBeVisible();
 });
 
 test('发布版默认不再带示例候选', async ({ page }) => {
@@ -148,6 +149,7 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
   await page.goto('/grouping');
+  await expect(page.locator('.lineup-page')).toBeVisible();
   await page.keyboard.press('Control+ArrowUp');
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()

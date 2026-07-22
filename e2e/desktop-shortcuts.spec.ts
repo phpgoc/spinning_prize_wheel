@@ -13,6 +13,12 @@ async function openDesktopBattle(page: Page) {
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
+async function openDesktopWheel(page: Page) {
+  await installTauriMock(page);
+  await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+}
+
 async function confirmDesktopNames(page: Page, names: string[]) {
   const textarea = page.locator('.names-field textarea');
   await textarea.fill(names.join('\n'));
@@ -60,8 +66,7 @@ async function rankNumberAlignment(number: Locator) {
 }
 
 test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async ({ page }) => {
-  await installTauriMock(page);
-  await page.goto('/draw');
+  await openDesktopWheel(page);
 
   await expect(page.getByRole('button', { name: '关闭自动保存历史' })).toBeVisible();
   await page.evaluate(() => {
@@ -81,8 +86,7 @@ test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async 
 });
 
 test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
-  await installTauriMock(page);
-  await page.goto('/draw');
+  await openDesktopWheel(page);
   await page.keyboard.press('z');
 
   const battleShortcuts = page.locator('.shortcut-battle');
@@ -91,7 +95,7 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
   await expect(battleShortcuts).toContainText('聚焦对战区');
   await expect(battleShortcuts).toContainText('聚焦名单');
   await expect(battleShortcuts).toContainText('打开 / 关闭排名');
-  await expect(battleShortcuts).toContainText('打开 / 关闭对战状态');
+  await expect(battleShortcuts).toContainText('打开 / 关闭对战历史');
 
   const battleAreaShortcuts = page.locator('.shortcut-battle-area');
   await expect(battleAreaShortcuts.getByRole('heading', { name: '对战区' })).toBeVisible();
@@ -139,7 +143,8 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
-  await expect(page.locator('.single-bracket-connectors path')).toHaveCount(6);
+  await expect(page.locator('.battle-preview-bracket .battle-preview-rounds')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(0);
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('插入');
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 
@@ -199,8 +204,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
 });
 
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
-  await installTauriMock(page);
-  await page.goto('/draw');
+  await openDesktopWheel(page);
   await page.getByRole('button', { name: '统计 0' }).click();
 
   const actions = page.locator('.side-stats-actions button');
@@ -220,8 +224,7 @@ test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page 
 });
 
 test('开启自动保存后关闭窗口会等当前旋转结束并归档', async ({ page }) => {
-  await installTauriMock(page);
-  await page.goto('/draw');
+  await openDesktopWheel(page);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.closeRequestedHandler !== null
   ))).toBe(true);
@@ -329,7 +332,7 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['丁', '未录入', '乙', '甲']);
   await expect(page.getByRole('button', { name: '甲', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '对战状态' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /对战历史/u })).toBeVisible();
 
   await page.getByRole('radio', { name: '单败' }).check();
   await expect(page.getByRole('radio', { name: '全随机' })).toBeChecked();
@@ -358,7 +361,8 @@ test('对战只要求固定人数有排名', async ({ page }) => {
     level: match.getAttribute('data-battle-level'),
     position: match.getAttribute('data-battle-position'),
   })));
-  expect(resultStructure).toEqual(previewStructure);
+  expect(resultStructure.filter((match) => match.level === '1')).toEqual(previewStructure);
+  expect(resultStructure.length).toBeGreaterThan(previewStructure.length);
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 });
@@ -412,7 +416,8 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   await page.keyboard.press('Enter');
 
   await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
-  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
+  await expect(page.locator('.battle-preview-bracket input:not(:disabled)')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
@@ -423,7 +428,7 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   ))).toBe(1);
 });
 
-test('桌面对战隐藏无用加载占位并在加载历史时保留原记录', async ({ page }) => {
+test('桌面对战历史编辑按临时表状态确认并保留原记录', async ({ page }) => {
   await openDesktopBattle(page);
 
   const loadCurrent = page.locator('.battle-load-current-button');
@@ -442,12 +447,12 @@ test('桌面对战隐藏无用加载占位并在加载历史时保留原记录',
       .filter((entry: any) => entry.cmd === 'save_battle_tmp_state').length
   ));
   const generatedSaveCount = await saveCount();
-  const stateToggle = page.getByRole('button', { name: /对战状态/u });
-  await expect(stateToggle).toContainText('展开');
-  await stateToggle.click();
-  await expect(stateToggle).toContainText('收起');
-  await expect(page.locator('.battle-state-sync strong')).toHaveText('已同步');
-  await stateToggle.click();
+  const historyToggle = page.getByRole('button', { name: /对战历史/u });
+  await expect(historyToggle).toContainText('展开');
+  await historyToggle.click();
+  await expect(historyToggle).toContainText('收起');
+  await expect(page.locator('.battle-state-actions').getByRole('button', { name: '加载当前' })).toBeEnabled();
+  await historyToggle.click();
   await expect(loadCurrent).toHaveCSS('visibility', 'hidden');
   expect(await saveCount()).toBe(generatedSaveCount);
 
@@ -455,7 +460,7 @@ test('桌面对战隐藏无用加载占位并在加载历史时保留原记录',
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -467,12 +472,12 @@ test('桌面对战隐藏无用加载占位并在加载历史时保留原记录',
   expect(originalHistory.snapshot.matches[0].upResult).toBeNull();
   expect(originalHistory.snapshot.matches[0].downResult).toBeNull();
 
-  await stateToggle.click();
-  const historyLoad = page.locator('.battle-history-list article').first().getByRole('button', { name: '加载' });
+  await historyToggle.click();
+  const historyLoad = page.locator('.battle-history-list article').first().getByRole('button', { name: '编辑' });
   const beforeDirectHistoryLoad = await saveCount();
   await historyLoad.click();
   await expect(page.getByRole('heading', { name: /用.*历史签表替换编辑区/u })).toHaveCount(0);
-  await expect(page.locator('.single-battle-bracket.read-only')).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket:not(.read-only)')).toBeVisible();
   await expect(page.locator('.battle-match')).toHaveCount(3);
   await expect(page.locator('.battle-config textarea')).toHaveValue('甲\n乙\n丙\n丁');
   await expect.poll(saveCount).toBe(beforeDirectHistoryLoad + 1);
@@ -547,9 +552,6 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
       .filter((entry: any) => entry.cmd === 'update_battle_tmp_result').length
   ))).toBe(2);
 
-  await page.getByRole('button', { name: /对战状态/u }).click();
-  await expect(page.locator('.battle-state-panel')).toContainText('所有赛程行已关系化保存');
-  await expect(page.locator('.battle-state-panel')).toContainText('3 行');
   await page.getByRole('button', { name: 'Excel', exact: true }).click();
   await page.getByRole('button', { name: 'JSON', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (
@@ -591,9 +593,9 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
 
-  await page.getByRole('button', { name: /对战状态/u }).click();
+  await page.getByRole('button', { name: /对战历史/u }).click();
   await page.locator('.battle-history-list .history-view').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
@@ -604,9 +606,9 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await expect(page.locator('.battle-history-bracket input:not(:disabled)')).toHaveCount(0);
   await expect(historyMatch.locator('.battle-side.winner')).toHaveCount(1);
 
-  await page.getByRole('button', { name: '返回当前' }).click();
+  await page.getByRole('button', { name: '返回当前对战' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
-  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
 });
 
 test('单败左右晋级，上下衔接且对战快捷键不被比分框占用', async ({ page }) => {
@@ -799,7 +801,8 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
     lineupHistories,
   });
 
-  await page.goto('/draw');
+  await page.goto('/wheel');
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
   const drawHistoryActions = page.locator('.sidebar-history-actions button');
   await expect(drawHistoryActions).toHaveCount(4);
@@ -816,6 +819,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.drawHistories.length)).toBe(0);
 
   await page.goto('/grouping');
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
   await page.getByRole('button', { name: /分组历史/u }).click();
   const lineupHistoryPanel = page.locator('.history-panel');
   await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);

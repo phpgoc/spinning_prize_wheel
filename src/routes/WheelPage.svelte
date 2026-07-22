@@ -2688,7 +2688,7 @@
             <div><span>聚焦名单</span><kbd>W</kbd></div>
             {#if desktopRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
-              <div><span>打开 / 关闭对战状态</span><kbd>Z</kbd></div>
+              <div><span>打开 / 关闭对战历史</span><kbd>Z</kbd></div>
             {/if}
           </div>
         </section>
