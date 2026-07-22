@@ -204,3 +204,40 @@ test('对战历史限制最近二十条并按日期筛选和二次确认删除�
     JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
   ))).toEqual([]);
 });
+
+test('历史覆盖临时表时可在三层确认分别取消且不改变当前比分', async ({ page }) => {
+  await openDesktopBattle(page);
+  await createScoredBattle(page);
+  const expectedSnapshot = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await page.getByRole('button', { name: /对战历史/u }).click();
+
+  const editHistory = page.locator('.battle-history-list article').getByRole('button', { name: '编辑' });
+  const expectCurrentUnchanged = async () => {
+    expect(await page.evaluate(() => structuredClone(
+      (window as any).__E2E_TAURI_STATE__.battleTmpState,
+    ))).toEqual(expectedSnapshot);
+    await expect(page.locator('.battle-load-confirm-dialog')).toHaveCount(0);
+  };
+
+  await editHistory.click();
+  await expect(page.getByRole('alertdialog', { name: /1\/3 用.*历史签表替换编辑区/u })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expectCurrentUnchanged();
+
+  await editHistory.click();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alertdialog', { name: '2/3 将历史副本写入临时表？' })).toBeVisible();
+  await page.keyboard.press('n');
+  await expectCurrentUnchanged();
+
+  await editHistory.click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  const finalDialog = page.getByRole('alertdialog', { name: '3/3 覆盖并加载这条历史？' });
+  await expect(finalDialog).toBeVisible();
+  await finalDialog.getByRole('button', { name: '取消' }).click();
+  await expectCurrentUnchanged();
+});
