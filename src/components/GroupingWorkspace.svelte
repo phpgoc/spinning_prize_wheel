@@ -2622,10 +2622,15 @@
       });
       battleTmpSnapshot = parseBattleTmpSnapshot(saved, variant);
       battleSyncStatus = 'saved';
+      error = '';
     } catch (reason) {
+      const syncError = messageFrom(reason, '无法同步对战结果');
       battleSyncStatus = 'error';
-      error = messageFrom(reason, '无法同步对战结果');
-      await loadBattleTmpState();
+      const restored = await loadBattleTmpState();
+      if (restored) {
+        battleSyncStatus = 'error';
+        error = syncError;
+      }
     }
   }
 

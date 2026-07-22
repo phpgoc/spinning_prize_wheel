@@ -11,6 +11,7 @@ export interface MockTauriInitialData {
   drawHistories?: unknown[];
   lineupHistories?: unknown[];
   battleTmpState?: unknown;
+  commandFailures?: Record<string, string[]>;
 }
 
 export const DEFAULT_RANKED_USERS: MockRankedUserInput[] = [
@@ -58,6 +59,7 @@ export async function installTauriMock(
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
       battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
+      commandFailures: structuredClone(data.commandFailures ?? {}) as Record<string, string[]>,
       closeRequestedHandler: null as number | null,
       windowDestroyed: false,
       windowFullscreen: false,
@@ -224,6 +226,8 @@ export async function installTauriMock(
 
     const invoke = async (cmd: string, args: Record<string, any> = {}) => {
       state.invocations.push({ cmd, args: clone(args) });
+      const failure = state.commandFailures[cmd]?.shift();
+      if (failure) throw new Error(failure);
       if (cmd === 'plugin:event|listen') {
         if (args.event === 'tauri://close-requested') state.closeRequestedHandler = args.handler;
         return 1;

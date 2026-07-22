@@ -241,3 +241,35 @@ test('历史覆盖临时表时可在三层确认分别取消且不改变当前�
   await finalDialog.getByRole('button', { name: '取消' }).click();
   await expectCurrentUnchanged();
 });
+
+test('比分同步失败会恢复数据库状态并在重试成功后清除错误', async ({ page }) => {
+  await openDesktopBattle(page);
+  const textarea = page.locator('.names-field textarea');
+  await textarea.fill('甲\n乙\n丙\n丁');
+  await textarea.press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await page.getByRole('button', { name: '显示全部' }).click();
+
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.update_battle_tmp_result = ['模拟比分同步失败'];
+  });
+  const firstInput = page.locator('.battle-round').first()
+    .locator('.battle-match').first()
+    .locator('input[type="number"]').first();
+  await firstInput.fill('4');
+  await firstInput.press('Tab');
+
+  await expect(firstInput).toHaveValue('');
+  await expect(page.getByRole('alert')).toContainText('模拟比分同步失败');
+  expect(await page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState.matches[0].upResult
+  ))).toBeNull();
+
+  await firstInput.fill('4');
+  await firstInput.press('Tab');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState.matches[0].upResult
+  ))).toBe(4);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
