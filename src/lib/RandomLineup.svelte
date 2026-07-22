@@ -2576,7 +2576,7 @@
                         on:focus={() => selectRankedUserFromPointer(user.id)}
                         on:pointerdown={(event) => beginRankPointerDrag(event, user.id)}
                       >
-                        <span class="rank-number">{user.rank}</span>
+                        <span class="rank-number"><span>{user.rank}</span></span>
                         <div class="ranked-user-content">
                           {#if editingUserId === user.id}
                             <form class="inline-rank-edit" on:submit|preventDefault={saveRankedUser}>
@@ -4436,6 +4436,7 @@
     --rank-gold: #f7d66d;
     --rank-lime: #dff66c;
     --rank-ink: #101711;
+    --rank-number-size: calc(40px * var(--lineup-layout-scale, 1));
     display: flex;
     min-height: 0;
     flex: 1;
@@ -4695,7 +4696,7 @@
     display: grid;
     min-width: 0;
     min-height: calc(70px + 24px * var(--font-scale, 1));
-    grid-template-columns: calc(31px + 9px * var(--font-scale, 1)) minmax(0, 1fr);
+    grid-template-columns: var(--rank-number-size) minmax(0, 1fr);
     align-items: center;
     gap: calc(4px + 4px * var(--font-scale, 1));
     padding: calc(4px + 8px * var(--font-scale, 1)) calc(3px + 8px * var(--font-scale, 1));
@@ -4765,8 +4766,10 @@
 
   .rank-number {
     display: grid;
-    width: calc(31px + 9px * var(--font-scale, 1));
-    height: calc(31px + 9px * var(--font-scale, 1));
+    width: var(--rank-number-size);
+    height: var(--rank-number-size);
+    align-self: center;
+    justify-self: center;
     border: 1px solid rgba(247, 214, 109, 0.78);
     border-radius: calc(8px + 4px * var(--font-scale, 1));
     background: linear-gradient(145deg, #24341d, #111a13);
@@ -4776,6 +4779,14 @@
     font-weight: 950;
     text-align: center;
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 5px 12px rgba(0, 0, 0, 0.24);
+    place-items: center;
+  }
+
+  .rank-number > span {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    line-height: 1;
     place-items: center;
   }
 

@@ -42,6 +42,23 @@ async function dragToRatio(page: Page, source: Locator, target: Locator, ratio: 
   await page.mouse.up();
 }
 
+async function rankNumberAlignment(number: Locator) {
+  return number.evaluate((element) => {
+    const card = element.closest('article');
+    const inner = element.firstElementChild;
+    if (!card || !inner) throw new Error('排名数字结构不完整');
+    const cardRect = card.getBoundingClientRect();
+    const numberRect = element.getBoundingClientRect();
+    const innerRect = inner.getBoundingClientRect();
+    return {
+      outerTop: numberRect.top - cardRect.top,
+      outerBottom: cardRect.bottom - numberRect.bottom,
+      innerTop: innerRect.top - numberRect.top,
+      innerBottom: numberRect.bottom - innerRect.bottom,
+    };
+  });
+}
+
 test('桌面抽奖的 S 只在非编辑状态切换自动保存', async ({ page }) => {
   await installTauriMock(page);
   await page.goto('/#/draw');
@@ -62,15 +79,23 @@ test('排名字号放大时排名框同步扩容', async ({ page }) => {
   await openDesktopLineup(page);
   const normalNumber = page.locator('.ranked-user-list .rank-number').first();
   const normalBox = await normalNumber.boundingBox();
+  const normalAlignment = await rankNumberAlignment(normalNumber);
   expect(normalBox).not.toBeNull();
+  expect(Math.abs(normalAlignment.outerTop - normalAlignment.outerBottom)).toBeLessThan(1);
+  expect(Math.abs(normalAlignment.innerTop - normalAlignment.innerBottom)).toBeLessThan(1);
 
   await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
   await page.reload();
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
   const largeNumber = page.locator('.ranked-user-list .rank-number').first();
   const largeBox = await largeNumber.boundingBox();
-  expect(largeBox!.width).toBeGreaterThan(normalBox!.width * 1.3);
-  expect(largeBox!.height).toBeGreaterThan(normalBox!.height * 1.3);
+  const largeAlignment = await rankNumberAlignment(largeNumber);
+  expect(largeBox!.width / normalBox!.width).toBeGreaterThan(1.65);
+  expect(largeBox!.width / normalBox!.width).toBeLessThan(1.67);
+  expect(largeBox!.height / normalBox!.height).toBeGreaterThan(1.65);
+  expect(largeBox!.height / normalBox!.height).toBeLessThan(1.67);
+  expect(Math.abs(largeAlignment.outerTop - largeAlignment.outerBottom)).toBeLessThan(1);
+  expect(Math.abs(largeAlignment.innerTop - largeAlignment.innerBottom)).toBeLessThan(1);
 });
 
 test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等宽', async ({ page }) => {
