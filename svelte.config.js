@@ -3,9 +3,6 @@ import adapter from '@sveltejs/adapter-static';
 const outputDirectory = process.env.WEB_BUILD_OUT_DIR ?? 'build';
 
 const config = {
-  compilerOptions: {
-    runes: false,
-  },
   kit: {
     adapter: adapter({
       pages: outputDirectory,

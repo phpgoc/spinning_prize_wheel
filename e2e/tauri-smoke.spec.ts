@@ -42,7 +42,7 @@ for (const application of applications) {
       await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
       await expect(page.getByRole('button', { name: '转盘', exact: true })).toBeVisible();
       await page.getByRole('button', { name: '分组', exact: true }).click();
-      await expect(page).toHaveURL(/#\/(?:caimi\/)?(?:lineup|grouping)$/);
+      await expect(page).toHaveURL(/\/(?:caimi\/)?grouping$/);
       await expect(page.locator('.desktop-accordion-toggle').filter({ hasText: '排名' })).toBeVisible();
     } finally {
       await browser?.close().catch(() => undefined);
