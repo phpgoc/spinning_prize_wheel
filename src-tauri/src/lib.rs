@@ -2278,6 +2278,47 @@ fn battle_tmp_dependents_in(
     Ok(existing_candidates)
 }
 
+fn battle_tmp_score_locked_in(
+    connection: &Connection,
+    topology: &BattleTmpTopology,
+    source: &BattleTmpMatch,
+    up_slot: bool,
+) -> Result<bool, String> {
+    let participant = if up_slot { source.up } else { source.down };
+    let Some(participant) = participant else {
+        return Ok(false);
+    };
+    let outcome = if battle_tmp_winner(source)? == Some(participant) {
+        BattleTmpSourceOutcome::Winner
+    } else if battle_tmp_loser(source)? == Some(participant) {
+        BattleTmpSourceOutcome::Loser
+    } else {
+        return Ok(false);
+    };
+    for dependent_id in battle_tmp_dependents_in(connection, topology, &source.match_id)? {
+        let Some(dependent) = load_battle_tmp_match_in(connection, &dependent_id)? else {
+            continue;
+        };
+        for dependent_up_slot in [true, false] {
+            let dependent_source = battle_tmp_slot_source(topology, &dependent, dependent_up_slot)?;
+            let result = if dependent_up_slot {
+                dependent.up_result
+            } else {
+                dependent.down_result
+            };
+            if dependent_source.is_some_and(|candidate| {
+                candidate.match_id == source.match_id
+                    && std::mem::discriminant(&candidate.outcome)
+                        == std::mem::discriminant(&outcome)
+            }) && result.is_some()
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn update_battle_tmp_result_in(
     connection: &Connection,
     variant: &str,
@@ -2313,6 +2354,14 @@ fn update_battle_tmp_result_in(
     {
         return Err("等待上游的签位不能填写比分".to_string());
     }
+    let topology = battle_tmp_topology_in(&transaction)?;
+    if (battle_tmp_score_locked_in(&transaction, &topology, &selected, true)?
+        && up_result != selected.up_result)
+        || (battle_tmp_score_locked_in(&transaction, &topology, &selected, false)?
+            && down_result != selected.down_result)
+    {
+        return Err("下游已有比分，不能修改上游".to_string());
+    }
     transaction
         .execute(
             "UPDATE battle_tmp_match SET up_result = ?1, down_result = ?2
@@ -2332,7 +2381,6 @@ fn update_battle_tmp_result_in(
             |row| row.get::<_, usize>(0),
         )
         .map_err(|error| format!("无法统计对战场次：{error}"))?;
-    let topology = battle_tmp_topology_in(&transaction)?;
     let mut queue = VecDeque::from([match_id.to_string()]);
     let mut processed = 0usize;
     while let Some(current_match_id) = queue.pop_front() {
@@ -3190,31 +3238,27 @@ mod tests {
             1_700_000_000_003,
         )
         .expect("填写决赛赛果");
-        let changed = update_battle_tmp_result_in(
+        let rejected = update_battle_tmp_result_in(
             &connection,
             "standard",
             "S1-M1",
             Some(1),
             Some(4),
             1_700_000_000_004,
-        )
-        .expect("修改上游赛果");
-        let changed_final = changed
-            .matches
-            .iter()
-            .find(|battle_match| battle_match.match_id == "S2-M1")
-            .unwrap();
-        assert_eq!((changed_final.up, changed_final.down), (Some(2), Some(3)));
-        assert_eq!(
-            (changed_final.up_result, changed_final.down_result),
-            (None, None)
         );
-        assert_eq!(changed_final.status, "ready");
+        assert!(rejected.is_err());
+        let unchanged = load_battle_tmp_match_in(&connection, "S2-M1")
+            .unwrap()
+            .unwrap();
+        assert_eq!((unchanged.up, unchanged.down), (Some(1), Some(3)));
         assert_eq!(
-            changed
-                .matches
-                .iter()
-                .find(|battle_match| battle_match.match_id == "S1-M2")
+            (unchanged.up_result, unchanged.down_result),
+            (Some(4), Some(1))
+        );
+        assert_eq!(unchanged.status, "completed");
+        assert_eq!(
+            load_battle_tmp_match_in(&connection, "S1-M2")
+                .unwrap()
                 .unwrap()
                 .up_result,
             Some(4)

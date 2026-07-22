@@ -195,6 +195,12 @@ export function updateBattleTmpResult(
   if ((battleMatch.up === null && upResult !== null) || (battleMatch.down === null && downResult !== null)) {
     throw new Error('等待上游的签位不能填写比分');
   }
+  if (
+    (battleTmpScoreLocked(snapshot, battleMatch, 'up') && upResult !== battleMatch.upResult)
+    || (battleTmpScoreLocked(snapshot, battleMatch, 'down') && downResult !== battleMatch.downResult)
+  ) {
+    throw new Error('下游已有比分，不能修改上游');
+  }
   battleMatch.upResult = upResult;
   battleMatch.downResult = downResult;
   return recomputeBattleTmpSnapshot(next);
@@ -242,6 +248,29 @@ export function battleTmpSlotOrigin(
   slot: 'up' | 'down',
 ): BattleTmpSlotOrigin | null {
   return battleTmpSlotSource(snapshot, match, slot);
+}
+
+/** 下游对应签位已录分时，只锁定会影响该签位的当前选手。 */
+export function battleTmpScoreLocked(
+  snapshot: BattleTmpSnapshot,
+  match: BattleTmpMatch,
+  side: 'up' | 'down',
+): boolean {
+  const participantId = side === 'up' ? match.up : match.down;
+  if (participantId === null || match.status !== 'completed') return false;
+  const outcome = battleTmpWinnerId(match) === participantId
+    ? 'winner'
+    : battleTmpLoserId(match) === participantId ? 'loser' : null;
+  if (!outcome) return false;
+  return snapshot.matches.some((candidate) => (
+    (['up', 'down'] as const).some((candidateSide) => {
+      const origin = battleTmpSlotSource(snapshot, candidate, candidateSide);
+      const result = candidateSide === 'up' ? candidate.upResult : candidate.downResult;
+      return origin?.matchId === match.matchId
+        && origin.outcome === outcome
+        && result !== null;
+    })
+  ));
 }
 
 export function battleTmpWinnerId(match: BattleTmpMatch): number | null {

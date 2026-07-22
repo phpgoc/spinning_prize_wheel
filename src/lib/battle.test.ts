@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   battleFixedSeedOptions,
   battleTmpScoresWithMagicFill,
+  battleTmpScoreLocked,
   battleTmpSlotOrigin,
   battleTmpExcelRows,
   createAvoidSameGroupPlan,
@@ -88,7 +89,7 @@ describe('对战签位', () => {
     expect([firstMatch.up, firstMatch.down].sort()).toEqual([1, 2]);
   });
 
-  test('修改上游赛果只重算下游签位并清除失效结果', () => {
+  test('下游有比分后拒绝修改上游赛果', () => {
     const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
       format: 'single-elimination',
       orderMode: 'input',
@@ -103,15 +104,13 @@ describe('对战签位', () => {
     expect(final).toMatchObject({ up: first.up, down: second.up, status: 'ready' });
 
     state = setBattleWinner(state, final.matchId, final.up!, 1_700_000_000_003);
-    state = setBattleWinner(state, first.matchId, first.down!, 1_700_000_000_004);
-    final = state.matches.find((match) => match.matchId === 'S2-M1')!;
-    expect(final).toMatchObject({
-      up: first.down,
-      down: second.up,
-      upResult: null,
-      downResult: null,
-      status: 'ready',
-    });
+    expect(() => updateBattleTmpResult(
+      state,
+      first.matchId,
+      1,
+      4,
+      1_700_000_000_004,
+    )).toThrow('下游已有比分');
   });
 
   test('魔法比分只沿用同阶段同层已经确定的胜分', () => {
@@ -300,6 +299,30 @@ describe('对战签位', () => {
       expect(plan.rounds.filter((round) => round.bracket === 'loser').map((round) => round.matches.length))
         .toEqual(loserMatchCounts);
     }
+  });
+
+  test('下游有比分时只锁定对应上游选手', () => {
+    let single = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
+      format: 'single-elimination', orderMode: 'input', fixedSeedCount: 2, random: () => 0.25,
+    }), 1_700_000_000_000);
+    single = setBattleWinner(single, 'S1-M1', single.matches.find((match) => match.matchId === 'S1-M1')!.up!);
+    single = setBattleWinner(single, 'S1-M2', single.matches.find((match) => match.matchId === 'S1-M2')!.up!);
+    single = updateBattleTmpResult(single, 'S2-M1', 4, 1);
+    const source = single.matches.find((match) => match.matchId === 'S1-M1')!;
+    expect(battleTmpScoreLocked(single, source, 'up')).toBe(true);
+    expect(battleTmpScoreLocked(single, source, 'down')).toBe(false);
+
+    let double = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
+      format: 'double-elimination', orderMode: 'input', fixedSeedCount: 2, random: () => 0.25,
+    }), 1_700_000_000_000);
+    const first = double.matches.find((match) => match.matchId === 'W1-M1')!;
+    const second = double.matches.find((match) => match.matchId === 'W1-M2')!;
+    double = setBattleWinner(double, first.matchId, first.up!);
+    double = setBattleWinner(double, second.matchId, second.up!);
+    const loserMatch = double.matches.find((match) => match.matchId === 'L1-M1')!;
+    double = setBattleWinner(double, loserMatch.matchId, loserMatch.up!);
+    const updatedSource = double.matches.find((match) => match.matchId === first.matchId)!;
+    expect(battleTmpScoreLocked(double, updatedSource, 'down')).toBe(true);
   });
 });
 

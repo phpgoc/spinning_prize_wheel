@@ -5,6 +5,7 @@
   import type { AppVariant } from './app-variant';
   import {
     battleFixedSeedOptions,
+    battleTmpScoreLocked,
     battleTmpScoresWithMagicFill,
     battleTmpSlotOrigin,
     battleTmpWinnerId,
@@ -2299,7 +2300,7 @@
           <span class="visually-hidden">{battleTmpSlotName(match, 'up')}</span>
         {:else}<strong>{battleTmpSlotName(match, 'up')}</strong>{/if}
       </div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped' || battleTmpScoreLocked(battleTmpSnapshot!, match, 'up')} title={battleTmpScoreLocked(battleTmpSnapshot!, match, 'up') ? '下游已有比分' : ''} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
       class:fixed={battleTmpParticipantFixed(match.down)}
@@ -2313,7 +2314,7 @@
           <span class="visually-hidden">{battleTmpSlotName(match, 'down')}</span>
         {:else}<strong>{battleTmpSlotName(match, 'down')}</strong>{/if}
       </div>
-      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
+      <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped' || battleTmpScoreLocked(battleTmpSnapshot!, match, 'down')} title={battleTmpScoreLocked(battleTmpSnapshot!, match, 'down') ? '下游已有比分' : ''} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
 {/snippet}

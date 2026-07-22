@@ -481,8 +481,10 @@ test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', asyn
   await enterBattleScore(finalMatch, 4, 1);
   await expect(finalMatch.locator('.battle-side.winner')).toHaveCount(1);
 
-  await enterBattleScore(firstRoundMatches.nth(0), 1, 4);
-  await expect(finalMatch.locator('.battle-side.winner')).toHaveCount(0);
+  const lockedSourceInputs = firstRoundMatches.nth(0).locator('input[type="number"]');
+  await expect(lockedSourceInputs.nth(0)).toBeDisabled();
+  await expect(lockedSourceInputs.nth(0)).toHaveAttribute('title', '下游已有比分');
+  await expect(lockedSourceInputs.nth(1)).toBeEnabled();
 
   const jsonDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'JSON', exact: true }).click();
