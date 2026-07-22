@@ -2,22 +2,29 @@ import { describe, expect, test } from 'bun:test';
 import { resultNotes, spinMusicPlan } from './draw-sound';
 
 describe('转盘音效', () => {
-  test('默认四秒包含完整四和弦配乐', () => {
+  test('默认四秒有清晰的四段编曲结构', () => {
     const plan = spinMusicPlan(4000);
-    const chords = plan.filter((step) => step.chordFrequencies.length > 0);
+    const sections = plan.map((step) => step.section);
 
     expect(plan.length).toBeGreaterThanOrEqual(15);
-    expect(chords).toHaveLength(4);
-    expect(new Set(chords.map((step) => step.chordFrequencies[0])).size).toBe(4);
+    expect(sections[0]).toBe('intro');
+    expect(new Set(sections)).toEqual(new Set(['intro', 'groove', 'build', 'brake']));
+    expect(sections.indexOf('groove')).toBeGreaterThan(sections.indexOf('intro'));
+    expect(sections.indexOf('build')).toBeGreaterThan(sections.indexOf('groove'));
+    expect(sections.indexOf('brake')).toBeGreaterThan(sections.indexOf('build'));
   });
 
-  test('配乐同时包含旋律、低音和鼓组', () => {
+  test('主段和推进段逐层增加旋律与鼓组密度', () => {
     const plan = spinMusicPlan(4000);
-    expect(plan.every((step) => step.melodyFrequency > 0)).toBe(true);
-    expect(plan.some((step) => step.bassFrequency !== null)).toBe(true);
-    expect(plan.some((step) => step.kick)).toBe(true);
-    expect(plan.some((step) => step.snare)).toBe(true);
-    expect(plan.some((step) => step.hat)).toBe(true);
+    const intro = plan.filter((step) => step.section === 'intro');
+    const groove = plan.filter((step) => step.section === 'groove');
+    const build = plan.filter((step) => step.section === 'build');
+
+    expect(intro.some((step) => step.melodyFrequency === null)).toBe(true);
+    expect(groove.every((step) => step.melodyFrequency !== null)).toBe(true);
+    expect(build.every((step) => step.melodyFrequency !== null)).toBe(true);
+    expect(build.some((step) => step.snare)).toBe(true);
+    expect(build.every((step) => step.intensity > 1)).toBe(true);
   });
 
   test('末段节拍随转盘减速并在动画结束前收束', () => {
