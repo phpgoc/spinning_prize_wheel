@@ -273,3 +273,38 @@ test('比分同步失败会恢复数据库状态并在重试成功后清除错�
   ))).toBe(4);
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+test('历史覆盖写入失败会保留当前临时表并归档当前比分', async ({ page }) => {
+  await openDesktopBattle(page);
+  const textarea = page.locator('.names-field textarea');
+  await textarea.fill('甲\n乙\n丙\n丁');
+  await textarea.press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await page.getByRole('button', { name: '显示全部' }).click();
+  await page.getByRole('button', { name: '保存历史' }).click();
+
+  const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
+  await enterScore(firstMatch, 4, 1);
+  const currentSnapshot = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ));
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.save_battle_tmp_state = ['模拟历史覆盖失败'];
+  });
+
+  await page.locator('.battle-history-list article').first()
+    .getByRole('button', { name: '编辑' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByRole('alert')).toContainText('模拟历史覆盖失败');
+  expect(await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleTmpState,
+  ))).toEqual(currentSnapshot);
+  await expect(firstMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
+  await expect(firstMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
+  await expect(page.locator('.battle-history-list article')).toHaveCount(2);
+});
