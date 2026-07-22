@@ -497,11 +497,11 @@ fn battle_tmp_slot_source(
             match_id: format!("W1-M{}", (battle_match.position - 1) * 2 + slot_offset + 1),
             outcome: BattleTmpSourceOutcome::Loser,
         }),
-        "loser" if battle_match.level % 2 == 0 && up_slot => Some(BattleTmpSource {
+        "loser" if battle_match.level.is_multiple_of(2) && up_slot => Some(BattleTmpSource {
             match_id: format!("L{}-M{}", battle_match.level - 1, battle_match.position),
             outcome: BattleTmpSourceOutcome::Winner,
         }),
-        "loser" if battle_match.level % 2 == 0 => {
+        "loser" if battle_match.level.is_multiple_of(2) => {
             let winner_level = battle_match.level / 2 + 1;
             let winner_match_count = (topology.bracket_size >> winner_level).max(1);
             let crossed_position = if winner_match_count == 1 {
@@ -697,17 +697,17 @@ fn battle_tmp_dependents_in(
         "single" if source.level < topology.single_max_level => vec![format!(
             "S{}-M{}",
             source.level + 1,
-            (source.position + 1) / 2
+            source.position.div_ceil(2)
         )],
         "single" => Vec::new(),
         "winner" => {
             let winner_target = if source.level < topology.winner_max_level {
-                format!("W{}-M{}", source.level + 1, (source.position + 1) / 2)
+                format!("W{}-M{}", source.level + 1, source.position.div_ceil(2))
             } else {
                 "GF-M1".to_string()
             };
             let loser_target = if source.level == 1 {
-                format!("L1-M{}", (source.position + 1) / 2)
+                format!("L1-M{}", source.position.div_ceil(2))
             } else {
                 let loser_level = source.level * 2 - 2;
                 let winner_match_count = (topology.bracket_size >> source.level).max(1);
@@ -729,7 +729,7 @@ fn battle_tmp_dependents_in(
         "loser" => vec![format!(
             "L{}-M{}",
             source.level + 1,
-            (source.position + 1) / 2
+            source.position.div_ceil(2)
         )],
         "final" if source.level == 1 => vec!["GF-RESET-M1".to_string()],
         "final" => Vec::new(),

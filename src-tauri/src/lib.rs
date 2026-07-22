@@ -1,5 +1,4 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashSet, VecDeque},
     fs::{self, OpenOptions},
@@ -20,11 +19,13 @@ const SQL_LOG_FILE_NAME: &str = "sql.log";
 static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static SQL_TRACE_DEDUPLICATOR: OnceLock<Mutex<SqlTraceDeduplicator>> = OnceLock::new();
 
+/// 由 Tauri 托管的数据库连接；所有命令复用同一个连接。
 #[derive(Default)]
 struct DatabaseState {
     connection: Mutex<Option<Connection>>,
 }
 
+/// 过滤 SQLite trace 在级联删除时产生的重复顶层语句。
 #[derive(Default)]
 struct SqlTraceDeduplicator {
     previous_was_full_user_delete: bool,
@@ -39,6 +40,7 @@ impl SqlTraceDeduplicator {
     }
 }
 
+/// 按版本顺序执行的数据库迁移，已应用版本记录在 `schema_migrations`。
 const MIGRATIONS: &[(i64, &str)] = &[
     (
         1,
@@ -97,135 +99,8 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
 ];
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CommonSelection {
-    version: u8,
-    id: String,
-    name: String,
-    created_at: u64,
-    prizes: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SavedDraw {
-    version: u8,
-    id: String,
-    created_at: u64,
-    mode: String,
-    reward_amount: f64,
-    prizes: serde_json::Value,
-    records: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct AliasRecord {
-    id: i64,
-    name: String,
-    user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct RankedUser {
-    id: i64,
-    name: String,
-    rank: i64,
-    aliases: Vec<AliasRecord>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RankedUserInput {
-    id: Option<i64>,
-    name: String,
-    rank: Option<i64>,
-    #[serde(default)]
-    aliases: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RankedUserTransferInput {
-    name: String,
-    rank: i64,
-    aliases: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-enum RankedUserDropTargetInput {
-    Insert { index: usize },
-    Swap { user_id: i64 },
-    Unranked,
-}
-
-#[derive(Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct ResolvedLineupName {
-    input_name: String,
-    known: bool,
-    user_id: Option<i64>,
-    canonical_name: Option<String>,
-    rank: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SavedLineup {
-    id: String,
-    created_at: u64,
-    input: serde_json::Value,
-    result: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct BattleTmpSnapshot {
-    version: u8,
-    rules_version: u8,
-    kind: String,
-    variant: String,
-    updated_at: u64,
-    format: String,
-    order_mode: String,
-    participant_count: usize,
-    bracket_size: usize,
-    fixed_seed_count: usize,
-    participants: Vec<BattleTmpParticipant>,
-    matches: Vec<BattleTmpMatch>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct BattleTmpParticipant {
-    id: usize,
-    name: String,
-    source_index: usize,
-    seed: usize,
-    group_index: Option<usize>,
-    group_rank: Option<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct BattleTmpMatch {
-    match_id: String,
-    stage: String,
-    level: usize,
-    position: usize,
-    up: Option<usize>,
-    down: Option<usize>,
-    up_result: Option<usize>,
-    down_result: Option<usize>,
-    status: String,
-}
+mod models;
+use models::*;
 
 fn common_selection_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -241,6 +116,7 @@ fn valid_selection_id(id: &str) -> bool {
         })
 }
 
+/// 打开共享数据库并统一配置日志、超时、外键和迁移。
 fn open_app_database(app: &AppHandle) -> Result<Connection, String> {
     let directory = app_database_dir(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建历史数据库目录：{error}"))?;
@@ -257,6 +133,7 @@ fn open_app_database(app: &AppHandle) -> Result<Connection, String> {
     Ok(connection)
 }
 
+/// 串行借用 Tauri 状态中的连接，首次调用时才实际打开数据库。
 fn with_app_database<T>(
     app: &AppHandle,
     database: &DatabaseState,
@@ -484,7 +361,7 @@ fn write_export_file(
     extension: &str,
     content: &[u8],
 ) -> Result<String, String> {
-    let prefix = sanitize_export_prefix(&prefix);
+    let prefix = sanitize_export_prefix(prefix);
     let directory = app
         .path()
         .download_dir()
@@ -1952,22 +1829,21 @@ mod tests {
     #[test]
     fn moving_users_inserts_with_range_updates_and_swaps_ranks() {
         let mut connection = test_database();
-        let mut save = |name: &str, rank: Option<i64>| {
-            save_ranked_user_in(
-                &mut connection,
-                RankedUserInput {
-                    id: None,
-                    name: name.to_string(),
-                    rank,
-                    aliases: vec![],
-                },
-            )
-            .expect("保存选项")
+        let (first, second, third) = {
+            let mut save = |name: &str, rank: Option<i64>| {
+                save_ranked_user_in(
+                    &mut connection,
+                    RankedUserInput {
+                        id: None,
+                        name: name.to_string(),
+                        rank,
+                        aliases: vec![],
+                    },
+                )
+                .expect("保存选项")
+            };
+            (save("甲", Some(1)), save("乙", Some(2)), save("丙", None))
         };
-        let first = save("甲", Some(1));
-        let second = save("乙", Some(2));
-        let third = save("丙", None);
-        drop(save);
 
         let error = move_ranked_user_in(
             &mut connection,
