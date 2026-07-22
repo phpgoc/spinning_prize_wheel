@@ -87,14 +87,18 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
 
   const battleShortcuts = page.locator('.shortcut-battle');
   await expect(battleShortcuts.getByRole('heading', { name: '对战页' })).toBeVisible();
-  await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(7);
+  await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(4);
   await expect(battleShortcuts).toContainText('聚焦对战区');
   await expect(battleShortcuts).toContainText('聚焦名单');
-  await expect(battleShortcuts).toContainText('进入 / 返回全屏');
-  await expect(battleShortcuts).toContainText('比分框上 / 下');
-  await expect(battleShortcuts).toContainText('比分框左 / 右');
   await expect(battleShortcuts).toContainText('打开 / 关闭排名');
   await expect(battleShortcuts).toContainText('打开 / 关闭对战状态');
+
+  const battleAreaShortcuts = page.locator('.shortcut-battle-area');
+  await expect(battleAreaShortcuts.getByRole('heading', { name: '对战区' })).toBeVisible();
+  await expect(battleAreaShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(3);
+  await expect(battleAreaShortcuts).toContainText('进入 / 返回全屏');
+  await expect(battleAreaShortcuts).toContainText('比分框上 / 下');
+  await expect(battleAreaShortcuts).toContainText('比分框左 / 右');
 });
 
 test('排名字号放大时排名框同步扩容', async ({ page }) => {

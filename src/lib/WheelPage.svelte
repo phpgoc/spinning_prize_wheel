@@ -2686,13 +2686,19 @@
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦对战区</span><kbd>X</kbd></div>
             <div><span>聚焦名单</span><kbd>W</kbd></div>
-            <div><span>进入 / 返回全屏</span><kbd>F</kbd></div>
-            <div><span>比分框上 / 下</span><kbd>I / K</kbd></div>
-            <div><span>比分框左 / 右</span><kbd>J / L</kbd></div>
             {#if desktopRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭对战状态</span><kbd>Z</kbd></div>
             {/if}
+          </div>
+        </section>
+
+        <section class="shortcut-group shortcut-battle-area">
+          <h3>对战区</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>进入 / 返回全屏</span><kbd>F</kbd></div>
+            <div><span>比分框上 / 下</span><kbd>I / K</kbd></div>
+            <div><span>比分框左 / 右</span><kbd>J / L</kbd></div>
           </div>
         </section>
 
