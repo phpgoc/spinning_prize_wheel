@@ -139,6 +139,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
+  await expect(page.locator('.single-bracket-connectors path')).toHaveCount(6);
 
   const orderControls = page.locator('.battle-order-group label, .battle-order-group button');
   await expect(orderControls).toHaveCount(3);

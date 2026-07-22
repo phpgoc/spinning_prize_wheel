@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import {
     battleTmpScoreLocked,
     battleTmpSlotOrigin,
@@ -37,6 +38,10 @@
   export let onScoreKeydown: ((match: BattleTmpMatch, side: BattleSide, event: KeyboardEvent) => void) | undefined = undefined;
   export let onScoreChange: ((match: BattleTmpMatch, side: BattleSide, event: Event) => void) | undefined = undefined;
   export let onReveal: ((match: BattleTmpMatch, side: BattleSide) => void) | undefined = undefined;
+
+  let singleConnectorPaths: string[] = [];
+  let singleConnectorWidth = 0;
+  let singleConnectorHeight = 0;
 
   $: layout = createBattleBracketLayout(snapshot);
 
@@ -144,6 +149,69 @@
     return (side === 'up' ? match.upResult : match.downResult) ?? '';
   }
 
+  function observeSingleBracket(node: HTMLElement) {
+    let frame = 0;
+    const observer = new ResizeObserver(() => schedule());
+
+    function schedule() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        node.querySelectorAll<HTMLElement>('.battle-match[data-battle-match-id]').forEach((match) => observer.observe(match));
+        updateSingleConnectors(node);
+      });
+    }
+
+    observer.observe(node);
+    void tick().then(schedule);
+    window.addEventListener('resize', schedule);
+
+    return {
+      destroy() {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+        window.removeEventListener('resize', schedule);
+      },
+    };
+  }
+
+  function updateSingleConnectors(node: HTMLElement) {
+    if (snapshot.format !== 'single-elimination') {
+      singleConnectorPaths = [];
+      return;
+    }
+    const rootRect = node.getBoundingClientRect();
+    const matchElements = new Map(
+      [...node.querySelectorAll<HTMLElement>('.battle-match[data-battle-match-id]')]
+        .map((element) => [element.dataset.battleMatchId!, element] as const),
+    );
+    const nextPaths: string[] = [];
+
+    for (const targetMatch of snapshot.matches.filter((match) => match.stage === 'single')) {
+      const targetElement = matchElements.get(targetMatch.matchId);
+      if (!targetElement) continue;
+      for (const side of BATTLE_SIDES) {
+        const origin = battleTmpSlotOrigin(snapshot, targetMatch, side);
+        const sourceElement = origin ? matchElements.get(origin.matchId) : null;
+        if (!sourceElement) continue;
+        const sourceRect = sourceElement.getBoundingClientRect();
+        const targetRect = targetElement.getBoundingClientRect();
+        const sourceCenterX = sourceRect.left + sourceRect.width / 2;
+        const targetCenterX = targetRect.left + targetRect.width / 2;
+        const leftToRight = sourceCenterX < targetCenterX;
+        const sourceX = (leftToRight ? sourceRect.right : sourceRect.left) - rootRect.left + node.scrollLeft;
+        const targetX = (leftToRight ? targetRect.left : targetRect.right) - rootRect.left + node.scrollLeft;
+        const sourceY = sourceRect.top + sourceRect.height / 2 - rootRect.top + node.scrollTop;
+        const targetY = targetRect.top + targetRect.height / 2 - rootRect.top + node.scrollTop;
+        const middleX = (sourceX + targetX) / 2;
+        nextPaths.push(`M ${sourceX} ${sourceY} H ${middleX} V ${targetY} H ${targetX}`);
+      }
+    }
+
+    singleConnectorWidth = node.scrollWidth;
+    singleConnectorHeight = node.scrollHeight;
+    if (nextPaths.join('|') !== singleConnectorPaths.join('|')) singleConnectorPaths = nextPaths;
+  }
+
 </script>
 
 {#snippet battleMatchCard(match: BattleTmpMatch)}
@@ -158,6 +226,7 @@
     data-battle-level={match.level}
     data-battle-position={match.position}
     data-battle-status={match.status}
+    data-battle-match-id={match.matchId}
     on:keydown={readOnly ? undefined : onMatchKeydown}
   >
     <small>{battleTmpMatchCode(match)}</small>
@@ -197,7 +266,18 @@
 {/snippet}
 
 {#if snapshot.format === 'single-elimination'}
-  <div class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="single-battle-bracket">
+  <div use:observeSingleBracket class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="single-battle-bracket">
+    {#if singleConnectorPaths.length > 0}
+      <svg
+        class="single-bracket-connectors"
+        width={singleConnectorWidth}
+        height={singleConnectorHeight}
+        viewBox={`0 0 ${singleConnectorWidth} ${singleConnectorHeight}`}
+        aria-hidden="true"
+      >
+        {#each singleConnectorPaths as path}<path d={path}></path>{/each}
+      </svg>
+    {/if}
     <div class="single-bracket-side left">
       {#each layout.single.left as round (round.id)}
         <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
@@ -241,12 +321,14 @@
 
 <style>
   .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-battle-bracket { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-bracket-side { display: flex; align-items: stretch; gap: 13px; }
+  .single-battle-bracket { position: relative; display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; isolation: isolate; transition: opacity 180ms ease; }
+  .single-bracket-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
+  .single-bracket-connectors path { fill: none; stroke: color-mix(in srgb, var(--accent) 42%, transparent); stroke-width: calc(2px * var(--battle-layout-scale, 1)); stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .single-bracket-side { position: relative; z-index: 1; display: flex; align-items: stretch; gap: 13px; }
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
   .single-bracket-side .battle-round { display: flex; min-width: calc(220px * var(--battle-layout-scale, 1)); flex-direction: column; justify-content: center; }
-  .single-bracket-final { min-width: calc(220px * var(--battle-layout-scale, 1)); padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--accent) 4.5%, transparent); }
+  .single-bracket-final { position: relative; z-index: 1; min-width: calc(220px * var(--battle-layout-scale, 1)); padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
   .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
   .single-bracket-side.right .battle-match { direction: rtl; }
   .single-bracket-side.right .battle-match > * { direction: ltr; }
