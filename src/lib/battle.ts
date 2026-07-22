@@ -386,9 +386,9 @@ export function createSeededBattlePlan(
 }
 
 function validateFixedSeedCount(participantCount: number, fixedSeedCount: number) {
+  if (fixedSeedCount === 0) return;
   const fixedOptions = battleFixedSeedOptions(participantCount);
   if (fixedOptions.includes(fixedSeedCount)) return;
-  if (participantCount === 2 && fixedSeedCount === 0) return;
   throw new Error(`前 ${fixedSeedCount} 固定不适用于当前人数`);
 }
 

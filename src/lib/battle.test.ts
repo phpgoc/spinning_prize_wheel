@@ -37,6 +37,18 @@ describe('对战签位', () => {
     expect(plan.positions.filter((position) => !position.fixed).map((position) => position.participant?.seed).sort()).toEqual([5, 6, 7, 8]);
   });
 
+  test('全随机适用于多人单败且不产生固定签位', () => {
+    const plan = createSeededBattlePlan(names(8), {
+      format: 'single-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 0,
+      random: () => 0,
+    });
+    expect(plan.fixedSeedCount).toBe(0);
+    expect(plan.positions.every((position) => !position.fixed)).toBe(true);
+    expect(plan.positions.map((position) => position.participant?.seed).sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
   test('执行前只显示已经固定的签位', () => {
     const positions = createFixedBattlePositions(names(8), 4);
     expect(positions.map((position) => position.participant?.seed ?? null)).toEqual([

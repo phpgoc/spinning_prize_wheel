@@ -269,6 +269,8 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   await expect(page.getByRole('button', { name: '对战状态' })).toBeVisible();
 
   await page.getByRole('radio', { name: '单败' }).check();
+  await expect(page.getByRole('radio', { name: '全随机' })).toBeChecked();
+  await page.getByRole('radio', { name: '前 2 固定' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
   const rankPreview = page.getByRole('button', { name: '按排名预览' });
   await expect(rankPreview).toBeEnabled();

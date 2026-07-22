@@ -185,7 +185,7 @@
   let hiddenLineupCellKeys = new Set<string>();
   let battleFormat: BattleFormat = 'avoid-first-pair';
   let battleOrderMode: BattleOrderMode = 'input';
-  let battleFixedSeedCount = 2;
+  let battleFixedSeedCount = 0;
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleHistories: BattleHistory[] = [];
@@ -285,8 +285,8 @@
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
   $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailability.rank;
   $: battleFixedOptions = battleFixedSeedOptions(names.length);
-  $: if (battleFixedOptions.length > 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
-    battleFixedSeedCount = battleFixedOptions[0];
+  $: if (battleFixedSeedCount !== 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
+    battleFixedSeedCount = 0;
   }
   $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
   $: battleRankedNameCount = rankedBattleLineupNameCount(names, resolvedNames);
@@ -2916,10 +2916,9 @@
                 </fieldset>
                 <fieldset class="battle-radio-group battle-fixed-group">
                   <legend>固定位置</legend>
+                  <label><input type="radio" name="battle-fixed-seeds" value={0} bind:group={battleFixedSeedCount} /><span>全随机</span></label>
                   {#each battleFixedOptions as count}
                     <label><input type="radio" name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount} /><span>前 {count} 固定</span></label>
-                  {:else}
-                    <div class="battle-radio-empty">确认至少 3 项后生成选项</div>
                   {/each}
                 </fieldset>
               {/if}
@@ -3460,7 +3459,6 @@
   .battle-radio-group input[type='radio'],
   .battle-radio-group input[type='checkbox'] { width: calc(13px * var(--lineup-layout-scale, 1)); height: calc(13px * var(--lineup-layout-scale, 1)); margin: 0; flex: 0 0 auto; }
   .battle-radio-group label:has(input:disabled) { cursor: not-allowed; opacity: 0.48; }
-  .battle-radio-empty { grid-column: 1 / -1; padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1)); border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: calc(8px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status { margin-top: calc(10px * var(--lineup-layout-scale, 1)); padding: calc(9px * var(--lineup-layout-scale, 1)) calc(11px * var(--lineup-layout-scale, 1)); border-radius: calc(8px * var(--lineup-layout-scale, 1)); background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
   .battle-preview-settings {

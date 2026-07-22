@@ -153,8 +153,9 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
 
   await page.getByRole('radio', { name: '单败' }).check();
   await expect(page.getByRole('radio', { name: '按排名' })).toBeDisabled();
+  await expect(page.getByRole('radio', { name: '全随机' })).toBeChecked();
   await expect(page.getByRole('radio', { name: /^前 \d+ 固定$/ })).toHaveCount(5);
-  await expect(previewSettings.getByRole('radio')).toHaveCount(10);
+  await expect(previewSettings.getByRole('radio')).toHaveCount(11);
   await page.getByRole('radio', { name: '前 16 固定' }).check();
 
   await page.getByRole('radio', { name: '同组不对战1对2' }).check();
@@ -182,7 +183,7 @@ test('宽屏并排显示三组对战选项', async ({ page }) => {
   expect(new Set(boxes.map((box) => Math.round(box.x))).size).toBe(3);
   expect(Math.max(...boxes.map((box) => box.width)) - Math.min(...boxes.map((box) => box.width))).toBeLessThan(1);
   const settingsBox = await page.locator('.battle-preview-settings').boundingBox();
-  expect(settingsBox!.height).toBeLessThan(350);
+  expect(settingsBox!.height).toBeLessThan(400);
 });
 
 test('对战预览操作控件等宽等高并按百分之一百六十六扩容', async ({ page }) => {
@@ -210,7 +211,7 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
   await expect(page.locator('.battle-shortcut-hint')).toHaveText('A排名 · Z历史 · X对战 · W名单 · F全屏 · I/K上下 · J/L左右');
   await prepareSingleBattle();
   const normal = await controlDimensions();
-  expect(normal).toHaveLength(10);
+  expect(normal).toHaveLength(11);
   expect(Math.max(...normal.map((item) => item.width)) - Math.min(...normal.map((item) => item.width))).toBeLessThan(1);
   expect(Math.max(...normal.map((item) => item.height)) - Math.min(...normal.map((item) => item.height))).toBeLessThan(1);
   expect(normal.every((item) => item.fontSize === 15 && item.fontWeight === 900)).toBe(true);
