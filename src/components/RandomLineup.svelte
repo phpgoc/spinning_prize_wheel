@@ -183,6 +183,7 @@
   let allLineupCellsRevealed = false;
   let revealedBattleSlots = new Set<string>();
   let allBattleSlotsRevealed = false;
+  let battleRevealFresh = false;
   let hiddenLineupCellKeys = new Set<string>();
   let battleFormat: BattleFormat = 'avoid-first-pair';
   let battleOrderMode: BattleOrderMode = 'input';
@@ -258,15 +259,19 @@
   })();
   $: hiddenLineupCellCount = hiddenLineupCellKeys.size;
   $: hiddenBattleSlotKeys = (() => {
-    if (!battleTmpSnapshot || !slowRevealEnabled || allBattleSlotsRevealed) return new Set<string>();
-    return new Set(battleTmpSnapshot.matches.flatMap((match) => [
-      ...(match.level > 1 && match.up !== null && !revealedBattleSlots.has(battleSlotKey(match, 'up'))
-        ? [battleSlotKey(match, 'up')]
-        : []),
-      ...(match.level > 1 && match.down !== null && !revealedBattleSlots.has(battleSlotKey(match, 'down'))
-        ? [battleSlotKey(match, 'down')]
-        : []),
-    ]));
+    if (!battleTmpSnapshot || !slowRevealEnabled || !battleRevealFresh || allBattleSlotsRevealed) return new Set<string>();
+    const snapshot = battleTmpSnapshot;
+    return new Set(snapshot.matches.flatMap((match) => (
+      (['up', 'down'] as const).flatMap((side) => {
+        const participantId = match[side];
+        if (participantId === null || revealedBattleSlots.has(battleSlotKey(match, side))) return [];
+        const participant = snapshot.participants.find((item) => item.id === participantId);
+        const fixedFirstRound = match.level === 1
+          && participant !== undefined
+          && participant.seed <= snapshot.fixedSeedCount;
+        return fixedFirstRound ? [] : [battleSlotKey(match, side)];
+      })
+    )));
   })();
   $: hiddenBattleSlotCount = hiddenBattleSlotKeys.size;
   $: groupingUnrankedCount = desktopRuntime
@@ -305,7 +310,7 @@
       : names;
   $: battleCanExecute = battleTmpSnapshot === null && !sourceTextDirty && (
     battleFormat === 'avoid-first-pair'
-      ? names.length >= 8 && names.length % 2 === 0
+      ? names.length === 8
       : names.length >= 4 && (battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput)
   );
   $: battleTmpCompletedCount = battleTmpSnapshot?.matches.filter((match) => (
@@ -595,7 +600,7 @@
     }
     if (!battleCanExecute) {
       error = battleFormat === 'avoid-first-pair'
-        ? `需偶数名单且至少 8 项，现 ${names.length} 项`
+        ? `需 8 项，现 ${names.length} 项`
         : battleOrderMode === 'rank'
           ? `固定前 ${battleConfiguredFixedCount} 名，现 ${battleRankedNameCount} 个排名`
           : '至少确认 4 项';
@@ -618,7 +623,7 @@
       lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
       battleTmpAvailable = true;
-      resetBattleReveal();
+      resetBattleReveal(true);
       if (desktopRuntime) {
         battleSyncStatus = 'saving';
         try {
@@ -792,6 +797,7 @@
   function applyBattleTmpSnapshot(state: BattleTmpSnapshot) {
     battleTmpSnapshot = structuredClone(state);
     battleTmpAvailable = true;
+    // 悬念只属于刚抽签的首次展示，恢复临时表不重复隐藏选手。
     resetBattleReveal();
     battleFormat = state.format;
     battleOrderMode = state.orderMode;
@@ -834,12 +840,12 @@
 
   async function requestBattleLoad(target: BattleLoadTarget) {
     if (battleLoadingTarget) return;
-    if (battleTmpSnapshot) {
-      pendingBattleLoad = { target, confirmation: 1 };
-      return;
-    }
     if (target.kind === 'current') {
       await performBattleLoad(target);
+      return;
+    }
+    if (battleTmpSnapshot) {
+      pendingBattleLoad = { target, confirmation: 1 };
       return;
     }
     battleLoadingTarget = true;
@@ -1215,15 +1221,16 @@
     allLineupCellsRevealed = false;
   }
 
-  function resetBattleReveal() {
+  function resetBattleReveal(fresh = false) {
     revealedBattleSlots = new Set();
-    allBattleSlotsRevealed = false;
+    allBattleSlotsRevealed = !fresh;
+    battleRevealFresh = fresh;
   }
 
   function updateSlowReveal(event: Event) {
     slowRevealEnabled = (event.currentTarget as HTMLInputElement).checked;
     resetLineupReveal();
-    resetBattleReveal();
+    if (!slowRevealEnabled) resetBattleReveal();
   }
 
   function lineupCellKey(tierIndex: number, groupIndex: number): string {
@@ -1962,6 +1969,45 @@
         ?.focus({ preventScroll: true });
       return;
     }
+    if (
+      battleFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && key === 's'
+      && ['single-elimination', 'avoid-first-pair'].includes(battleTmpSnapshot?.format ?? battleFormat)
+    ) {
+      event.preventDefault();
+      focusBattleScoreGroup('single');
+      return;
+    }
+    if (
+      battleFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && key === 'w'
+      && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination'
+    ) {
+      event.preventDefault();
+      focusBattleScoreGroup('winner');
+      return;
+    }
+    if (
+      battleFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && key === 'l'
+      && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination'
+    ) {
+      event.preventDefault();
+      focusBattleScoreGroup('loser');
+      return;
+    }
     if (battleFullscreen && battleFocusActive) return;
     if (target === sourceTextarea && isMultilineTextConfirm(event)) {
       event.preventDefault();
@@ -2113,21 +2159,6 @@
     }
 
     if (isTextEditingTarget(event.target)) return;
-    if (battleFocusActive && key === 's' && (battleTmpSnapshot?.format ?? battleFormat) === 'single-elimination') {
-      event.preventDefault();
-      focusBattleScoreGroup('single');
-      return;
-    }
-    if (battleFocusActive && key === 'w' && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination') {
-      event.preventDefault();
-      focusBattleScoreGroup('winner');
-      return;
-    }
-    if (battleFocusActive && key === 'l' && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination') {
-      event.preventDefault();
-      focusBattleScoreGroup('loser');
-      return;
-    }
     if (battlePage && battleFullscreen && ['a', 'z'].includes(key)) {
       event.preventDefault();
       return;
@@ -2186,7 +2217,7 @@
       void moveRankedUserActionFocus(direction);
       return;
     }
-    if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
+    if (rankingFocusActive && (/^\d$/u.test(event.key) || event.key === 'Backspace')) {
       event.preventDefault();
       updateRankSelectionShortcut(event.key);
       return;
@@ -2272,6 +2303,8 @@
     candidates: T[],
     key: string,
   ): T | null {
+    const logicalSingleTarget = closestSingleBattleVerticalElement(current, candidates, key);
+    if (logicalSingleTarget) return logicalSingleTarget;
     const currentRect = current.getBoundingClientRect();
     const currentCenter = {
       x: currentRect.left + currentRect.width / 2,
@@ -2315,6 +2348,48 @@
           : leftAxis - rightAxis;
         return edgeOrder || left.distance - right.distance;
       })[0]?.candidate ?? null;
+  }
+
+  function closestSingleBattleVerticalElement<T extends HTMLElement>(
+    current: HTMLElement,
+    candidates: T[],
+    key: string,
+  ): T | null {
+    if (!['ArrowUp', 'ArrowDown'].includes(key)) return null;
+    const currentMatch = current.closest<HTMLElement>('.single-battle-bracket .battle-match[data-battle-stage="single"]');
+    const level = currentMatch?.dataset.battleLevel;
+    if (!currentMatch || !level) return null;
+    const levelInputs = candidates
+      .filter((candidate) => {
+        const match = candidate.closest<HTMLElement>('.battle-match[data-battle-stage="single"]');
+        return match?.dataset.battleLevel === level;
+      })
+      .sort((left, right) => {
+        const leftMatch = left.closest<HTMLElement>('.battle-match')!;
+        const rightMatch = right.closest<HTMLElement>('.battle-match')!;
+        const positionDifference = Number(leftMatch.dataset.battlePosition) - Number(rightMatch.dataset.battlePosition);
+        if (positionDifference !== 0) return positionDifference;
+        const leftSide = left.dataset.battleSide === 'down' ? 1 : 0;
+        const rightSide = right.dataset.battleSide === 'down' ? 1 : 0;
+        return leftSide - rightSide;
+      });
+    if (levelInputs.length === 0) return null;
+    const currentInputIndex = levelInputs.findIndex((input) => input === current);
+    if (currentInputIndex >= 0) {
+      const offset = key === 'ArrowUp' ? -1 : 1;
+      return levelInputs[(currentInputIndex + offset + levelInputs.length) % levelInputs.length] ?? null;
+    }
+    const currentPosition = Number(currentMatch.dataset.battlePosition);
+    const targetPosition = currentPosition + (key === 'ArrowUp' ? -1 : 1);
+    const positions = [...new Set(levelInputs.map((input) => Number(
+      input.closest<HTMLElement>('.battle-match')?.dataset.battlePosition,
+    )))].sort((left, right) => left - right);
+    const wrappedPosition = positions.includes(targetPosition)
+      ? targetPosition
+      : key === 'ArrowUp' ? positions.at(-1) : positions[0];
+    return levelInputs.find((input) => Number(
+      input.closest<HTMLElement>('.battle-match')?.dataset.battlePosition,
+    ) === wrappedPosition) ?? null;
   }
 
   function moveFromLastConfirmedBattleScore(event: KeyboardEvent): boolean {
@@ -2386,7 +2461,7 @@
   }
 
   function requestClearAll() {
-    if (sourceText || confirmedSourceText || battleTmpSnapshot) clearLineupConfirmation = 1;
+    if (battlePage ? battleTmpSnapshot : sourceText || confirmedSourceText) clearLineupConfirmation = 1;
   }
 
   function clearConfirmationTitle(step: 0 | 1 | 2 | 3): string {
@@ -2395,7 +2470,7 @@
     if (step === 2) {
       return desktopRuntime ? '2/3 直接删除桌面对战临时表？' : '2/3 放弃当前页面的对战状态？';
     }
-    return '3/3 清空名单和全部对战配置？';
+    return '3/3 删除当前对战？';
   }
 
   function clearConfirmationDetail(step: 0 | 1 | 2 | 3): string {
@@ -2408,14 +2483,14 @@
         ? '删除后即使关闭并重新启动软件，也无法恢复这场对战。'
         : '清空后当前签表不会保留，刷新页面也无法恢复。';
     }
-    return '名单、赛制和固定位置都会重置；要继续对战，必须重新确认名单并抽签。';
+    return '名单、赛制、固定位置和当前浏览内容都会保留。';
   }
 
   function clearConfirmationAction(step: 0 | 1 | 2 | 3): string {
     if (!battlePage) return '确认清空';
     if (step === 1) return '删除签表和比分';
     if (step === 2) return desktopRuntime ? '删除临时表' : '放弃当前对战';
-    return '清空并重置';
+    return '删除当前对战';
   }
 
   async function confirmClearAll() {
@@ -2428,18 +2503,28 @@
   }
 
   async function clearAll() {
-    if (battlePage && battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
-    if (desktopRuntime && battlePage) {
-      clearingBattleTmp = true;
-      try {
-        await invoke('clear_battle_tmp_state', { variant });
-      } catch (reason) {
-        battleSyncStatus = 'error';
-        error = messageFrom(reason, '无法清空对战临时状态');
-        return;
-      } finally {
-        clearingBattleTmp = false;
+    if (battlePage) {
+      if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
+      if (desktopRuntime) {
+        clearingBattleTmp = true;
+        try {
+          await invoke('clear_battle_tmp_state', { variant });
+        } catch (reason) {
+          battleSyncStatus = 'error';
+          error = messageFrom(reason, '无法清空对战临时状态');
+          return;
+        } finally {
+          clearingBattleTmp = false;
+        }
       }
+      clearLineupConfirmation = 0;
+      battleTmpSnapshot = null;
+      battleTmpAvailable = false;
+      resetBattleReveal();
+      lastConfirmedBattleScore = null;
+      battleSyncStatus = 'idle';
+      error = '';
+      return;
     }
     clearLineupConfirmation = 0;
     sourceText = '';
@@ -2449,12 +2534,6 @@
     resolvingNames = false;
     result = null;
     resultHistory = null;
-    battleTmpSnapshot = null;
-    battleTmpAvailable = false;
-    battleHistoryPreview = null;
-    resetBattleReveal();
-    lastConfirmedBattleScore = null;
-    battleSyncStatus = 'idle';
     error = '';
     historyStatus = 'idle';
   }
@@ -2768,8 +2847,14 @@
         </section>
 
         <section class:open={desktopPanel === 'history'} class="desktop-accordion">
-          <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('history')}>
-            <span>{battlePage ? '对战状态' : '分组历史'}</span><strong>{battlePage ? '实时同步' : '最近 5 条'}</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
+          <button
+            type="button"
+            class:battle-state-toggle={battlePage}
+            class="desktop-accordion-toggle"
+            aria-expanded={desktopPanel === 'history'}
+            on:click={() => toggleDesktopPanel('history')}
+          >
+            <span>{battlePage ? '对战状态' : '分组历史'}</span><strong>{battlePage ? '实时同步' : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
@@ -2905,7 +2990,7 @@
                 class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                 class="preview-row"
               >
-                <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
+                <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>插入</button>
                 <span class="preview-position">{String(index + 1).padStart(2, '0')}</span>
                 <div class="preview-name">
                   <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
@@ -2923,7 +3008,7 @@
                     <button type="button" class="add-preview-user" title="直接加入无排名" disabled={rankingSaving} on:click={() => addUnknownPerson(row.name)}>录入</button>
                   </div>
                 {/if}
-                <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>×</button>
+                <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} aria-label={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>删除</button>
               </div>
             {/each}
             {#if insertIndex === previewRows.length}
@@ -3005,7 +3090,7 @@
                 {:else if sourceTextDirty}
                   名单已改，请确认
                 {:else if battleFormat === 'avoid-first-pair' && !battleCanExecute}
-                  需偶数且至少 8 项
+                  需 8 项
                 {:else if battleOrderMode === 'rank' && !battleRankReady}
                   固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名
                 {:else if battleCanExecute}
@@ -3015,8 +3100,16 @@
                 {/if}
               </div>
               <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
-              {#if desktopRuntime && !battleTmpSnapshot}
-                <button type="button" class="battle-load-current-button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
+              {#if desktopRuntime}
+                <button
+                  type="button"
+                  class:battle-control-hidden={!battleTmpAvailable || battleTmpSnapshot !== null}
+                  class="battle-load-current-button"
+                  aria-hidden={!battleTmpAvailable || battleTmpSnapshot !== null}
+                  tabindex={!battleTmpAvailable || battleTmpSnapshot !== null ? -1 : undefined}
+                  disabled={!battleTmpAvailable || battleTmpSnapshot !== null || battleLoadingTarget}
+                  on:click={() => void requestBattleLoad({ kind: 'current' })}
+                >加载当前</button>
               {/if}
               <button type="button" class="generate-button battle-generate-button" title={battleTmpSnapshot ? '清空后重来' : ''} disabled={!battleCanExecute} on:click={generateBattle}><span>抽签</span><i>→</i></button>
             </div>
@@ -3053,12 +3146,6 @@
         {/if}
       </fieldset>
 
-      {#if battlePage && desktopRuntime && battleTmpSnapshot}
-        <div class="battle-load-current-strip">
-          <button type="button" class="battle-load-current-button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => void requestBattleLoad({ kind: 'current' })}>加载当前</button>
-        </div>
-      {/if}
-
       <div
         bind:this={lineupResultElement}
         class:battle-result={battlePage}
@@ -3071,7 +3158,9 @@
         {#if battlePage}
           <div class="battle-result-toolbar">
             <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
-            <button type="button" class="battle-clear-button" disabled={!battleTmpSnapshot || clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
+            {#if battleTmpSnapshot && !battleHistoryPreview}
+              <button type="button" class="battle-clear-button" disabled={clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
+            {/if}
             <fieldset class="battle-color-controls">
               <legend>对战颜色</legend>
               <div class="battle-color-presets" role="group" aria-label="配色预设">
@@ -3136,7 +3225,7 @@
               {/key}
             </div>
           {:else}
-            <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '名单每相邻两项为一组，依次为第 1 和第 2' : '确认名单并选择固定位置'}</p></div>
+            <div class="empty-result battle-empty-result"><div class="empty-grid"><i>A</i><i>VS</i><i>B</i></div><p>{battleFormat === 'avoid-first-pair' ? '固定 8 项：相邻两项为一组，第 1 对异组第 2，单败晋级' : '确认名单并选择固定位置'}</p></div>
           {/if}
         {:else}
         <div class="result-heading">
@@ -3360,7 +3449,7 @@
     --lineup-muted-on-light: #34362f;
     --lineup-dim-on-light: #484b43;
     --lineup-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
-    --battle-control-width: calc(304px * var(--lineup-layout-scale, 1));
+    --battle-control-width: calc(160px * var(--lineup-layout-scale, 1));
     --battle-control-height: calc(42px * var(--lineup-layout-scale, 1));
     min-height: 0;
     padding: clamp(24px, 4vw, 58px);
@@ -3551,24 +3640,45 @@
   }
   .battle-option-groups {
     display: grid;
-    min-width: max-content;
-    grid-template-columns: repeat(3, max-content);
+    width: 100%;
+    min-width: calc(var(--battle-control-width) * 3);
+    grid-template-columns:
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr);
     align-items: stretch;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
   }
+  .battle-format-group { grid-column: 2; }
+  .battle-order-group { grid-column: 4; }
+  .battle-fixed-group { grid-column: 6; }
   .battle-option-actions {
     display: grid;
-    min-width: calc(var(--battle-control-width) * 3 + 12px * var(--lineup-layout-scale, 1));
-    grid-template-columns: minmax(var(--battle-control-width), 1fr) repeat(2, var(--battle-control-width));
+    width: 100%;
+    min-width: calc(var(--battle-control-width) * 3);
+    grid-template-columns:
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr)
+      var(--battle-control-width)
+      minmax(0, 1fr);
     align-items: stretch;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
+    row-gap: calc(6px * var(--lineup-layout-scale, 1));
   }
   .battle-option-actions .battle-count-status { grid-column: 1 / -1; }
-  .battle-option-actions.desktop-actions {
-    min-width: calc(var(--battle-control-width) * 4 + 18px * var(--lineup-layout-scale, 1));
-    grid-template-columns: minmax(var(--battle-control-width), 1fr) repeat(3, var(--battle-control-width));
-  }
+  .battle-option-actions .battle-reveal-setting { grid-column: 2; }
+  .battle-option-actions .battle-load-current-button { grid-column: 4; }
+  .battle-option-actions .battle-generate-button { grid-column: 6; }
+  .battle-control-hidden { visibility: hidden; pointer-events: none; }
   .battle-preview-settings .battle-radio-group {
+    width: var(--battle-control-width);
+    min-width: 0;
+    box-sizing: border-box;
     flex: 0 0 auto;
     align-content: start;
     margin: 0;
@@ -3582,6 +3692,9 @@
   .battle-preview-settings .battle-order-group,
   .battle-preview-settings .battle-fixed-group { grid-template-columns: var(--battle-control-width); }
   .battle-preview-settings .battle-radio-group label {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     gap: calc(6px * var(--lineup-layout-scale, 1));
     padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
   }
@@ -3655,17 +3768,6 @@
   .battle-preview-settings .battle-load-current-button:hover:not(:disabled) {
     border-color: rgba(231, 255, 114, 0.48);
     background: rgba(231, 255, 114, 0.13);
-  }
-  .battle-load-current-strip { display: flex; justify-content: flex-end; }
-  .battle-load-current-strip .battle-load-current-button {
-    min-width: 150px;
-    min-height: 42px;
-    padding: 9px 15px;
-    border: 1px solid rgba(231, 255, 114, 0.2);
-    border-radius: 9px;
-    background: rgba(231, 255, 114, 0.07);
-    color: #e6edbb;
-    font-weight: 900;
   }
   .battle-preview-settings .battle-generate-button i { font-size: calc(15px * var(--font-scale, 1)); }
 
@@ -4032,7 +4134,7 @@
     display: grid;
     min-width: 0;
     min-height: calc(44px + 22px * var(--lineup-layout-scale, 1));
-    grid-template-columns: 24px 29px minmax(0, 1fr) auto 24px;
+    grid-template-columns: auto 29px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
     padding: calc(5px + 4px * var(--lineup-layout-scale, 1)) calc(6px + 4px * var(--lineup-layout-scale, 1));
@@ -4113,11 +4215,9 @@
   }
 
   .insert-before-button {
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border-radius: 50%;
-    font-size: calc(14px * var(--font-scale, 1));
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: calc(10px * var(--font-scale, 1));
     line-height: 1;
   }
 
@@ -4219,11 +4319,12 @@
   .link-preview-user { border-color: rgba(205, 219, 126, 0.22); color: #cbd58e; }
 
   .remove-preview-user {
-    width: 21px;
-    height: 21px;
-    border-radius: 50%;
-    color: var(--lineup-dim-on-dark);
-    font-size: calc(17px * var(--font-scale, 1));
+    padding: 4px 6px;
+    border: 1px solid rgba(221, 151, 132, 0.24);
+    border-radius: 6px;
+    color: #d8aaa0;
+    font-size: calc(10px * var(--font-scale, 1));
+    line-height: 1;
   }
 
   .remove-preview-user:hover { background: rgba(255, 255, 255, 0.06); color: #d6d8cf; }
@@ -4430,6 +4531,14 @@
     font-size: calc(16px * var(--font-scale, 1));
     font-style: normal;
     text-align: right;
+  }
+
+  .desktop-accordion-toggle.battle-state-toggle {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .desktop-accordion-toggle.battle-state-toggle i {
+    white-space: nowrap;
   }
 
   .desktop-accordion.open .desktop-accordion-toggle {

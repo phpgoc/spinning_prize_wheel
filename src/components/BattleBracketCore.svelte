@@ -55,12 +55,12 @@
     }
     return [...groups.values()].map((group) => ({
       ...group,
-      label: battleTmpColumnLabel(group.stage, group.matches[0].level, group.matches.length),
+      label: battleTmpColumnLabel(current.format, group.stage, group.matches[0].level, group.matches.length),
     }));
   }
 
   function createSingleBattleLayout(current: BattleTmpSnapshot, groups: BattleRoundGroup[]) {
-    if (current.format !== 'single-elimination') {
+    if (current.format !== 'single-elimination' && current.format !== 'avoid-first-pair') {
       return { left: [], right: [], final: null };
     }
     const levels = groups.filter((group) => group.stage === 'single');
@@ -72,7 +72,7 @@
     }));
     const right = sideLevels.map((group) => ({
       ...group,
-      matches: group.matches.slice(Math.ceil(group.matches.length / 2)).reverse(),
+      matches: group.matches.slice(Math.ceil(group.matches.length / 2)),
     })).reverse();
     return { left, right, final: finalGroup?.matches[0] ?? null };
   }
@@ -89,11 +89,12 @@
   }
 
   function battleTmpColumnLabel(
+    format: BattleTmpSnapshot['format'],
     stage: BattleTmpMatch['stage'],
     level: number,
     matchCount: number,
   ): string {
-    if (stage === 'pairing') return '1对2';
+    if (stage === 'pairing' || format === 'avoid-first-pair' && stage === 'single' && level === 1) return '1对2';
     if (stage === 'final') return level === 2 ? '重赛' : '总决赛';
     if (stage === 'loser') return `第 ${level} 轮`;
     if (matchCount === 1) return '决赛';
@@ -175,7 +176,7 @@
   }
 
   function updateSingleConnectors(node: HTMLElement) {
-    if (snapshot.format !== 'single-elimination') {
+    if (snapshot.format !== 'single-elimination' && snapshot.format !== 'avoid-first-pair') {
       singleConnectorPaths = [];
       return;
     }
@@ -265,7 +266,7 @@
   </article>
 {/snippet}
 
-{#if snapshot.format === 'single-elimination'}
+{#if snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair'}
   <div use:observeSingleBracket class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="single-battle-bracket">
     {#if singleConnectorPaths.length > 0}
       <svg

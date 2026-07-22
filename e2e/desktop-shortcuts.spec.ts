@@ -140,6 +140,8 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
   await expect(page.locator('.single-bracket-connectors path')).toHaveCount(6);
+  await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('插入');
+  await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 
   const orderControls = page.locator('.battle-order-group label, .battle-order-group button');
   await expect(orderControls).toHaveCount(3);
@@ -158,9 +160,42 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
   }));
   expect(Math.max(...sizes.map((size) => size.width)) - Math.min(...sizes.map((size) => size.width))).toBeLessThan(1);
   expect(Math.max(...sizes.map((size) => size.height)) - Math.min(...sizes.map((size) => size.height))).toBeLessThan(1);
+  const groupGaps = await page.locator('.battle-option-groups').evaluate((root) => {
+    const rootRect = root.getBoundingClientRect();
+    const groups = [...root.querySelectorAll('fieldset')].map((group) => group.getBoundingClientRect());
+    return [
+      groups[0].left - rootRect.left,
+      groups[1].left - groups[0].right,
+      groups[2].left - groups[1].right,
+      rootRect.right - groups[2].right,
+    ];
+  });
+  expect(Math.max(...groupGaps) - Math.min(...groupGaps)).toBeLessThan(1);
+  expect(groupGaps[0]).toBeGreaterThan(30);
+  const defaultGroupWidth = (await page.locator('.battle-format-group').boundingBox())!.width;
   const statusBox = await page.locator('.battle-count-status').boundingBox();
   const actionBox = await page.locator('.battle-option-actions > label').boundingBox();
   expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(actionBox!.y);
+
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(8);
+  await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
+  await page.getByRole('radio', { name: '单败' }).check();
+  const largeGroupWidth = (await page.locator('.battle-format-group').boundingBox())!.width;
+  expect(largeGroupWidth / defaultGroupWidth).toBeGreaterThan(1.65);
+  expect(largeGroupWidth / defaultGroupWidth).toBeLessThan(1.67);
+  const largeGroupGaps = await page.locator('.battle-option-groups').evaluate((root) => {
+    const rootRect = root.getBoundingClientRect();
+    const groups = [...root.querySelectorAll('fieldset')].map((group) => group.getBoundingClientRect());
+    return [
+      groups[0].left - rootRect.left,
+      groups[1].left - groups[0].right,
+      groups[2].left - groups[1].right,
+      rootRect.right - groups[2].right,
+    ];
+  });
+  expect(Math.max(...largeGroupGaps)).toBeLessThan(2);
 });
 
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
@@ -368,16 +403,17 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   await expect(page.getByText('删除后即使关闭并重新启动软件，也无法恢复这场对战。')).toBeVisible();
   await expect(page.getByRole('button', { name: '删除临时表' })).toBeVisible();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '3/3 清空名单和全部对战配置？' })).toBeVisible();
-  await expect(page.getByText('名单、赛制和固定位置都会重置；要继续对战，必须重新确认名单并抽签。')).toBeVisible();
-  await expect(page.getByRole('button', { name: '清空并重置' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '3/3 删除当前对战？' })).toBeVisible();
+  await expect(page.getByText('名单、赛制、固定位置和当前浏览内容都会保留。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除当前对战' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).not.toBeNull();
   await page.keyboard.press('Enter');
 
-  await expect(page.locator('.names-field textarea')).toHaveValue('');
-  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
+  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
+  await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -387,10 +423,12 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   ))).toBe(1);
 });
 
-test('桌面对战加载当前和历史时保护非空临时表并保留历史原记录', async ({ page }) => {
+test('桌面对战隐藏无用加载占位并在加载历史时保留原记录', async ({ page }) => {
   await openDesktopBattle(page);
 
-  await expect(page.getByRole('button', { name: '加载当前' })).toBeDisabled();
+  const loadCurrent = page.locator('.battle-load-current-button');
+  await expect(loadCurrent).toHaveCSS('visibility', 'hidden');
+  expect(await loadCurrent.boundingBox()).not.toBeNull();
 
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
@@ -404,29 +442,20 @@ test('桌面对战加载当前和历史时保护非空临时表并保留历史�
       .filter((entry: any) => entry.cmd === 'save_battle_tmp_state').length
   ));
   const generatedSaveCount = await saveCount();
-  await page.getByRole('button', { name: /对战状态/u }).click();
+  const stateToggle = page.getByRole('button', { name: /对战状态/u });
+  await expect(stateToggle).toContainText('展开');
+  await stateToggle.click();
+  await expect(stateToggle).toContainText('收起');
   await expect(page.locator('.battle-state-sync strong')).toHaveText('已同步');
-  await page.getByRole('button', { name: /对战状态/u }).click();
-  await expect(page.getByRole('button', { name: '加载当前' })).toBeEnabled();
-  await page.getByRole('button', { name: '加载当前' }).click();
-  await expect(page.getByRole('heading', { name: '1/3 用当前数据库临时表替换编辑区？' })).toBeVisible();
-  await expect(page.getByText('当前编辑区的参赛者、赛制、全部场次和比分会离开页面。')).toBeVisible();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '2/3 以数据库内容覆盖页面状态？' })).toBeVisible();
-  await expect(page.getByText('将重新读取数据库中的关系化临时表；页面内容全部以数据库为准。')).toBeVisible();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '3/3 重新载入当前临时表？' })).toBeVisible();
-  await expect(page.getByText('加载完成后配置继续锁定，只有签表中的比分可以修改。')).toBeVisible();
-  expect(await saveCount()).toBe(generatedSaveCount);
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '3/3 重新载入当前临时表？' })).toHaveCount(0);
+  await stateToggle.click();
+  await expect(loadCurrent).toHaveCSS('visibility', 'hidden');
   expect(await saveCount()).toBe(generatedSaveCount);
 
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -438,11 +467,12 @@ test('桌面对战加载当前和历史时保护非空临时表并保留历史�
   expect(originalHistory.snapshot.matches[0].upResult).toBeNull();
   expect(originalHistory.snapshot.matches[0].downResult).toBeNull();
 
-  await page.getByRole('button', { name: /对战状态/u }).click();
+  await stateToggle.click();
   const historyLoad = page.locator('.battle-history-list article').first().getByRole('button', { name: '加载' });
   const beforeDirectHistoryLoad = await saveCount();
   await historyLoad.click();
   await expect(page.getByRole('heading', { name: /用.*历史签表替换编辑区/u })).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket.read-only')).toHaveCount(0);
   await expect(page.locator('.battle-match')).toHaveCount(3);
   await expect(page.locator('.battle-config textarea')).toHaveValue('甲\n乙\n丙\n丁');
   await expect.poll(saveCount).toBe(beforeDirectHistoryLoad + 1);
@@ -503,6 +533,7 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('button', { name: /^抽签/ }).click();
+  await page.getByRole('button', { name: '显示全部' }).click();
 
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.battleTmpState)).not.toBeNull();
   const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
@@ -537,6 +568,8 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await expect(restoredPage.locator('.battle-round')).toHaveCount(2);
   await expect(restoredPage.locator('.battle-config textarea')).toBeDisabled();
   await expect(restoredPage.locator('.preview-row input').first()).toBeDisabled();
+  await expect(restoredPage.locator('.battle-reveal-slot')).toHaveCount(0);
+  await expect(restoredPage.getByRole('button', { name: '显示全部' })).toHaveCount(0);
   await expect(restoredPage.getByRole('radio', { name: '单败' })).toBeDisabled();
   await expect(restoredPage.getByRole('button', { name: /^抽签/u })).toBeDisabled();
   await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first().locator('.battle-side.winner')).toHaveCount(1);
@@ -548,6 +581,7 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('button', { name: /^抽签/u }).click();
+  await page.getByRole('button', { name: '显示全部' }).click();
 
   const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
   await enterDesktopBattleScore(firstMatch, 4, 1);
@@ -557,11 +591,12 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
 
   await page.getByRole('button', { name: /对战状态/u }).click();
   await page.locator('.battle-history-list .history-view').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   const historyMatch = page.locator('.battle-history-bracket .battle-round').first().locator('.battle-match').first();
   await expect(historyMatch.locator('.battle-side strong')).toHaveText(savedNames);
   await expect(historyMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
@@ -571,12 +606,12 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
 
   await page.getByRole('button', { name: '返回当前' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
-  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket.read-only')).toBeVisible();
 });
 
-test('对战区数字不切排名并支持微调滚动和分组定位', async ({ page }) => {
+test('单败左右晋级，上下衔接且对战快捷键不被比分框占用', async ({ page }) => {
   await openDesktopBattle(page);
-  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `选手${index + 1}`));
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('button', { name: /^抽签/u }).click();
 
@@ -590,15 +625,23 @@ test('对战区数字不切排名并支持微调滚动和分组定位', async ({
   await expect(result).toBeFocused();
   expect(await selectedCards()).toEqual(selectedBefore);
 
-  await page.keyboard.press('s');
-  await expect(page.locator('.single-battle-bracket input:focus')).toHaveCount(1);
-  await expect(page.locator('.single-battle-bracket input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-status', 'ready');
+  const singleP2 = page.locator('[data-battle-stage="single"][data-battle-level="1"][data-battle-position="2"]');
+  const singleP3 = page.locator('[data-battle-stage="single"][data-battle-level="1"][data-battle-position="3"]');
+  const singleP4 = page.locator('[data-battle-stage="single"][data-battle-level="1"][data-battle-position="4"]');
+  const [p3Box, p4Box] = await Promise.all([singleP3.boundingBox(), singleP4.boundingBox()]);
+  expect(p3Box!.y).toBeLessThan(p4Box!.y);
+  await singleP2.locator('input').nth(1).focus();
+  await singleP2.locator('input').nth(1).press('ArrowDown');
+  await expect(singleP3.locator('input').first()).toBeFocused();
+
+  await singleP4.locator('input').nth(1).focus();
+  await singleP4.locator('input').nth(1).press('s');
+  await expect(page.locator('.single-battle-bracket input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-position', '1');
 
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `选手${index + 1}`));
   await page.getByRole('radio', { name: '双败' }).check();
   await page.getByRole('button', { name: /^抽签/u }).click();
 
@@ -612,13 +655,13 @@ test('对战区数字不切排名并支持微调滚动和分组定位', async ({
     await enterDesktopBattleScore(firstWinnerRound.nth(index), 4, 1);
   }
   await expect(page.locator('[data-battle-stage="loser"][data-battle-level="1"][data-battle-status="ready"]')).not.toHaveCount(0);
-  await firstWinnerRound.first().focus();
-  await firstWinnerRound.first().press('l');
+  await firstWinnerRound.first().locator('input').first().focus();
+  await firstWinnerRound.first().locator('input').first().press('l');
   await expect(page.locator('.double-loser-section input:focus')).toHaveCount(1);
   await expect(page.locator('.double-loser-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-status', 'ready');
 
-  await firstWinnerRound.first().focus();
-  await firstWinnerRound.first().press('w');
+  await firstWinnerRound.first().locator('input').first().focus();
+  await firstWinnerRound.first().locator('input').first().press('w');
   await expect(page.locator('.double-winner-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-level', '2');
   await expect(page.locator('.double-loser-section .battle-round').nth(0).getByRole('heading')).toHaveText('第 1 轮');
   await expect(page.locator('.double-loser-section .battle-round').nth(1).getByRole('heading')).toHaveText('第 2 轮');
@@ -632,6 +675,25 @@ test('对战区数字不切排名并支持微调滚动和分组定位', async ({
   expect(after - before).toBeLessThanOrEqual(60);
 });
 
+test('同组不对战1对2固定八人并按单败左右晋级', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `组员${index + 1}`));
+  await page.getByRole('radio', { name: '同组不对战1对2' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  const firstRound = page.locator('[data-battle-stage="single"][data-battle-level="1"]');
+  await expect(page.locator('.single-battle-bracket')).toBeVisible();
+  await expect(page.locator('.single-battle-bracket .battle-round').first().getByRole('heading')).toHaveText('1对2');
+  await expect(firstRound).toHaveCount(4);
+  await expect(page.locator('[data-battle-stage="single"][data-battle-level="2"]')).toHaveCount(2);
+  await expect(page.locator('[data-battle-stage="single"][data-battle-level="3"]')).toHaveCount(1);
+  await expect(page.locator('.single-bracket-connectors path')).toHaveCount(6);
+
+  await firstRound.first().locator('input').first().focus();
+  await firstRound.first().locator('input').first().press('s');
+  await expect(page.locator('.single-battle-bracket input:focus')).toHaveCount(1);
+});
+
 test('桌面对战悬念揭晓支持逐格显示晋级选手', async ({ page }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
@@ -640,7 +702,12 @@ test('桌面对战悬念揭晓支持逐格显示晋级选手', async ({ page }) 
   await page.getByRole('button', { name: /^抽签/u }).click();
 
   const firstMatch = page.locator('.single-bracket-side .battle-match').first();
-  const firstName = (await firstMatch.locator('.battle-side strong').first().textContent())!.trim();
+  const firstReveal = firstMatch.getByRole('button', { name: /^揭晓 /u });
+  await expect(firstReveal).toHaveCount(2);
+  const firstName = (await firstReveal.first().getAttribute('aria-label'))!.replace(/^揭晓 /u, '');
+  await firstReveal.first().click();
+  await firstReveal.first().click();
+  await expect(firstMatch.locator('.battle-side strong')).toHaveCount(2);
   await enterDesktopBattleScore(firstMatch, 4, 1);
 
   const finalMatch = page.locator('.single-bracket-final .battle-match');
@@ -751,11 +818,11 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await page.goto('/#/grouping');
   await page.getByRole('button', { name: /分组历史/u }).click();
   const lineupHistoryPanel = page.locator('.history-panel');
-  await expect(lineupHistoryPanel.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
+  await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
   await lineupHistoryPanel.locator('.history-view').first().click();
   await expect(page.locator('.lineup-result tbody tr')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
+  await expect(page.locator('.lineup-result').getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
+  await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /删除 .* 的分组历史/u }).first().click();
   await page.keyboard.press('Enter');
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);
@@ -771,6 +838,14 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
 
 test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名', async ({ page }) => {
   await openDesktopLineup(page);
+  const selectedBefore = await page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (
+    cards.map((card) => card.getAttribute('data-rank-user-id'))
+  ));
+  await page.keyboard.press('3');
+  expect(await page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (
+    cards.map((card) => card.getAttribute('data-rank-user-id'))
+  ))).toEqual(selectedBefore);
+  await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
   await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
 
@@ -818,6 +893,7 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
 test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
   await openDesktopLineup(page);
   const thirdCard = page.locator('[data-rank-user-id="3"]');
+  await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
 
   await page.keyboard.press('Enter');
@@ -836,6 +912,7 @@ test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
 test('左右键遍历当前项操作，D 的确认框支持 N 取消和回车确认', async ({ page }) => {
   await openDesktopLineup(page);
   const firstCard = page.locator('[data-rank-user-id="1"]');
+  await firstCard.focus();
   await page.keyboard.press('1');
   await page.keyboard.press('ArrowRight');
   await expect(firstCard.getByRole('button', { name: '添加别名', exact: true })).toBeFocused();
@@ -873,6 +950,7 @@ test('左右键遍历当前项操作，D 的确认框支持 N 取消和回车确
 
 test('键盘排序中间落点执行替换', async ({ page }) => {
   await openDesktopLineup(page);
+  await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('1');
   await page.keyboard.press('Space');
   await page.keyboard.press('ArrowDown');
@@ -883,12 +961,14 @@ test('键盘排序中间落点执行替换', async ({ page }) => {
 
 test('键盘排序上方落点执行插入，无排名项可循环插入第一名', async ({ page }) => {
   await openDesktopLineup(page);
+  await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
   await page.keyboard.press('Space');
   for (let index = 0; index < 5; index += 1) await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Space');
   await expect.poll(() => mockedRankedNames(page)).toEqual(['丙', '甲', '乙']);
 
+  await page.locator('[data-rank-user-id="3"]').focus();
   await page.keyboard.press('3');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('[data-rank-user-id="4"]')).toHaveClass(/keyboard-selected/);

@@ -420,8 +420,8 @@ export function createAvoidSameGroupPlan(
   random: () => number = Math.random,
 ): BattlePlan {
   const participants = createParticipants(names);
-  if (participants.length < 8 || participants.length % 2 !== 0) {
-    throw new Error('同组不对战1对2需要偶数名单，且至少包含 4 个组');
+  if (participants.length !== 8) {
+    throw new Error('同组不对战1对2固定需要 8 人');
   }
   const groupCount = participants.length / 2;
   const firstPlaces = participants.filter((_, index) => index % 2 === 0).map((participant, groupIndex) => ({
@@ -438,15 +438,11 @@ export function createAvoidSameGroupPlan(
   const secondOrder = matchOtherGroupSeconds(firstOrder, secondPlaces, random);
   // 每场上方固定为第 1、下方固定为异组第 2；具体哪位第 1 落在哪一场仍然随机。
   const positionParticipants = firstOrder.flatMap((first, index) => [first, secondOrder[index]]);
-  const matches = Array.from({ length: groupCount }, (_, index): BattleMatch => ({
-    id: `P-R1-M${index + 1}`,
-    bracket: 'pairing',
-    round: 1,
+  const positions = positionParticipants.map((participant, index) => ({
     index,
-    entries: [
-      { kind: 'participant', participant: positionParticipants[index * 2] },
-      { kind: 'participant', participant: positionParticipants[index * 2 + 1] },
-    ],
+    seedNumber: index + 1,
+    participant,
+    fixed: false,
   }));
 
   return {
@@ -456,19 +452,8 @@ export function createAvoidSameGroupPlan(
     participantCount: participants.length,
     bracketSize: participants.length,
     fixedSeedCount: 0,
-    positions: positionParticipants.map((participant, index) => ({
-      index,
-      seedNumber: index + 1,
-      participant,
-      fixed: false,
-    })),
-    rounds: [{
-      id: 'pairing-1',
-      label: '1对2',
-      bracket: 'pairing',
-      round: 1,
-      matches,
-    }],
+    positions,
+    rounds: createWinnerRounds('single-elimination', positions),
   };
 }
 

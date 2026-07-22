@@ -385,6 +385,8 @@ describe('同组不对战1对2', () => {
       'A1', 'A2', 'B1', 'B2',
       'C1', 'C2', 'D1', 'D2',
     ], seededRandom(7));
+    expect(plan.rounds.map((round) => round.matches.length)).toEqual([4, 2, 1]);
+    expect(plan.rounds.every((round) => round.bracket === 'single')).toBe(true);
     expect(plan.rounds[0].matches.every((match) => {
       const [first, second] = match.entries;
       return first?.kind === 'participant'
@@ -417,12 +419,22 @@ describe('同组不对战1对2', () => {
     }
   });
 
-  test('奇数名单会被拒绝', () => {
-    expect(() => createAvoidSameGroupPlan(names(5))).toThrow('需要偶数名单');
+  test('首轮胜者会进入单败下一轮', () => {
+    const plan = createAvoidSameGroupPlan([
+      'A1', 'A2', 'B1', 'B2',
+      'C1', 'C2', 'D1', 'D2',
+    ], seededRandom(7));
+    const snapshot = createBattleTmpSnapshot('standard', plan, 1_700_000_000_000);
+    const firstMatch = snapshot.matches.find((match) => match.matchId === 'S1-M1')!;
+    const updated = updateBattleTmpResult(snapshot, firstMatch.matchId, 4, 1, 1_700_000_000_001);
+    const nextMatch = updated.matches.find((match) => match.matchId === 'S2-M1')!;
+    expect(nextMatch.up).toBe(firstMatch.up);
   });
 
-  test('少于四组时即使是偶数名单也会被拒绝', () => {
-    expect(() => createAvoidSameGroupPlan(names(6))).toThrow('至少包含 4 个组');
+  test('仅允许固定 8 人', () => {
+    for (const count of [5, 6, 10]) {
+      expect(() => createAvoidSameGroupPlan(names(count))).toThrow('固定需要 8 人');
+    }
   });
 });
 
