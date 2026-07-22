@@ -380,6 +380,10 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   await restoredPage.goto('/#/battle');
   await expect(restoredPage.locator('.preview-row')).toHaveCount(4);
   await expect(restoredPage.locator('.battle-round')).toHaveCount(2);
+  await expect(restoredPage.locator('.battle-config textarea')).toBeDisabled();
+  await expect(restoredPage.locator('.preview-row input').first()).toBeDisabled();
+  await expect(restoredPage.getByRole('radio', { name: '单败' })).toBeDisabled();
+  await expect(restoredPage.getByRole('button', { name: /^抽签/u })).toBeDisabled();
   await expect(restoredPage.locator('.battle-round').first().locator('.battle-match').first().locator('.battle-side.winner')).toHaveCount(1);
   await restoredPage.close();
 });

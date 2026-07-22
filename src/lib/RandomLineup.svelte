@@ -3135,9 +3135,9 @@
 
     <aside class:battle-config={battlePage} class="lineup-config">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false"></textarea></label>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" disabled={battlePage && battleTmpSnapshot !== null}></textarea></label>
       <div class="list-actions">
-        <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty} on:click={confirmSourceText}>确认</button>
+        <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty || battlePage && battleTmpSnapshot !== null} on:click={confirmSourceText}>确认</button>
         {#if !battlePage}
           <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
         {/if}

@@ -4,7 +4,9 @@ import { readProjectVersion, webBundleDirectory } from './project-version';
 
 const workspace = resolve(import.meta.dir, '..');
 const tauriDirectory = join(workspace, 'src-tauri');
-const debugDirectory = join(tauriDirectory, 'target', 'debug');
+// 真实桌面测试使用独立构建目录，避免 tauri:dev 正在运行时锁住调试程序。
+const e2eTargetDirectory = join(tauriDirectory, 'target', 'e2e');
+const debugDirectory = join(e2eTargetDirectory, 'debug');
 const generatedStandardConfig = join(tauriDirectory, 'tauri.e2e-standard.conf.json');
 const generatedCaimiConfig = join(tauriDirectory, 'tauri.e2e-caimi.conf.json');
 const version = await readProjectVersion();
@@ -16,12 +18,14 @@ const caimiConfig = JSON.parse(
 await Promise.all([
   writeJson(generatedStandardConfig, {
     version,
+    identifier: 'com.phpgoc.wheel.e2e',
     build: { frontendDist: `../${webBundleDirectory(version, 'standard')}` },
     bundle: { active: false },
   }),
   writeJson(generatedCaimiConfig, {
     ...caimiConfig,
     version,
+    identifier: 'com.phpgoc.wheel.caimi.e2e',
     build: {
       ...caimiConfig.build,
       frontendDist: `../${webBundleDirectory(version, 'caimi')}`,
@@ -31,8 +35,9 @@ await Promise.all([
 ]);
 
 try {
-  await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedCaimiConfig]);
-  await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedStandardConfig]);
+  const buildEnvironment = { CARGO_TARGET_DIR: e2eTargetDirectory };
+  await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedCaimiConfig], buildEnvironment);
+  await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedStandardConfig], buildEnvironment);
 
   await run(
     ['bun', 'x', 'playwright', 'test', '--config', 'playwright.tauri.config.ts'],
