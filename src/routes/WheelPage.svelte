@@ -5,6 +5,7 @@
   import MonopolyWheel from '../components/MonopolyWheel.svelte';
   import PrizeEditor from '../components/PrizeEditor.svelte';
   import UiButton from '../components/ui/UiButton.svelte';
+  import UiConfirmDialog from '../components/ui/UiConfirmDialog.svelte';
   import UiTextarea from '../components/ui/UiTextarea.svelte';
   import Wheel from '../components/Wheel.svelte';
   import type { AppVariant } from '../lib/app-variant';
@@ -2407,14 +2408,14 @@
             </div>
 
             <div class="side-stats-actions">
-              <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</button>
-              <button type="button" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</button>
-              <button
-                type="button"
+              <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</UiButton>
+              <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</UiButton>
+              <UiButton
+                size="sm"
                 title={desktopRuntime ? '在资源管理器中打开下载目录' : '网页版由浏览器管理下载目录'}
                 disabled={!desktopRuntime}
                 on:click={openDrawDownloadFolder}
-              >打开下载</button>
+              >打开下载</UiButton>
             </div>
           {/if}
         </aside>
@@ -2516,8 +2517,8 @@
         {/if}
 
         <div class="history-actions">
-          <button type="button" on:click={exportBatchExperiment}>导出模拟记录</button>
-          <button type="button" on:click={clearBatchExperiment}>清空实验结果</button>
+          <UiButton size="sm" on:click={exportBatchExperiment}>导出模拟记录</UiButton>
+          <UiButton size="sm" tone="danger" on:click={clearBatchExperiment}>清空实验结果</UiButton>
         </div>
       {/if}
       </div>
@@ -2592,10 +2593,10 @@
 
           {/if}
           <div class="history-actions sidebar-history-actions">
-            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</button>
-            <button type="button" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</button>
-            <button type="button" on:click={openDrawDownloadFolder}>打开下载</button>
-            <button type="button" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</button>
+            <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</UiButton>
+            <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</UiButton>
+            <UiButton size="sm" on:click={openDrawDownloadFolder}>打开下载</UiButton>
+            <UiButton size="sm" tone="danger" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</UiButton>
           </div>
         {/if}
       </div>
@@ -2739,21 +2740,21 @@
   </main>
 
   {#if pendingDrawHistoryDeletion}
-    <div class="draw-confirm-backdrop">
-      <div class="draw-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="draw-confirm-title" aria-describedby="draw-confirm-detail">
-        <span class="draw-confirm-icon">!</span>
-        <h2 id="draw-confirm-title">{pendingDrawHistoryDeletion.kind === 'one'
+    <UiConfirmDialog
+      titleId="draw-confirm-title"
+      detailId="draw-confirm-detail"
+      title={pendingDrawHistoryDeletion.kind === 'one'
           ? '删除这条抽奖历史？'
           : pendingDrawHistoryDeletion.confirmation === 1
             ? '清空全部抽奖历史？'
-            : '真的清空全部抽奖历史？'}</h2>
-        <p id="draw-confirm-detail">{pendingDrawHistoryDeletion.kind === 'all' && pendingDrawHistoryDeletion.confirmation === 1
+            : '真的清空全部抽奖历史？'}
+      detail={pendingDrawHistoryDeletion.kind === 'all' && pendingDrawHistoryDeletion.confirmation === 1
           ? '全部抽奖历史都会删除。'
-          : '删除后无法恢复。'}</p>
-        <div>
-          <button type="button" disabled={drawHistoryDeleting} on:click={() => (pendingDrawHistoryDeletion = null)}><span>取消</span></button>
-          <button type="button" class="confirm-delete" disabled={drawHistoryDeleting} on:click={confirmDrawHistoryDeletion}><span>{drawHistoryDeleting ? '删除中…' : '确认'}</span></button>
-        </div>
-      </div>
-    </div>
+          : '删除后无法恢复。'}
+      confirmLabel={drawHistoryDeleting ? '删除中…' : '确认'}
+      confirmDisabled={drawHistoryDeleting}
+      cancelDisabled={drawHistoryDeleting}
+      on:cancel={() => (pendingDrawHistoryDeletion = null)}
+      on:confirm={confirmDrawHistoryDeletion}
+    />
   {/if}

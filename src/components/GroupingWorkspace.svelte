@@ -7,6 +7,7 @@
   import BattleBracketViewer from './BattleBracketViewer.svelte';
   import UiButton from './ui/UiButton.svelte';
   import UiCheckbox from './ui/UiCheckbox.svelte';
+  import UiConfirmDialog from './ui/UiConfirmDialog.svelte';
   import UiRadio from './ui/UiRadio.svelte';
   import UiTextarea from './ui/UiTextarea.svelte';
   import {
@@ -2665,7 +2666,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
+<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
@@ -2678,22 +2679,21 @@
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}
-                  <button type="button" class="database-folder-button" on:click={openLineupDatabaseFolder}>打开文件夹</button>
+                  <UiButton size="xs" tone="danger" on:click={openLineupDatabaseFolder}>打开文件夹</UiButton>
                 {/if}
               {/if}
               <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
-                  <button type="button" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</button>
-                  <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
-                  <button
-                    type="button"
-                    class="ranking-import-button"
+                  <UiButton size="xs" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</UiButton>
+                  <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  <UiButton
+                    size="xs"
                     title={rankedUsers.length > 0 ? '全部删除后才可导入' : '导入排名 JSON'}
                     disabled={rankedUsers.length > 0 || rankingImporting}
                     on:click={openRankingImporter}
-                  >导入 JSON</button>
-                  <button type="button" class="delete-all-rankings" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</button>
+                  >导入 JSON</UiButton>
+                  <UiButton size="xs" tone="danger" disabled={rankedUsers.length === 0 || clearingAllRankings} on:click={requestClearAllRankings}>删除全部</UiButton>
                 </div>
                 {#if aliasLinkName !== null}
                   <div class="rank-keyboard-order active alias-link-order">
@@ -2892,10 +2892,10 @@
                   {/if}
                 </div>
                 <div class="history-export-actions battle-state-actions">
-                  <button type="button" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</button>
-                  <button type="button" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</button>
-                  <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
-                  <button type="button" class="history-delete-all" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</button>
+                  <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
+                  <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
+                  <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  <UiButton size="xs" tone="danger" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</UiButton>
                 </div>
               </div>
             {:else}
@@ -2935,8 +2935,8 @@
                 {/if}
               </div>
               <div class="history-export-actions">
-                <button type="button" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</button>
-                <button type="button" class="history-delete-all" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</button>
+                <UiButton size="xs" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</UiButton>
+                <UiButton size="xs" tone="danger" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</UiButton>
               </div>
               {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
               </div>
@@ -3174,17 +3174,17 @@
             <div><span>03</span><div><h2>{battleHistoryView ? '历史对战' : '对战'}</h2><p>{battleHistoryView ? `${formatHistoryDate(battleHistoryView.createdAt)} · ${battleHistoryView.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryView.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
             {#if battleHistoryView}
               <div class="result-output-actions">
-                <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前对战</button>
+                <UiButton size="sm" on:click={returnToCurrentBattle}>返回当前对战</UiButton>
               </div>
             {:else if battleTmpSnapshot}
               <div class="result-output-actions">
                 {#if hiddenBattleSlotCount > 0}
-                  <button type="button" class="result-export-button reveal-all-button" on:click={revealAllBattleSlots}>显示全部</button>
+                  <UiButton size="sm" tone="accent" on:click={revealAllBattleSlots}>显示全部</UiButton>
                 {/if}
-                <button type="button" class="result-export-button" on:click={saveCurrentBattleHistory}>保存历史</button>
-                <button type="button" class="result-export-button" on:click={exportBattleTmpExcel}>Excel</button>
-                <button type="button" class="result-export-button" on:click={exportBattleTmpJson}>JSON</button>
-                <button type="button" class="result-export-button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
+                <UiButton size="sm" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
+                <UiButton size="sm" on:click={exportBattleTmpExcel}>Excel</UiButton>
+                <UiButton size="sm" on:click={exportBattleTmpJson}>JSON</UiButton>
+                <UiButton size="sm" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
               </div>
             {/if}
           </div>
@@ -3222,11 +3222,11 @@
           {#if result}
             <div class="result-output-actions">
               {#if hiddenLineupCellCount > 0}
-                <button type="button" class="result-export-button reveal-all-button" on:click={revealAllLineupCells}>显示全部</button>
+                <UiButton size="sm" tone="accent" on:click={revealAllLineupCells}>显示全部</UiButton>
               {/if}
-              <button type="button" class="result-export-button" on:click={exportLineupExcel}>Excel</button>
-              <button type="button" class="result-export-button" on:click={exportLineupJson}>JSON</button>
-              <button type="button" class="result-export-button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
+              <UiButton size="sm" on:click={exportLineupExcel}>Excel</UiButton>
+              <UiButton size="sm" on:click={exportLineupJson}>JSON</UiButton>
+              <UiButton size="sm" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
               {#if desktopRuntime}
                 <div class="history-save-control">
                   <button
@@ -3293,17 +3293,17 @@
 </main>
 
 {#if clearLineupConfirmation}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-lineup-title" aria-describedby="clear-lineup-detail" tabindex="-1">
-      <span class="delete-confirm-icon">!</span>
-      <h2 id="clear-lineup-title">{clearConfirmationTitle(clearLineupConfirmation)}</h2>
-      <p id="clear-lineup-detail">{clearConfirmationDetail(clearLineupConfirmation)}</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingBattleTmp} on:click={() => (clearLineupConfirmation = 0)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingBattleTmp} on:click={confirmClearAll}><span>{clearConfirmationAction(clearLineupConfirmation)}</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="clear-lineup-title"
+    detailId="clear-lineup-detail"
+    title={clearConfirmationTitle(clearLineupConfirmation)}
+    detail={clearConfirmationDetail(clearLineupConfirmation)}
+    confirmLabel={clearConfirmationAction(clearLineupConfirmation)}
+    confirmDisabled={clearingBattleTmp}
+    cancelDisabled={clearingBattleTmp}
+    on:cancel={() => (clearLineupConfirmation = 0)}
+    on:confirm={confirmClearAll}
+  />
 {/if}
 
 {#if draggingUserId !== null}
@@ -3313,136 +3313,139 @@
 {/if}
 
 {#if battleHistoryDeleteConfirmation}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-battle-history-title" aria-describedby="clear-battle-history-detail" tabindex="-1">
-      <span class="delete-confirm-icon">×</span>
-      <h2 id="clear-battle-history-title">{battleHistoryDeleteConfirmation === 1 ? '删除全部对战历史？' : '真的删除全部对战历史？'}</h2>
-      <p id="clear-battle-history-detail">{battleHistoryDeleteConfirmation === 1 ? '全部对战历史都会删除。' : '删除后无法恢复。'}</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (battleHistoryDeleteConfirmation = 0)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmClearBattleHistories}><span>确认</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="clear-battle-history-title"
+    detailId="clear-battle-history-detail"
+    icon="×"
+    title={battleHistoryDeleteConfirmation === 1 ? '删除全部对战历史？' : '真的删除全部对战历史？'}
+    detail={battleHistoryDeleteConfirmation === 1 ? '全部对战历史都会删除。' : '删除后无法恢复。'}
+    on:cancel={() => (battleHistoryDeleteConfirmation = 0)}
+    on:confirm={confirmClearBattleHistories}
+  />
 {/if}
 
 {#if pendingBattleHistoryDeletion}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-battle-history-title" aria-describedby="delete-battle-history-detail" tabindex="-1">
-      <span class="delete-confirm-icon">×</span>
-      <h2 id="delete-battle-history-title">删除这条对战历史？</h2>
-      <p id="delete-battle-history-detail">删除后无法恢复。</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (pendingBattleHistoryDeletion = null)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmDeleteBattleHistory}><span>确认</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="delete-battle-history-title"
+    detailId="delete-battle-history-detail"
+    icon="×"
+    title="删除这条对战历史？"
+    detail="删除后无法恢复。"
+    on:cancel={() => (pendingBattleHistoryDeletion = null)}
+    on:confirm={confirmDeleteBattleHistory}
+  />
 {/if}
 
 {#if pendingBattleLoad}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog battle-load-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="load-battle-title" aria-describedby="load-battle-detail" tabindex="-1">
-      <span class="delete-confirm-icon">↻</span>
-      <h2 id="load-battle-title">{battleLoadConfirmationTitle(pendingBattleLoad)}</h2>
-      <p id="load-battle-detail">{battleLoadConfirmationDetail(pendingBattleLoad)}</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={battleLoadingTarget} on:click={() => (pendingBattleLoad = null)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={battleLoadingTarget} on:click={confirmBattleLoad}><span>{battleLoadConfirmationAction(pendingBattleLoad)}</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="load-battle-title"
+    detailId="load-battle-detail"
+    dialogClass="battle-load-confirm-dialog"
+    icon="↻"
+    title={battleLoadConfirmationTitle(pendingBattleLoad)}
+    detail={battleLoadConfirmationDetail(pendingBattleLoad)}
+    confirmLabel={battleLoadConfirmationAction(pendingBattleLoad)}
+    confirmDisabled={battleLoadingTarget}
+    cancelDisabled={battleLoadingTarget}
+    on:cancel={() => (pendingBattleLoad = null)}
+    on:confirm={confirmBattleLoad}
+  />
 {/if}
 
 {#if pendingLineupHistoryDeletion}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-lineup-history-title" aria-describedby="delete-lineup-history-detail" tabindex="-1">
-      <span class="delete-confirm-icon">×</span>
-      <h2 id="delete-lineup-history-title">{pendingLineupHistoryDeletion.kind === 'one'
+  <UiConfirmDialog
+    titleId="delete-lineup-history-title"
+    detailId="delete-lineup-history-detail"
+    icon="×"
+    title={pendingLineupHistoryDeletion.kind === 'one'
         ? '删除这条分组历史？'
         : pendingLineupHistoryDeletion.confirmation === 1
           ? '删除全部分组历史？'
-          : '真的删除全部分组历史？'}</h2>
-      <p id="delete-lineup-history-detail">{pendingLineupHistoryDeletion.kind === 'all' && pendingLineupHistoryDeletion.confirmation === 1
+          : '真的删除全部分组历史？'}
+    detail={pendingLineupHistoryDeletion.kind === 'all' && pendingLineupHistoryDeletion.confirmation === 1
         ? '全部分组历史都会删除。'
-        : '删除后无法恢复。'}</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={historyDeleting} on:click={() => (pendingLineupHistoryDeletion = null)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={historyDeleting} on:click={confirmLineupHistoryDeletion}><span>{historyDeleting ? '删除中…' : '确认'}</span></button>
-      </div>
-    </div>
-  </div>
+        : '删除后无法恢复。'}
+    confirmLabel={historyDeleting ? '删除中…' : '确认'}
+    confirmDisabled={historyDeleting}
+    cancelDisabled={historyDeleting}
+    on:cancel={() => (pendingLineupHistoryDeletion = null)}
+    on:confirm={confirmLineupHistoryDeletion}
+  />
 {/if}
 
 {#if pendingDeleteUser}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-ranked-title" aria-describedby="delete-ranked-detail" tabindex="-1">
-      <span class="delete-confirm-icon">×</span>
-      <h2 id="delete-ranked-title">删除“{pendingDeleteUser.name}”？</h2>
-      <p id="delete-ranked-detail">当前名称、全部别名和排名都会一起删除，此操作无法撤销。</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={deletingUserId !== null} on:click={() => (pendingDeleteUser = null)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={deletingUserId !== null} on:click={confirmDeleteRankedUser}><span>{deletingUserId === null ? '确认' : '删除中…'}</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="delete-ranked-title"
+    detailId="delete-ranked-detail"
+    icon="×"
+    title={`删除“${pendingDeleteUser.name}”？`}
+    detail="当前名称、全部别名和排名都会一起删除，此操作无法撤销。"
+    confirmLabel={deletingUserId === null ? '确认' : '删除中…'}
+    confirmDisabled={deletingUserId !== null}
+    cancelDisabled={deletingUserId !== null}
+    on:cancel={() => (pendingDeleteUser = null)}
+    on:confirm={confirmDeleteRankedUser}
+  />
 {/if}
 
 {#if pendingAliasClearUser}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog alias-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-alias-title" aria-describedby="clear-alias-detail" tabindex="-1">
-      <span class="delete-confirm-icon">−</span>
-      <h2 id="clear-alias-title">删除“{pendingAliasClearUser.name}”的全部别名？</h2>
-      <p id="clear-alias-detail">当前名称会保留，其他别名会全部删除。</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAliasesUserId !== null} on:click={() => (pendingAliasClearUser = null)}><span>取消</span></button>
-        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAliasesUserId !== null} on:click={confirmClearRankedUserAliases}><span>{clearingAliasesUserId === null ? '确认' : '删除中…'}</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="clear-alias-title"
+    detailId="clear-alias-detail"
+    icon="−"
+    title={`删除“${pendingAliasClearUser.name}”的全部别名？`}
+    detail="当前名称会保留，其他别名会全部删除。"
+    confirmLabel={clearingAliasesUserId === null ? '确认' : '删除中…'}
+    tone="accent"
+    confirmDisabled={clearingAliasesUserId !== null}
+    cancelDisabled={clearingAliasesUserId !== null}
+    on:cancel={() => (pendingAliasClearUser = null)}
+    on:confirm={confirmClearRankedUserAliases}
+  />
 {/if}
 
 {#if clearAllRankingsConfirmation !== 0}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-all-rankings-title" aria-describedby="clear-all-rankings-detail" tabindex="-1">
-      <span class="delete-confirm-icon">×</span>
-      <h2 id="clear-all-rankings-title">{clearAllRankingsConfirmation === 1 ? '删除全部排名？' : '真的删除全部排名？'}</h2>
-      <p id="clear-all-rankings-detail">{clearAllRankingsConfirmation === 1 ? '全部名称、别名和排名都会删除。' : '此操作无法撤销。'}</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={clearingAllRankings} on:click={cancelClearAllRankings}><span>取消</span></button>
-        {#if clearAllRankingsConfirmation === 1}
-          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={continueClearAllRankings}><span>确认</span></button>
-        {:else}
-          <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" disabled={clearingAllRankings} on:click={confirmClearAllRankings}><span>{clearingAllRankings ? '删除中…' : '确认'}</span></button>
-        {/if}
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="clear-all-rankings-title"
+    detailId="clear-all-rankings-detail"
+    icon="×"
+    title={clearAllRankingsConfirmation === 1 ? '删除全部排名？' : '真的删除全部排名？'}
+    detail={clearAllRankingsConfirmation === 1 ? '全部名称、别名和排名都会删除。' : '此操作无法撤销。'}
+    confirmLabel={clearingAllRankings ? '删除中…' : '确认'}
+    confirmDisabled={clearAllRankingsConfirmation !== 1 && clearingAllRankings}
+    cancelDisabled={clearingAllRankings}
+    on:cancel={cancelClearAllRankings}
+    on:confirm={clearAllRankingsConfirmation === 1 ? continueClearAllRankings : confirmClearAllRankings}
+  />
 {/if}
 
 {#if pendingRankingImport}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog ranking-import-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ranking-import-title" aria-describedby="ranking-import-detail" tabindex="-1">
-      <span class="delete-confirm-icon">⇄</span>
-      <h2 id="ranking-import-title">导入 {pendingRankingImport.length} 项排名？</h2>
-      <p id="ranking-import-detail">文件内容将导入排名和别名。</p>
-      <div>
-        <button type="button" aria-keyshortcuts="N Escape" disabled={rankingImporting} on:click={() => (pendingRankingImport = null)}><span>取消</span></button>
-        <button type="button" class="confirm-import" aria-keyshortcuts="Y Enter" disabled={rankingImporting} on:click={confirmRankingImport}><span>{rankingImporting ? '导入中…' : '确认'}</span></button>
-      </div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="ranking-import-title"
+    detailId="ranking-import-detail"
+    icon="⇄"
+    title={`导入 ${pendingRankingImport.length} 项排名？`}
+    detail="文件内容将导入排名和别名。"
+    confirmLabel={rankingImporting ? '导入中…' : '确认'}
+    tone="accent"
+    confirmDisabled={rankingImporting}
+    cancelDisabled={rankingImporting}
+    on:cancel={() => (pendingRankingImport = null)}
+    on:confirm={confirmRankingImport}
+  />
 {/if}
 
 {#if importErrorDialog}
-  <div class="delete-confirm-backdrop">
-    <div class="delete-confirm-dialog import-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="import-error-title" aria-describedby="import-error-detail" tabindex="-1">
-      <span class="delete-confirm-icon">!</span>
-      <h2 id="import-error-title">{importErrorDialog.title}</h2>
-      <p id="import-error-detail">{importErrorDialog.detail}</p>
-      <div><button type="button" class="confirm-import" on:click={() => (importErrorDialog = null)}>知道了</button></div>
-    </div>
-  </div>
+  <UiConfirmDialog
+    titleId="import-error-title"
+    detailId="import-error-detail"
+    title={importErrorDialog.title}
+    detail={importErrorDialog.detail}
+    confirmLabel="知道了"
+    cancelLabel={null}
+    tone="accent"
+    on:confirm={() => (importErrorDialog = null)}
+  />
 {/if}
 
 <style>
@@ -3465,6 +3468,9 @@
     color: #f6f3ea;
     box-shadow: var(--app-frame-shadow, 0 28px 80px rgba(0, 0, 0, 0.28));
   }
+
+  /* 页面画布使用隔离层；全屏签表需抬到顶栏之上才能接收点击。 */
+  .lineup-page.battle-fullscreen-active { z-index: 20; }
 
   .config-heading,
   .group-setting,
@@ -3901,18 +3907,6 @@
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
-  .result-heading .result-export-button {
-    padding: 8px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    color: #f4f5ec;
-    cursor: pointer;
-    font-size: calc(12px * var(--font-scale, 1));
-    font-weight: 700;
-    transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
-  }
-  .result-heading .result-export-button:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
   .result-heading .history-save-button {
     padding: 8px 11px;
     border: 1px solid rgba(231, 255, 114, 0.48);
@@ -3974,10 +3968,6 @@
     border-color: rgba(231, 255, 114, 0.42);
     background: rgba(231, 255, 114, 0.08);
     color: #e7ff72;
-  }
-  .result-heading .reveal-all-button {
-    border-color: rgba(231, 255, 114, 0.46);
-    color: #e3ecac;
   }
   td.caimi-swapped {
     position: relative;
@@ -4300,7 +4290,6 @@
   }
   .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .battle-state-actions { justify-content: stretch; }
-  .battle-state-actions button { flex: 1; }
 
   .lineup-actions .generate-button {
     min-height: 48px;
@@ -4540,49 +4529,11 @@
     font-size: calc(11px * var(--font-scale, 1));
   }
 
-  .database-folder-button {
-    margin: 6px 0;
-    padding: 5px 8px;
-    border: 1px solid rgba(159, 65, 47, 0.3);
-    border-radius: 6px;
-    background: #fbefec;
-    color: #7d3d31;
-    cursor: pointer;
-    font-size: calc(10px * var(--font-scale, 1));
-    font-weight: 750;
-  }
-
   .ranking-transfer-actions {
     display: flex;
     justify-content: flex-end;
     gap: calc(6px * var(--lineup-layout-scale, 1));
     margin: calc(3px * var(--lineup-layout-scale, 1)) 0 calc(8px * var(--lineup-layout-scale, 1));
-  }
-
-  .ranking-transfer-actions button {
-    padding: calc(6px * var(--lineup-layout-scale, 1)) calc(8px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(223, 246, 108, 0.34);
-    border-radius: 7px;
-    background: linear-gradient(145deg, #26331f, #141d16);
-    color: #eef4cd;
-    cursor: pointer;
-    font-size: calc(11px * var(--font-scale, 1));
-    font-weight: 850;
-    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.18);
-  }
-
-  .ranking-transfer-actions .ranking-import-button:disabled {
-    border-color: rgba(166, 171, 158, 0.2);
-    background: linear-gradient(145deg, #252a25, #181b18);
-    color: #7d8379;
-    filter: grayscale(1);
-    box-shadow: none;
-  }
-
-  .ranking-transfer-actions button.delete-all-rankings {
-    border-color: rgba(255, 127, 99, 0.45);
-    background: linear-gradient(145deg, #3b211d, #211311);
-    color: #ffb3a2;
   }
 
   .rank-keyboard-order {
@@ -5025,94 +4976,6 @@
     white-space: nowrap;
   }
 
-  .delete-confirm-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1100;
-    display: grid;
-    padding: 24px;
-    background: rgba(8, 9, 7, 0.72);
-    backdrop-filter: blur(5px);
-    place-items: center;
-  }
-
-  .delete-confirm-dialog {
-    width: min(100%, 390px);
-    padding: 25px;
-    border: 1px solid rgba(255, 125, 96, 0.24);
-    border-radius: 18px;
-    background: #f4f1e9;
-    color: #282921;
-    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
-    text-align: center;
-  }
-
-  .delete-confirm-icon {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    margin: 0 auto 13px;
-    border-radius: 50%;
-    background: rgba(209, 70, 43, 0.1);
-    color: #b63e28;
-    font-size: calc(25px * var(--font-scale, 1));
-    place-items: center;
-  }
-
-  .delete-confirm-dialog h2 { font-size: calc(20px * var(--font-scale, 1)); }
-
-  .delete-confirm-dialog p {
-    margin-top: 9px;
-    color: #62655b;
-    font-size: calc(12px * var(--font-scale, 1));
-    line-height: 1.6;
-  }
-
-  .delete-confirm-dialog > div {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 9px;
-    margin-top: 20px;
-  }
-
-  .delete-confirm-dialog button {
-    display: grid;
-    padding: 10px;
-    border: 1px solid rgba(36, 37, 31, 0.12);
-    border-radius: 9px;
-    background: #fffdf8;
-    color: #4f5248;
-    cursor: pointer;
-    font-size: calc(12px * var(--font-scale, 1));
-    font-weight: 750;
-    gap: 2px;
-    place-items: center;
-  }
-
-  .delete-confirm-dialog button.confirm-delete {
-    border-color: #b84832;
-    background: #b84832;
-    color: white;
-  }
-
-  .alias-confirm-dialog button.confirm-delete {
-    border-color: #69772b;
-    background: #69772b;
-  }
-
-  .delete-confirm-dialog button.confirm-import {
-    border-color: #788830;
-    background: #e7ff72;
-    color: #303714;
-  }
-
-  .ranking-import-dialog .delete-confirm-icon {
-    background: rgba(114, 132, 43, 0.13);
-    color: #667621;
-  }
-
-  .import-error-dialog > div { grid-template-columns: minmax(0, 1fr); }
-
   .history-dates {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5177,35 +5040,11 @@
     border-left: 1px solid rgba(36, 37, 31, 0.08);
   }
 
-  .history-export-actions .history-delete-all {
-    border-color: rgba(156, 64, 52, 0.34);
-    background: #fae9e5;
-    color: #8b3429;
-  }
-
-  .history-export-actions .history-delete-all:hover:not(:disabled) {
-    border-color: #b85243;
-    background: #f5d4cd;
-    color: #681f17;
-  }
-
   .lineup-history-list span { color: var(--lineup-dim-on-light); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
   .lineup-history-list strong { overflow: hidden; font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   .lineup-history-list small { color: #7a842f; font-size: calc(10px * var(--font-scale, 1)); }
 
   .history-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
-  .history-export-actions button {
-    padding: 6px 8px;
-    border: 1px solid rgba(36, 37, 31, 0.26);
-    border-radius: 7px;
-    background: #f3f4e8;
-    color: #3d452d;
-    cursor: pointer;
-    font-size: calc(10px * var(--font-scale, 1));
-    font-weight: 700;
-    transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
-  }
-  .history-export-actions button:hover:not(:disabled) { border-color: #7f923f; background: #e9f2c9; color: #34420f; }
 
   .history-import-status {
     margin-top: 7px;
