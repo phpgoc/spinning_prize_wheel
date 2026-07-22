@@ -1905,7 +1905,7 @@
       y: currentRect.top + currentRect.height / 2,
     };
     const direction = key.replace('Arrow', '').toLocaleLowerCase('zh-CN');
-    return candidates
+    const entries = candidates
       .filter((candidate) => candidate !== current)
       .map((candidate) => {
         const rect = candidate.getBoundingClientRect();
@@ -1920,9 +1920,28 @@
         const primary = horizontal ? Math.abs(dx) : Math.abs(dy);
         const secondary = horizontal ? Math.abs(dy) : Math.abs(dx);
         return { candidate, inDirection, distance: primary + secondary * 0.55 };
-      })
+      });
+    const directional = entries
       .filter((entry) => entry.inDirection)
-      .sort((left, right) => left.distance - right.distance)[0]?.candidate ?? null;
+      .sort((left, right) => left.distance - right.distance)[0]?.candidate;
+    if (directional) return directional;
+
+    // 边缘没有同向目标时绕到另一侧，保证每个输入框都能到达。
+    return entries
+      .sort((left, right) => {
+        const leftRect = left.candidate.getBoundingClientRect();
+        const rightRect = right.candidate.getBoundingClientRect();
+        const leftAxis = direction === 'left' || direction === 'right'
+          ? leftRect.left + leftRect.width / 2
+          : leftRect.top + leftRect.height / 2;
+        const rightAxis = direction === 'left' || direction === 'right'
+          ? rightRect.left + rightRect.width / 2
+          : rightRect.top + rightRect.height / 2;
+        const edgeOrder = direction === 'left' || direction === 'up'
+          ? rightAxis - leftAxis
+          : leftAxis - rightAxis;
+        return edgeOrder || left.distance - right.distance;
+      })[0]?.candidate ?? null;
   }
 
   function moveFromLastConfirmedBattleScore(event: KeyboardEvent): boolean {

@@ -252,6 +252,21 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   expect(resultOverflow).toBeLessThanOrEqual(1);
 });
 
+test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  const inputs = page.locator('.battle-result .battle-side input:not(:disabled)');
+  await expect(inputs).toHaveCount(8);
+  await inputs.first().focus();
+  const firstId = await inputs.first().getAttribute('data-battle-match-id');
+  await inputs.first().press('ArrowLeft');
+  await expect(page.locator('.battle-result input:focus')).toHaveAttribute('data-battle-match-id', /.+/u);
+  expect(await page.locator('.battle-result input:focus').getAttribute('data-battle-match-id')).not.toBe(firstId);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
