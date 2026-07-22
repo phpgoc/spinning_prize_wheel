@@ -142,18 +142,32 @@ test('Web 不占用桌面 S 快捷键，全局方向键滚动当前折叠页', a
 
 test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ page }) => {
   const shell = page.locator('.app-shell');
+  const wheelPageButton = page.locator('.page-switch').getByRole('button', { name: '转盘' });
+  const initialButtonHeight = (await wheelPageButton.boundingBox())!.height;
   await page.keyboard.press('Control+ArrowUp');
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
+  expect((await wheelPageButton.boundingBox())!.height).toBeGreaterThan(initialButtonHeight);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
   await page.goto('/grouping');
-  await expect(page.locator('.lineup-page')).toBeVisible();
+  const lineupPanel = page.locator('.lineup-config');
+  await expect(lineupPanel).toBeVisible();
+  const initialPanelMetrics = await lineupPanel.evaluate((element) => ({
+    padding: Number.parseFloat(getComputedStyle(element).paddingTop),
+    radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+  }));
   await page.keyboard.press('Control+ArrowUp');
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.2');
+  const enlargedPanelMetrics = await lineupPanel.evaluate((element) => ({
+    padding: Number.parseFloat(getComputedStyle(element).paddingTop),
+    radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+  }));
+  expect(enlargedPanelMetrics.padding).toBeGreaterThan(initialPanelMetrics.padding);
+  expect(enlargedPanelMetrics.radius).toBeGreaterThan(initialPanelMetrics.radius);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.2);
 
   await page.keyboard.press('Control+ArrowDown');

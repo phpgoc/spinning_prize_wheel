@@ -12,7 +12,7 @@
   export let onModeChange: (mode: DrawMode) => void;
 </script>
 
-<header class="topbar">
+<header class="topbar relative z-10">
   <a class="brand" href={variantRoute(variant, 'wheel')} aria-label="转盘首页">
     <span class="brand-mark"><i></i></span>
     <span><strong>转盘</strong></span>

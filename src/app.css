@@ -1,3 +1,21 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-app-canvas: #171813;
+  --color-app-workspace: #20211b;
+  --color-app-surface: #efede6;
+  --color-app-surface-raised: #f8f6f0;
+  --color-app-text: #24251f;
+  --color-app-muted: #4f5148;
+  --color-app-accent: #e7ff72;
+  --color-app-danger: #ef7357;
+  --radius-app-frame: 1.5rem;
+  --radius-app-panel: 1.125rem;
+  --radius-app-control: 0.625rem;
+  --shadow-app-frame: 0 28px 80px rgb(0 0 0 / 28%);
+  --shadow-app-panel: 0 12px 34px rgb(0 0 0 / 14%);
+}
+
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: #24251f;
@@ -6,19 +24,42 @@
   text-rendering: optimizeLegibility;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-  --page: #171813;
-  --surface: #f1eee6;
+  --page: var(--color-app-canvas);
+  --surface: var(--color-app-surface);
   --surface-soft: #e9e6de;
-  --surface-raised: #faf8f2;
-  --text: #171812;
-  --text-muted: #4f5148;
+  --surface-raised: var(--color-app-surface-raised);
+  --text: var(--color-app-text);
+  --text-muted: var(--color-app-muted);
   --text-dim: #6c6e64;
   --line-subtle: rgba(27, 28, 22, 0.14);
   --line-strong: rgba(27, 28, 22, 0.26);
-  --accent: #e7ff72;
+  --accent: var(--color-app-accent);
   --accent-dark: #b7cd48;
-  --danger: #ef7357;
+  --danger: var(--color-app-danger);
   --switch-off: #c8c6bd;
+}
+
+/* 三个业务页面共享同一套 Tailwind 设计令牌，页面内部仍保留各自布局。 */
+.app-page-frame {
+  @apply relative isolate;
+  --app-frame-background: var(--color-app-workspace);
+  --app-frame-border: rgb(255 255 255 / 8%);
+  --app-frame-radius: calc(var(--radius-app-frame) * var(--app-component-scale, 1));
+  --app-frame-shadow: var(--shadow-app-frame);
+}
+
+.app-surface-light {
+  --app-surface-background: var(--color-app-surface);
+  --app-surface-color: var(--color-app-text);
+  --app-surface-border: rgb(24 25 20 / 10%);
+  --app-surface-radius: calc(var(--radius-app-panel) * var(--app-component-scale, 1));
+}
+
+.app-surface-dark {
+  --app-surface-background: rgb(11 12 9 / 27%);
+  --app-surface-color: #f6f3ea;
+  --app-surface-border: rgb(255 255 255 / 9%);
+  --app-surface-radius: calc(var(--radius-app-panel) * var(--app-component-scale, 1));
 }
 
 * {
@@ -38,7 +79,7 @@ body {
   margin: 0;
   background:
     radial-gradient(circle at 48% 35%, rgba(105, 112, 72, 0.16), transparent 34%),
-    #171813;
+    var(--color-app-canvas);
 }
 
 button,
@@ -80,6 +121,9 @@ button:not(:disabled):active { filter: brightness(0.94); }
 
 .app-shell {
   --draw-page-offset: 108px;
+  /* Ctrl+上下键只修改 --font-scale，所有公共载具从这里派生尺寸。 */
+  --app-component-scale: calc(0.75 + var(--font-scale, 1) * 0.25);
+  --app-control-radius: calc(var(--radius-app-control) * var(--app-component-scale));
   width: min(100%, 1720px);
   min-height: 100vh;
   margin: 0 auto;
@@ -376,10 +420,10 @@ button:not(:disabled):active { filter: brightness(0.94); }
 .page-switch,
 .variant-switch {
   display: flex;
-  gap: 5px;
-  padding: 4px;
+  gap: calc(5px * var(--app-component-scale));
+  padding: calc(4px * var(--app-component-scale));
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
+  border-radius: var(--app-control-radius);
   background: rgba(5, 6, 4, 0.25);
 }
 
@@ -389,11 +433,11 @@ button:not(:disabled):active { filter: brightness(0.94); }
 
 .page-switch button,
 .variant-switch button {
-  min-width: 88px;
-  min-height: 40px;
-  padding: 9px 16px;
+  min-width: calc(88px * var(--app-component-scale));
+  min-height: calc(40px * var(--app-component-scale));
+  padding: calc(9px * var(--app-component-scale)) calc(16px * var(--app-component-scale));
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(var(--app-control-radius) - 2px);
   background: transparent;
   color: #d5d8cb;
   cursor: pointer;
@@ -417,8 +461,8 @@ button:not(:disabled):active { filter: brightness(0.94); }
 
 .mode-switch {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: calc(4px * var(--app-component-scale));
+  padding: calc(4px * var(--app-component-scale));
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 999px;
   background: rgba(5, 6, 4, 0.26);
@@ -427,8 +471,8 @@ button:not(:disabled):active { filter: brightness(0.94); }
 .mode-switch button {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 15px;
+  gap: calc(7px * var(--app-component-scale));
+  padding: calc(8px * var(--app-component-scale)) calc(15px * var(--app-component-scale));
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -474,11 +518,11 @@ button:not(:disabled):active { filter: brightness(0.94); }
   display: grid;
   grid-template-columns: minmax(290px, 330px) minmax(520px, 1fr) minmax(310px, 360px);
   min-height: calc(100vh - 130px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 25px;
+  border: 1px solid var(--app-frame-border, rgba(255, 255, 255, 0.05));
+  border-radius: var(--app-frame-radius, 25px);
   overflow: hidden;
-  background: #25261f;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+  background: var(--app-frame-background, #25261f);
+  box-shadow: var(--app-frame-shadow, 0 28px 80px rgba(0, 0, 0, 0.28));
 }
 
 .workspace:focus {
@@ -1720,13 +1764,13 @@ kbd {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid rgba(24, 25, 20, 0.1);
-  border-bottom: 1px solid rgba(24, 25, 20, 0.1);
-  background: #efede6;
-  color: var(--text);
+  border-right: 1px solid var(--app-surface-border, rgba(24, 25, 20, 0.1));
+  border-bottom: 1px solid var(--app-surface-border, rgba(24, 25, 20, 0.1));
+  background: var(--app-surface-background, #efede6);
+  color: var(--app-surface-color, var(--text));
 }
 
-.accordion-item.config-panel { grid-column: 1; grid-row: 1; border-top-left-radius: 24px; }
+.accordion-item.config-panel { grid-column: 1; grid-row: 1; border-top-left-radius: var(--app-frame-radius, 24px); }
 .accordion-item.common-panel { grid-column: 1; grid-row: 2; }
 .accordion-item.batch-panel { grid-column: 1; grid-row: 3; border-left: 0; }
 .accordion-item.history-panel { grid-column: 1; grid-row: 4; }

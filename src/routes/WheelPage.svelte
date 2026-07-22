@@ -4,6 +4,8 @@
   import LuxuryWheel from '../components/LuxuryWheel.svelte';
   import MonopolyWheel from '../components/MonopolyWheel.svelte';
   import PrizeEditor from '../components/PrizeEditor.svelte';
+  import UiButton from '../components/ui/UiButton.svelte';
+  import UiTextarea from '../components/ui/UiTextarea.svelte';
   import Wheel from '../components/Wheel.svelte';
   import type { AppVariant } from '../lib/app-variant';
   import {
@@ -1869,11 +1871,11 @@
     class:batch-open={activePanel === 'batch'}
     class:history-open={activePanel === 'history'}
     class:shortcuts-open={activePanel === 'shortcuts'}
-    class="workspace"
+    class="workspace app-page-frame"
     id="top"
     tabindex="-1"
   >
-    <aside class:open={activePanel === 'settings'} class="accordion-item config-panel">
+    <aside class:open={activePanel === 'settings'} class="accordion-item config-panel app-surface-light">
       <button
         type="button"
         class="accordion-toggle"
@@ -2056,7 +2058,7 @@
       {/if}
     </aside>
 
-    <aside class:open={activePanel === 'common'} class="accordion-item common-panel">
+    <aside class:open={activePanel === 'common'} class="accordion-item common-panel app-surface-light">
       <button
         type="button"
         class="accordion-toggle"
@@ -2129,7 +2131,7 @@
       {/if}
     </aside>
 
-    <section class="stage-panel">
+    <section class="stage-panel app-surface-dark">
       <div class="stage-heading">
         <div class="draw-session-actions">
           <button type="button" disabled={isSpinning || drawHistorySaving} on:click={() => void startNewDraw(true)}>新抽奖（清空候选）</button>
@@ -2291,13 +2293,14 @@
                 <strong>粘贴选项文本</strong>
                 <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
               </div>
-              <textarea
-                bind:this={importTextarea}
+              <UiTextarea
+                bind:element={importTextarea}
                 bind:value={importText}
+                size="compact"
                 aria-keyshortcuts="Alt+Enter"
                 rows="4"
                 placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
-              ></textarea>
+              />
               <div class="import-footer">
                 <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
                 <button
@@ -2418,7 +2421,7 @@
       </div>
     </section>
 
-    <aside class:open={activePanel === 'batch'} class="accordion-item batch-panel">
+    <aside class:open={activePanel === 'batch'} class="accordion-item batch-panel app-surface-light">
       <button
         type="button"
         class="accordion-toggle"
@@ -2521,7 +2524,7 @@
       {/if}
     </aside>
 
-    <aside class:open={activePanel === 'history'} class="accordion-item history-panel">
+    <aside class:open={activePanel === 'history'} class="accordion-item history-panel app-surface-light">
       <button
         type="button"
         class="accordion-toggle"
@@ -2579,8 +2582,8 @@
                   <div class="draw-history-bottom">
                     <p title={draw.prizes.map((prize) => prize.name).join('、')}>{draw.prizes.map((prize) => prize.name).join('、') || '空名单'}</p>
                     <div class="draw-history-export-actions">
-                      <button type="button" on:click={() => exportDrawHistoryExcel(draw)}>Excel</button>
-                      <button type="button" on:click={() => exportDrawHistoryJson(draw)}>JSON</button>
+                      <UiButton size="xs" on:click={() => exportDrawHistoryExcel(draw)}>Excel</UiButton>
+                      <UiButton size="xs" on:click={() => exportDrawHistoryJson(draw)}>JSON</UiButton>
                     </div>
                   </div>
                 </article>
@@ -2599,7 +2602,7 @@
       {/if}
     </aside>
 
-    <aside class:open={activePanel === 'shortcuts'} class="accordion-item shortcuts-panel">
+    <aside class:open={activePanel === 'shortcuts'} class="accordion-item shortcuts-panel app-surface-light">
       <button
         type="button"
         class="accordion-toggle"

@@ -5,6 +5,10 @@
   import type { AppVariant } from '../lib/app-variant';
   import BattleBracketEditor from './BattleBracketEditor.svelte';
   import BattleBracketViewer from './BattleBracketViewer.svelte';
+  import UiButton from './ui/UiButton.svelte';
+  import UiCheckbox from './ui/UiCheckbox.svelte';
+  import UiRadio from './ui/UiRadio.svelte';
+  import UiTextarea from './ui/UiTextarea.svelte';
   import {
     battleFixedSeedOptions,
     battleTmpScoresWithMagicFill,
@@ -1248,8 +1252,8 @@
     battleRevealFresh = fresh;
   }
 
-  function updateSlowReveal(event: Event) {
-    slowRevealEnabled = (event.currentTarget as HTMLInputElement).checked;
+  function updateSlowReveal(enabled: boolean) {
+    slowRevealEnabled = enabled;
     resetLineupReveal();
     if (!slowRevealEnabled) resetBattleReveal();
   }
@@ -2661,7 +2665,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class="lineup-page" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
+<main class:battle-page={battlePage} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
     {#if desktopRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
@@ -2878,10 +2882,10 @@
                           <small>查看比赛 →</small>
                         </button>
                         <div class="history-item-actions">
-                          <button type="button" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</button>
-                          <button type="button" on:click={() => void exportBattleHistoryExcel(history)}>Excel</button>
-                          <button type="button" on:click={() => void exportBattleHistoryJson(history)}>JSON</button>
-                          <button type="button" class="history-delete" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</button>
+                          <UiButton size="xs" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</UiButton>
+                          <UiButton size="xs" on:click={() => void exportBattleHistoryExcel(history)}>Excel</UiButton>
+                          <UiButton size="xs" on:click={() => void exportBattleHistoryJson(history)}>JSON</UiButton>
+                          <UiButton size="xs" tone="danger" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</UiButton>
                         </div>
                       </article>
                     {/each}
@@ -2916,15 +2920,15 @@
                         <small>预览 →</small>
                       </button>
                       <div class="history-item-actions">
-                        <button type="button" on:click={() => void exportLineupHistoryExcel(history)}>Excel</button>
-                        <button type="button" on:click={() => void exportLineupHistoryJson(history)}>JSON</button>
-                        <button
-                          type="button"
-                          class="history-delete"
+                        <UiButton size="xs" on:click={() => void exportLineupHistoryExcel(history)}>Excel</UiButton>
+                        <UiButton size="xs" on:click={() => void exportLineupHistoryJson(history)}>JSON</UiButton>
+                        <UiButton
+                          size="xs"
+                          tone="danger"
                           aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的分组历史`}
                           disabled={historyDeleting}
                           on:click={() => requestDeleteLineupHistory(history)}
-                        >删除</button>
+                        >删除</UiButton>
                       </div>
                     </article>
                   {/each}
@@ -2943,7 +2947,7 @@
     {/if}
 
     <section class="lineup-center" aria-live="polite">
-      <fieldset class="preview-panel" disabled={battlePage && battleTmpSnapshot !== null}>
+      <fieldset class="preview-panel app-surface-dark" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
           <div><span>02</span><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
@@ -3036,18 +3040,18 @@
             <div class="battle-option-groups">
               <fieldset class="battle-radio-group battle-format-group">
                 <legend>赛制</legend>
-                <label><input type="radio" name="battle-format" value="avoid-first-pair" bind:group={battleFormat} /><span>同组不对战1对2</span></label>
-                <label><input type="radio" name="battle-format" value="single-elimination" bind:group={battleFormat} /><span>单败</span></label>
-                <label><input type="radio" name="battle-format" value="double-elimination" bind:group={battleFormat} /><span>双败</span></label>
+                <UiRadio name="battle-format" value="avoid-first-pair" bind:group={battleFormat}>同组不对战1对2</UiRadio>
+                <UiRadio name="battle-format" value="single-elimination" bind:group={battleFormat}>单败</UiRadio>
+                <UiRadio name="battle-format" value="double-elimination" bind:group={battleFormat}>双败</UiRadio>
                 {#if battleFormat === 'double-elimination'}
-                  <label class="battle-double-final-option"><input type="checkbox" bind:checked={battleDoubleGrandFinal} /><span>双总决赛</span></label>
+                  <UiCheckbox compact bind:checked={battleDoubleGrandFinal}>双总决赛</UiCheckbox>
                 {/if}
               </fieldset>
               {#if battleFormat !== 'avoid-first-pair'}
                 <fieldset class="battle-radio-group battle-order-group">
                   <legend>名单顺序</legend>
-                  <label><input type="radio" name="battle-order" value="input" bind:group={battleOrderMode} /><span>按输入顺序</span></label>
-                  <label title={desktopRuntime ? '' : '网页版没有排名数据库'}><input type="radio" name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} /><span>按排名</span></label>
+                  <UiRadio name="battle-order" value="input" bind:group={battleOrderMode}>按输入顺序</UiRadio>
+                  <UiRadio name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} title={desktopRuntime ? '' : '网页版没有排名数据库'}>按排名</UiRadio>
                   {#if desktopRuntime && battleOrderMode === 'rank'}
                     <button
                       type="button"
@@ -3060,9 +3064,9 @@
                 </fieldset>
                 <fieldset class="battle-radio-group battle-fixed-group">
                   <legend>固定位置</legend>
-                  <label><input type="radio" name="battle-fixed-seeds" value={0} bind:group={battleFixedSeedCount} /><span>全随机</span></label>
+                  <UiRadio name="battle-fixed-seeds" value={0} bind:group={battleFixedSeedCount}>全随机</UiRadio>
                   {#each battleFixedOptions as count}
-                    <label><input type="radio" name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount} /><span>前 {count} 固定</span></label>
+                    <UiRadio name="battle-fixed-seeds" value={count} bind:group={battleFixedSeedCount}>前 {count} 固定</UiRadio>
                   {/each}
                 </fieldset>
               {/if}
@@ -3083,7 +3087,7 @@
                   至少 4 项
                 {/if}
               </div>
-              <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+              <UiCheckbox compact reveal battleAction class="slow-reveal-setting battle-reveal-setting" bind:checked={slowRevealEnabled} on:change={() => updateSlowReveal(slowRevealEnabled)}>悬念揭晓</UiCheckbox>
               {#if desktopRuntime}
                 <button
                   type="button"
@@ -3115,7 +3119,7 @@
         {/if}
 
         {#if !battlePage}
-          <label class="slow-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
+          <UiCheckbox compact reveal class="slow-reveal-setting" bind:checked={slowRevealEnabled} on:change={() => updateSlowReveal(slowRevealEnabled)}>悬念揭晓</UiCheckbox>
         {/if}
         {#if !battlePage}
           <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
@@ -3134,7 +3138,7 @@
         bind:this={lineupResultElement}
         class:battle-result={battlePage}
         class:battle-fullscreen={battleFullscreen}
-        class="lineup-result"
+        class="lineup-result app-surface-dark"
         style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
         tabindex="-1"
         aria-keyshortcuts={battlePage ? 'F U J H K L W S' : undefined}
@@ -3272,9 +3276,9 @@
       </div>
     </section>
 
-    <aside class:battle-config={battlePage} class="lineup-config">
+    <aside class:battle-config={battlePage} class="lineup-config app-surface-light">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
-      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><textarea bind:this={sourceTextarea} bind:value={sourceText} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" disabled={battlePage && battleTmpSnapshot !== null}></textarea></label>
+      <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><UiTextarea bind:element={sourceTextarea} bind:value={sourceText} stretch={desktopRuntime} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" disabled={battlePage && battleTmpSnapshot !== null} /></label>
       <div class="list-actions">
         <button type="button" class="confirm-list" aria-keyshortcuts="Alt+Enter" disabled={!sourceTextDirty || battlePage && battleTmpSnapshot !== null} on:click={confirmSourceText}>确认</button>
         {#if !battlePage}
@@ -3452,14 +3456,14 @@
     --battle-control-height: calc(42px * var(--lineup-layout-scale, 1));
     min-height: 0;
     padding: clamp(24px, 4vw, 58px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 25px;
+    border: 1px solid var(--app-frame-border, rgba(255, 255, 255, 0.06));
+    border-radius: var(--app-frame-radius, 25px);
     overflow: hidden;
     background:
       radial-gradient(circle at 82% 8%, rgba(231, 255, 114, 0.09), transparent 28%),
-      #20211b;
+      var(--app-frame-background, #20211b);
     color: #f6f3ea;
-    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--app-frame-shadow, 0 28px 80px rgba(0, 0, 0, 0.28));
   }
 
   .config-heading,
@@ -3501,16 +3505,16 @@
   .lineup-config,
   .preview-panel,
   .lineup-result {
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: calc(19px * var(--lineup-layout-scale, 1));
+    border: 1px solid var(--app-surface-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--app-surface-radius, calc(19px * var(--lineup-layout-scale, 1)));
   }
 
   .lineup-config {
     min-width: 0;
     align-self: start;
     padding: calc(22px * var(--lineup-layout-scale, 1));
-    background: #efede6;
-    color: #24251f;
+    background: var(--app-surface-background, #efede6);
+    color: var(--app-surface-color, #24251f);
   }
 
   .config-heading,
@@ -3529,23 +3533,6 @@
   .names-field { display: block; margin-top: calc(18px * var(--lineup-layout-scale, 1)); }
   .names-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .lineup-file-input { display: none; }
-  textarea {
-    width: 100%;
-    min-height: calc(270px * var(--lineup-layout-scale, 1));
-    margin-top: calc(8px * var(--lineup-layout-scale, 1));
-    padding: calc(13px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(36, 37, 31, 0.13);
-    border-radius: calc(11px * var(--lineup-layout-scale, 1));
-    outline: 0;
-    resize: vertical;
-    background: #f8f6f0;
-    color: #24251f;
-    font-family: var(--font-mono);
-    font-size: calc(15px * var(--font-scale, 1));
-    line-height: 1.7;
-  }
-  textarea::placeholder { color: var(--lineup-dim-on-light); opacity: 1; }
-  textarea:focus { border-color: #8a993e; box-shadow: 0 0 0 3px rgba(138, 153, 62, 0.12); }
 
   .list-actions { display: flex; justify-content: flex-end; gap: calc(7px * var(--lineup-layout-scale, 1)); margin-top: calc(7px * var(--lineup-layout-scale, 1)); }
   .list-actions button {
@@ -3605,28 +3592,6 @@
   .battle-format-group { grid-template-columns: minmax(0, 1fr); }
   .battle-fixed-group { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
   .battle-radio-group legend { width: 100%; margin-bottom: calc(7px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-radio-group label {
-    display: flex;
-    width: var(--battle-control-width);
-    height: var(--battle-control-height);
-    min-width: var(--battle-control-width);
-    box-sizing: border-box;
-    align-items: center;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(10px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(36, 37, 31, 0.13);
-    border-radius: calc(8px * var(--lineup-layout-scale, 1));
-    background: #f8f6f0;
-    color: #34362f;
-    font-size: calc(15px * var(--font-scale, 1));
-    font-weight: 900;
-    line-height: 1;
-  }
-  .battle-radio-group label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .battle-radio-group input { accent-color: #7d9134; }
-  .battle-radio-group input[type='radio'],
-  .battle-radio-group input[type='checkbox'] { width: calc(13px * var(--lineup-layout-scale, 1)); height: calc(13px * var(--lineup-layout-scale, 1)); margin: 0; flex: 0 0 auto; }
-  .battle-radio-group label:has(input:disabled) { cursor: not-allowed; opacity: 0.48; }
   .battle-count-status { margin-top: calc(10px * var(--lineup-layout-scale, 1)); padding: calc(9px * var(--lineup-layout-scale, 1)) calc(11px * var(--lineup-layout-scale, 1)); border-radius: calc(8px * var(--lineup-layout-scale, 1)); background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
   .battle-preview-settings {
@@ -3670,7 +3635,6 @@
     row-gap: calc(6px * var(--lineup-layout-scale, 1));
   }
   .battle-option-actions .battle-count-status { grid-column: 1 / -1; }
-  .battle-option-actions .battle-reveal-setting { grid-column: 2; }
   .battle-option-actions .battle-load-current-button { grid-column: 4; }
   .battle-option-actions .battle-generate-button { grid-column: 6; }
   .battle-control-hidden { visibility: hidden; pointer-events: none; }
@@ -3690,36 +3654,7 @@
   .battle-preview-settings .battle-format-group,
   .battle-preview-settings .battle-order-group,
   .battle-preview-settings .battle-fixed-group { grid-template-columns: var(--battle-control-width); }
-  .battle-preview-settings .battle-radio-group label {
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
-  }
-  .battle-preview-settings .battle-radio-group label,
-  .battle-preview-settings .battle-reveal-setting {
-    box-sizing: border-box;
-  }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
-  .battle-preview-settings .battle-reveal-setting {
-    width: var(--battle-control-width);
-    height: var(--battle-control-height);
-    min-height: 0;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    margin: 0;
-    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
-    border-radius: calc(8px * var(--lineup-layout-scale, 1));
-    font-size: calc(15px * var(--font-scale, 1));
-    font-weight: 900;
-    line-height: 1;
-  }
-  .battle-preview-settings .battle-reveal-setting input {
-    width: calc(13px * var(--lineup-layout-scale, 1));
-    height: calc(13px * var(--lineup-layout-scale, 1));
-    margin: 0;
-    flex: 0 0 auto;
-  }
   .battle-preview-settings .battle-rank-preview-button {
     width: var(--battle-control-width);
     height: var(--battle-control-height);
@@ -3800,7 +3735,7 @@
   .lineup-result {
     min-width: 0;
     padding: calc(clamp(20px, 3vw, 34px) * var(--lineup-layout-scale, 1));
-    background: rgba(11, 12, 9, 0.27);
+    background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
 
   .lineup-result:focus {
@@ -3958,7 +3893,7 @@
     min-width: 0;
     margin: 0;
     padding: calc(clamp(20px, 2.4vw, 30px) * var(--lineup-layout-scale, 1));
-    background: rgba(11, 12, 9, 0.27);
+    background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
   .result-heading > div { align-items: center; gap: 11px; }
   .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 50%; place-items: center; }
@@ -4366,28 +4301,6 @@
   .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .battle-state-actions { justify-content: stretch; }
   .battle-state-actions button { flex: 1; }
-
-  .slow-reveal-setting {
-    display: inline-flex;
-    min-height: 48px;
-    align-items: center;
-    gap: 7px;
-    margin-top: 12px;
-    padding: 0 14px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 11px;
-    background: rgba(255, 255, 255, 0.035);
-    color: var(--lineup-muted-on-dark);
-    cursor: pointer;
-    font-size: calc(13px * var(--font-scale, 1));
-    font-weight: 700;
-  }
-
-  .slow-reveal-setting input {
-    width: 15px;
-    height: 15px;
-    accent-color: #bcca63;
-  }
 
   .lineup-actions .generate-button {
     min-height: 48px;
@@ -5264,25 +5177,12 @@
     border-left: 1px solid rgba(36, 37, 31, 0.08);
   }
 
-  .history-item-actions button {
-    padding: calc(3px * var(--lineup-layout-scale, 1)) calc(5px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgba(84, 96, 36, 0.24);
-    border-radius: 5px;
-    background: #f3f4e8;
-    color: #4d5920;
-    cursor: pointer;
-    font-size: calc(9px * var(--font-scale, 1));
-    font-weight: 750;
-  }
-
-  .history-item-actions .history-delete,
   .history-export-actions .history-delete-all {
     border-color: rgba(156, 64, 52, 0.34);
     background: #fae9e5;
     color: #8b3429;
   }
 
-  .history-item-actions .history-delete:hover:not(:disabled),
   .history-export-actions .history-delete-all:hover:not(:disabled) {
     border-color: #b85243;
     background: #f5d4cd;
@@ -5353,10 +5253,6 @@
       flex: 1;
       flex-direction: column;
     }
-    .lineup-workbench.desktop .names-field textarea {
-      min-height: 160px;
-      flex: 1;
-    }
     .lineup-workbench.desktop .lineup-result {
       grid-column: 2 / 4;
       grid-row: 2;
@@ -5388,7 +5284,6 @@
     .lineup-sidebar.ranking-open,
     .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; contain: none; }
     .ranked-user-list { height: min(540px, 56vh); flex: none; }
-    textarea { min-height: 220px; }
     .battle-preview-settings { grid-template-columns: minmax(0, 1fr); }
     .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
