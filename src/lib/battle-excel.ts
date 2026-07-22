@@ -27,9 +27,14 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
     views: [{ state: 'frozen', ySplit: 3 }],
   });
   const nameById = new Map(snapshot.participants.map((participant) => [participant.id, participant.name]));
-  const sections = battleExcelSections(snapshot);
+  const singleLike = snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair';
+  const singleLevels = singleLike
+    ? groupedLevels(snapshot.matches.filter((match) => match.stage === 'single'), '第')
+    : [];
+  const singleLayout = singleLike ? createSingleExcelLayout(singleLevels.length) : null;
+  const sections = singleLike ? [] : battleExcelSections(snapshot);
   const maxLevelCount = Math.max(...sections.map((section) => section.levels.length), 1);
-  const lastColumn = maxLevelCount * 2 + 2;
+  const lastColumn = singleLayout?.lastColumn ?? maxLevelCount * 2 + 2;
 
   worksheet.mergeCells(1, 1, 1, lastColumn);
   const titleCell = worksheet.getCell(1, 1);
@@ -59,19 +64,30 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
   worksheet.getRow(2).height = 22;
 
   let startRow = 4;
-  for (const section of sections) {
-    startRow = renderBattleSection(
+  if (singleLayout) {
+    startRow = renderSingleEliminationSection(
       worksheet,
-      section.title,
-      section.levels,
+      snapshot,
+      singleLevels,
+      singleLayout,
       startRow,
-      lastColumn,
       nameById,
     );
+  } else {
+    for (const section of sections) {
+      startRow = renderBattleSection(
+        worksheet,
+        section.title,
+        section.levels,
+        startRow,
+        lastColumn,
+        nameById,
+      );
+    }
   }
 
   const champion = battleChampionId(snapshot);
-  if (champion !== null) {
+  if (!singleLayout && champion !== null) {
     const championRow = 3;
     worksheet.getCell(championRow, lastColumn - 1).value = '冠军';
     worksheet.getCell(championRow, lastColumn).value = nameById.get(champion) ?? `#${champion}`;
@@ -85,7 +101,15 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
   }
 
   for (let column = 1; column <= lastColumn; column += 1) {
-    worksheet.getColumn(column).width = column % 2 === 1 ? 18 : 8;
+    worksheet.getColumn(column).width = singleLayout
+      ? singleLayout.spacerColumns.has(column)
+        ? 3
+        : column === singleLayout.final.name
+          ? 24
+          : column === singleLayout.final.score
+            ? 10
+            : singleLayout.scoreColumns.has(column) ? 8 : 18
+      : column % 2 === 1 ? 18 : 8;
   }
   worksheet.properties.defaultRowHeight = 22;
   const buffer = await workbook.xlsx.writeBuffer();
@@ -95,6 +119,184 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
 interface BattleExcelSection {
   title: string;
   levels: { label: string; matches: BattleTmpMatch[] }[];
+}
+
+interface SingleExcelRoundColumns {
+  name: number;
+  score: number;
+}
+
+interface SingleExcelLayout {
+  lastColumn: number;
+  left: SingleExcelRoundColumns[];
+  right: SingleExcelRoundColumns[];
+  final: SingleExcelRoundColumns;
+  spacerColumns: Set<number>;
+  scoreColumns: Set<number>;
+}
+
+function createSingleExcelLayout(levelCount: number): SingleExcelLayout {
+  const sideLevelCount = Math.max(0, levelCount - 1);
+  const lastColumn = sideLevelCount * 6 + 2;
+  const left = Array.from({ length: sideLevelCount }, (_, index) => ({
+    name: index * 3 + 1,
+    score: index * 3 + 2,
+  }));
+  const right = Array.from({ length: sideLevelCount }, (_, index) => ({
+    name: lastColumn - index * 3,
+    score: lastColumn - index * 3 - 1,
+  }));
+  const final = { name: sideLevelCount * 3 + 1, score: sideLevelCount * 3 + 2 };
+  const spacerColumns = new Set([
+    ...left.map((columns) => columns.score + 1),
+    ...right.map((columns) => columns.score - 1),
+  ]);
+  const scoreColumns = new Set([
+    ...left.map((columns) => columns.score),
+    ...right.map((columns) => columns.score),
+    final.score,
+  ]);
+  return { lastColumn, left, right, final, spacerColumns, scoreColumns };
+}
+
+function renderSingleEliminationSection(
+  worksheet: ExcelJS.Worksheet,
+  snapshot: BattleTmpSnapshot,
+  levels: BattleExcelSection['levels'],
+  layout: SingleExcelLayout,
+  startRow: number,
+  nameById: Map<number, string>,
+): number {
+  const sectionCell = worksheet.getCell(startRow, 1);
+  worksheet.mergeCells(startRow, 1, startRow, layout.lastColumn);
+  sectionCell.value = snapshot.format === 'avoid-first-pair' ? '同组不对战 1 对 2' : '单败';
+  sectionCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  sectionCell.fill = solidFill(SECTION_FILL);
+  sectionCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+  const headerRow = startRow + 1;
+  const dataStartRow = startRow + 2;
+  const firstSideMatchCount = Math.max(1, Math.ceil((levels[0]?.matches.length ?? 2) / 2));
+  // 每场比赛固定占四行，相邻比赛之间至少留一整行，后续轮次在对应区域居中。
+  const dataRows = Math.max(7, firstSideMatchCount * 4 + (firstSideMatchCount - 1));
+  const sideLevels = levels.slice(0, -1);
+
+  sideLevels.forEach((level, levelIndex) => {
+    const sideMatchCount = Math.ceil(level.matches.length / 2);
+    const leftMatches = level.matches.slice(0, sideMatchCount);
+    const rightMatches = level.matches.slice(sideMatchCount);
+    const label = snapshot.format === 'avoid-first-pair' && levelIndex === 0
+      ? '1 对 2'
+      : level.label;
+
+    renderRoundHeader(worksheet, headerRow, layout.left[levelIndex], label);
+    renderRoundHeader(worksheet, headerRow, layout.right[levelIndex], label);
+    renderSingleRound(
+      worksheet,
+      leftMatches,
+      layout.left[levelIndex],
+      dataStartRow,
+      dataRows,
+      nameById,
+    );
+    renderSingleRound(
+      worksheet,
+      rightMatches,
+      layout.right[levelIndex],
+      dataStartRow,
+      dataRows,
+      nameById,
+    );
+  });
+
+  const finalLevel = levels.at(-1);
+  renderRoundHeader(worksheet, headerRow, layout.final, '决赛');
+  if (finalLevel?.matches[0]) {
+    renderSingleRound(
+      worksheet,
+      [finalLevel.matches[0]],
+      layout.final,
+      dataStartRow,
+      dataRows,
+      nameById,
+      3,
+    );
+  }
+
+  const championRow = dataStartRow + dataRows + 1;
+  const championId = battleChampionId(snapshot);
+  const championNameCell = worksheet.getCell(championRow, layout.final.name);
+  const championLabelCell = worksheet.getCell(championRow, layout.final.score);
+  championNameCell.value = championId === null
+    ? '等待决赛'
+    : nameById.get(championId) ?? `#${championId}`;
+  championLabelCell.value = '冠军';
+  for (const cell of [championNameCell, championLabelCell]) {
+    cell.font = {
+      bold: true,
+      color: { argb: championId === null ? 'FF69705D' : 'FF3E4B16' },
+    };
+    cell.fill = solidFill(HEADER_FILL);
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder();
+  }
+  worksheet.getRow(championRow).height = 30;
+
+  return championRow + 2;
+}
+
+function renderRoundHeader(
+  worksheet: ExcelJS.Worksheet,
+  row: number,
+  columns: SingleExcelRoundColumns,
+  label: string,
+) {
+  worksheet.mergeCells(row, columns.name, row, columns.score);
+  const header = worksheet.getCell(row, Math.min(columns.name, columns.score));
+  header.value = label;
+  header.font = { bold: true, color: { argb: 'FF30352A' } };
+  header.fill = solidFill(HEADER_FILL);
+  header.alignment = { vertical: 'middle', horizontal: 'center' };
+  header.border = thinBorder();
+}
+
+function renderSingleRound(
+  worksheet: ExcelJS.Worksheet,
+  matches: BattleTmpMatch[],
+  columns: SingleExcelRoundColumns,
+  dataStartRow: number,
+  dataRows: number,
+  nameById: Map<number, string>,
+  slotRows = 2,
+) {
+  matches.forEach((match, matchIndex) => {
+    const matchRows = slotRows * 2;
+    const matchStart = dataStartRow + Math.max(0, Math.round(
+      (matchIndex + 0.5) * dataRows / matches.length - matchRows / 2,
+    ));
+    renderBattleSlot(
+      worksheet,
+      matchStart,
+      matchStart + slotRows - 1,
+      columns.name,
+      columns.score,
+      match.up,
+      match.upResult,
+      battleTmpWinnerId(match) === match.up,
+      nameById,
+    );
+    renderBattleSlot(
+      worksheet,
+      matchStart + slotRows,
+      matchStart + matchRows - 1,
+      columns.name,
+      columns.score,
+      match.down,
+      match.downResult,
+      battleTmpWinnerId(match) === match.down,
+      nameById,
+    );
+  });
 }
 
 function battleExcelSections(snapshot: BattleTmpSnapshot): BattleExcelSection[] {
@@ -217,8 +419,7 @@ function renderBattleSlot(
 }
 
 function battleChampionId(snapshot: BattleTmpSnapshot): number | null {
-  if (snapshot.format === 'avoid-first-pair') return null;
-  if (snapshot.format === 'single-elimination') {
+  if (snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair') {
     const final = snapshot.matches
       .filter((match) => match.stage === 'single')
       .sort((left, right) => right.level - left.level)[0];
