@@ -44,12 +44,20 @@ export async function installTauriMock(
       })),
     }));
 
+    const persistedBattleState = (() => {
+      try {
+        const raw = sessionStorage.getItem('__E2E_TAURI_BATTLE_TMP__');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })();
     const state = {
       rankedUsers,
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
-      battleTmpState: data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any,
+      battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
       closeRequestedHandler: null as number | null,
       windowDestroyed: false,
       windowFullscreen: false,
@@ -57,6 +65,9 @@ export async function installTauriMock(
     };
 
     const clone = <T>(value: T): T => structuredClone(value);
+    const persistBattleState = () => {
+      sessionStorage.setItem('__E2E_TAURI_BATTLE_TMP__', JSON.stringify(state.battleTmpState));
+    };
     const sortedUsers = () => [...state.rankedUsers].sort((left, right) => (
       left.rank - right.rank || left.name.localeCompare(right.name, 'zh-CN')
     ));
@@ -368,6 +379,7 @@ export async function installTauriMock(
       }
       if (cmd === 'save_battle_tmp_state') {
         state.battleTmpState = clone(args.state);
+        persistBattleState();
         return null;
       }
       if (cmd === 'load_battle_tmp_state') {
@@ -384,10 +396,12 @@ export async function installTauriMock(
         match.downResult = args.downResult;
         snapshot.updatedAt = args.updatedAt;
         state.battleTmpState = recomputeBattleTmp(snapshot);
+        persistBattleState();
         return clone(state.battleTmpState);
       }
       if (cmd === 'clear_battle_tmp_state') {
         if (state.battleTmpState?.variant === args.variant) state.battleTmpState = null;
+        persistBattleState();
         return null;
       }
       if (cmd === 'open_database_folder' || cmd === 'open_download_folder') return null;

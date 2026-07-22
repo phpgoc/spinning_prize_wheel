@@ -192,12 +192,13 @@
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleTmpAvailable = false;
   let battleHistories: BattleHistory[] = [];
-  let battleHistoryPreview: BattleHistory | null = null;
+  let battleHistoryView: BattleHistory | null = null;
   let battleHistoryStart = '';
   let battleHistoryEnd = '';
   let battleHistoryFileInput: HTMLInputElement | null = null;
   let battleHistoryImporting = false;
   let battleHistoryDeleteConfirmation: 0 | 1 | 2 = 0;
+  let pendingBattleHistoryDeletion: BattleHistory | null = null;
   let pendingBattleLoad: PendingBattleLoad | null = null;
   let battleLoadingTarget = false;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
@@ -590,7 +591,7 @@
 
   async function generateBattle() {
     error = '';
-    battleHistoryPreview = null;
+    battleHistoryView = null;
     if (battleTmpSnapshot) {
       error = '已抽签，请先清空';
       return;
@@ -898,7 +899,7 @@
         loaded = true;
       }
       if (loaded) {
-        battleHistoryPreview = null;
+        battleHistoryView = null;
         await tick();
         await resolveNames();
         focusLineupResult();
@@ -949,8 +950,8 @@
     return pending.target.kind === 'current' ? '重新读取' : '覆盖并加载';
   }
 
-  async function previewBattleHistory(history: BattleHistory) {
-    battleHistoryPreview = {
+  async function viewBattleHistory(history: BattleHistory) {
+    battleHistoryView = {
       ...history,
       snapshot: structuredClone(history.snapshot),
     };
@@ -959,7 +960,7 @@
   }
 
   async function returnToCurrentBattle() {
-    battleHistoryPreview = null;
+    battleHistoryView = null;
     await tick();
     focusLineupResult();
   }
@@ -1047,6 +1048,19 @@
 
   function requestClearBattleHistories() {
     if (battleHistories.length > 0) battleHistoryDeleteConfirmation = 1;
+  }
+
+  function requestDeleteBattleHistory(history: BattleHistory) {
+    pendingBattleHistoryDeletion = history;
+  }
+
+  function confirmDeleteBattleHistory() {
+    const history = pendingBattleHistoryDeletion;
+    if (!history) return;
+    battleHistories = battleHistories.filter((item) => item.id !== history.id);
+    if (battleHistoryView?.id === history.id) battleHistoryView = null;
+    pendingBattleHistoryDeletion = null;
+    saveBattleHistories();
   }
 
   function confirmClearBattleHistories() {
@@ -2045,6 +2059,17 @@
       return;
     }
 
+    if (pendingBattleHistoryDeletion) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        pendingBattleHistoryDeletion = null;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        confirmDeleteBattleHistory();
+      }
+      return;
+    }
+
     if (pendingLineupHistoryDeletion) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -2838,15 +2863,16 @@
                   {:else}
                     {#each visibleBattleHistories as history (history.id)}
                       <article>
-                        <button type="button" class:active={battleHistoryPreview?.id === history.id} class="history-view" on:click={() => previewBattleHistory(history)}>
+                        <button type="button" class:active={battleHistoryView?.id === history.id} class="history-view" on:click={() => viewBattleHistory(history)}>
                           <span>{formatHistoryDate(history.createdAt)}</span>
                           <strong>{history.snapshot.participantCount} 人 · {battleTmpFormatLabel(history.snapshot.format)}</strong>
-                          <small>只读预览 →</small>
+                          <small>查看比赛 →</small>
                         </button>
                         <div class="history-item-actions">
                           <button type="button" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</button>
                           <button type="button" on:click={() => void exportBattleHistoryExcel(history)}>Excel</button>
                           <button type="button" on:click={() => void exportBattleHistoryJson(history)}>JSON</button>
+                          <button type="button" class="history-delete" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</button>
                         </div>
                       </article>
                     {/each}
@@ -2910,7 +2936,7 @@
     <section class="lineup-center" aria-live="polite">
       <fieldset class="preview-panel" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
-          <div><span>02</span><div><h2>{battlePage ? '对战预览' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
+          <div><span>02</span><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
             {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
@@ -3107,7 +3133,7 @@
         {#if battlePage}
           <div class="battle-result-toolbar">
             <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
-            {#if battleTmpSnapshot && !battleHistoryPreview}
+            {#if battleTmpSnapshot && !battleHistoryView}
               <button type="button" class="battle-clear-button" disabled={clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
             {/if}
             <fieldset class="battle-color-controls">
@@ -3132,10 +3158,10 @@
             </fieldset>
           </div>
           <div class="result-heading">
-            <div><span>03</span><div><h2>{battleHistoryPreview ? '历史对战' : '对战'}</h2><p>{battleHistoryPreview ? `${formatHistoryDate(battleHistoryPreview.createdAt)} · ${battleHistoryPreview.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryPreview.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
-            {#if battleHistoryPreview}
+            <div><span>03</span><div><h2>{battleHistoryView ? '历史对战' : '对战'}</h2><p>{battleHistoryView ? `${formatHistoryDate(battleHistoryView.createdAt)} · ${battleHistoryView.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryView.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
+            {#if battleHistoryView}
               <div class="result-output-actions">
-                <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前</button>
+                <button type="button" class="result-export-button" on:click={returnToCurrentBattle}>返回当前对战</button>
               </div>
             {:else if battleTmpSnapshot}
               <div class="result-output-actions">
@@ -3149,10 +3175,10 @@
               </div>
             {/if}
           </div>
-          {#if battleHistoryPreview}
-            <div class="battle-history-bracket" aria-label="历史对战只读预览">
-              {#key `history-${battleHistoryPreview.id}`}
-                <BattleBracketViewer snapshot={battleHistoryPreview.snapshot} />
+          {#if battleHistoryView}
+            <div class="battle-history-bracket" aria-label="历史对战只读查看">
+              {#key `history-${battleHistoryView.id}`}
+                <BattleBracketViewer snapshot={battleHistoryView.snapshot} />
               {/key}
             </div>
           {:else if battleTmpSnapshot}
@@ -3282,6 +3308,20 @@
       <div>
         <button type="button" aria-keyshortcuts="N Escape" on:click={() => (battleHistoryDeleteConfirmation = 0)}><span>取消</span></button>
         <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmClearBattleHistories}><span>确认</span></button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if pendingBattleHistoryDeletion}
+  <div class="delete-confirm-backdrop">
+    <div class="delete-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-battle-history-title" aria-describedby="delete-battle-history-detail" tabindex="-1">
+      <span class="delete-confirm-icon">×</span>
+      <h2 id="delete-battle-history-title">删除这条对战历史？</h2>
+      <p id="delete-battle-history-detail">删除后无法恢复。</p>
+      <div>
+        <button type="button" aria-keyshortcuts="N Escape" on:click={() => (pendingBattleHistoryDeletion = null)}><span>取消</span></button>
+        <button type="button" class="confirm-delete" aria-keyshortcuts="Y Enter" on:click={confirmDeleteBattleHistory}><span>确认</span></button>
       </div>
     </div>
   </div>

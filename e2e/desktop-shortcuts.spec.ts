@@ -3,13 +3,13 @@ import { installTauriMock, mockedRankedNames } from './helpers/tauri-mock';
 
 async function openDesktopLineup(page: Page) {
   await installTauriMock(page);
-  await page.goto('/#/grouping', { waitUntil: 'domcontentloaded' });
+  await page.goto('/grouping', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
 async function openDesktopBattle(page: Page) {
   await installTauriMock(page);
-  await page.goto('/#/battle', { waitUntil: 'domcontentloaded' });
+  await page.goto('/battle', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
 }
 
@@ -61,7 +61,7 @@ async function rankNumberAlignment(number: Locator) {
 
 test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async ({ page }) => {
   await installTauriMock(page);
-  await page.goto('/#/draw');
+  await page.goto('/draw');
 
   await expect(page.getByRole('button', { name: '关闭自动保存历史' })).toBeVisible();
   await page.evaluate(() => {
@@ -82,7 +82,7 @@ test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async 
 
 test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
   await installTauriMock(page);
-  await page.goto('/#/draw');
+  await page.goto('/draw');
   await page.keyboard.press('z');
 
   const battleShortcuts = page.locator('.shortcut-battle');
@@ -133,7 +133,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
     rank: index + 1,
   }));
   await installTauriMock(page, rankedUsers);
-  await page.goto('/#/battle', { waitUntil: 'domcontentloaded' });
+  await page.goto('/battle', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(8);
   await expect(page.locator('.battle-shortcut-hint')).toHaveCount(0);
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
@@ -200,7 +200,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序并与全部控件等�
 
 test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page }) => {
   await installTauriMock(page);
-  await page.goto('/#/draw');
+  await page.goto('/draw');
   await page.getByRole('button', { name: '统计 0' }).click();
 
   const actions = page.locator('.side-stats-actions button');
@@ -221,7 +221,7 @@ test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page 
 
 test('开启自动保存后关闭窗口会等当前旋转结束并归档', async ({ page }) => {
   await installTauriMock(page);
-  await page.goto('/#/draw');
+  await page.goto('/draw');
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.closeRequestedHandler !== null
   ))).toBe(true);
@@ -563,7 +563,7 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
   ));
   const restoredPage = await context.newPage();
   await installTauriMock(restoredPage, undefined, { battleTmpState: savedState });
-  await restoredPage.goto('/#/battle');
+  await restoredPage.goto('/battle');
   await expect(restoredPage.locator('.preview-row')).toHaveCount(4);
   await expect(restoredPage.locator('.battle-round')).toHaveCount(2);
   await expect(restoredPage.locator('.battle-config textarea')).toBeDisabled();
@@ -732,14 +732,14 @@ test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page,
   expect(singleFinalState.matches.some((match: any) => match.matchId === 'GF-RESET-M1')).toBe(false);
   const restoredSingleFinal = await context.newPage();
   await installTauriMock(restoredSingleFinal, undefined, { battleTmpState: singleFinalState });
-  await restoredSingleFinal.goto('/#/battle');
+  await restoredSingleFinal.goto('/battle');
   await expect(restoredSingleFinal.getByRole('checkbox', { name: '双总决赛' })).not.toBeChecked();
   await expect(restoredSingleFinal.getByRole('heading', { name: '重赛', exact: true })).toHaveCount(0);
   await restoredSingleFinal.close();
 
   const doubleFinalPage = await context.newPage();
   await installTauriMock(doubleFinalPage);
-  await doubleFinalPage.goto('/#/battle');
+  await doubleFinalPage.goto('/battle');
   await expect(doubleFinalPage.locator('[data-rank-user-id]')).toHaveCount(4);
   await confirmDesktopNames(doubleFinalPage, ['甲', '乙', '丙', '丁']);
   await doubleFinalPage.getByRole('radio', { name: '双败' }).check();
@@ -752,7 +752,7 @@ test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page,
   expect(doubleFinalState.matches.some((match: any) => match.matchId === 'GF-RESET-M1')).toBe(true);
   const restoredDoubleFinal = await context.newPage();
   await installTauriMock(restoredDoubleFinal, undefined, { battleTmpState: doubleFinalState });
-  await restoredDoubleFinal.goto('/#/battle');
+  await restoredDoubleFinal.goto('/battle');
   await expect(restoredDoubleFinal.getByRole('checkbox', { name: '双总决赛' })).toBeChecked();
   await expect(restoredDoubleFinal.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
   await restoredDoubleFinal.close();
@@ -799,7 +799,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
     lineupHistories,
   });
 
-  await page.goto('/#/draw');
+  await page.goto('/draw');
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
   const drawHistoryActions = page.locator('.sidebar-history-actions button');
   await expect(drawHistoryActions).toHaveCount(4);
@@ -815,7 +815,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await expect(page.getByRole('alertdialog')).toBeHidden();
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.drawHistories.length)).toBe(0);
 
-  await page.goto('/#/grouping');
+  await page.goto('/grouping');
   await page.getByRole('button', { name: /分组历史/u }).click();
   const lineupHistoryPanel = page.locator('.history-panel');
   await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);

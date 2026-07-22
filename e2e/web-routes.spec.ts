@@ -11,16 +11,17 @@ async function clearWebBattle(page: Page) {
 
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
   const routes = [
-    { path: '/#/wheel', title: '转盘', caimi: false },
-    { path: '/#/grouping', title: '分组 · 转盘', caimi: false },
-    { path: '/#/battle', title: '对战 · 转盘', caimi: false },
-    { path: '/#/caimi/wheel', title: '猜蜜版 · 转盘', caimi: true },
-    { path: '/#/caimi/grouping', title: '猜蜜版 · 分组 · 转盘', caimi: true },
-    { path: '/#/caimi/battle', title: '猜蜜版 · 对战 · 转盘', caimi: true },
+    { path: '/wheel', title: '转盘', caimi: false },
+    { path: '/grouping', title: '分组 · 转盘', caimi: false },
+    { path: '/battle', title: '对战 · 转盘', caimi: false },
+    { path: '/caimi/wheel', title: '猜蜜版 · 转盘', caimi: true },
+    { path: '/caimi/grouping', title: '猜蜜版 · 分组 · 转盘', caimi: true },
+    { path: '/caimi/battle', title: '猜蜜版 · 对战 · 转盘', caimi: true },
   ];
 
   for (const route of routes) {
     await page.goto(route.path);
+    await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
     await expect(page).toHaveTitle(route.title);
     await expect(page.locator('.app-shell')).toHaveClass(
       route.caimi ? /caimi-variant/ : /^(?!.*caimi-variant).*$/,
@@ -32,7 +33,7 @@ test('网页版各个正式地址均可直接打开', async ({ page }) => {
 
 test('抽奖、分组和对战切换时头部保持在同一位置', async ({ page }) => {
   const positions: number[] = [];
-  for (const route of ['/#/wheel', '/#/grouping', '/#/battle']) {
+  for (const route of ['/wheel', '/grouping', '/battle']) {
     await page.goto(route);
     const box = await page.locator('.topbar-controls').boundingBox();
     positions.push(box!.x + box!.width / 2);
@@ -41,14 +42,14 @@ test('抽奖、分组和对战切换时头部保持在同一位置', async ({ pa
 });
 
 test('网页版对战页只提示使用桌面版', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await expect(page.getByRole('main').getByText('对战仅支持桌面版')).toBeVisible();
   await expect(page.locator('.battle-config, .battle-result, .battle-sidebar')).toHaveCount(0);
 });
 
 test.describe.skip('网页版已停用的对战功能', () => {
 test('对战可以全屏返回并持久化四类颜色和预设', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   const battleResult = page.locator('.battle-result');
   const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
@@ -117,9 +118,9 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
 });
 
 test('对战配色预设按版本分别持久化', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.getByRole('button', { name: 'Tokyo' }).click();
-  await page.goto('/#/caimi/battle');
+  await page.goto('/caimi/battle');
   await expect(page.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Gruvbox' }).click();
 
@@ -129,12 +130,12 @@ test('对战配色预设按版本分别持久化', async ({ page }) => {
   }))).toEqual({ standard: 'ocean', caimi: 'sunset' });
   await page.reload();
   await expect(page.getByRole('button', { name: 'Gruvbox' })).toHaveAttribute('aria-pressed', 'true');
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await expect(page.getByRole('button', { name: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('对战赛制切换会保留单败和双败的配置', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 33 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -162,7 +163,7 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
 
 test('宽屏并排显示三组对战选项', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 33 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -203,7 +204,7 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
     })
   ));
 
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L');
   await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();
@@ -244,7 +245,7 @@ test('对战预览操作控件等宽等高并按百分之一百六十六扩容',
 });
 
 test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
@@ -267,7 +268,7 @@ test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
 });
 
 test('对战选手名默认字号加倍', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
@@ -276,7 +277,7 @@ test('对战选手名默认字号加倍', async ({ page }) => {
 });
 
 test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
@@ -307,7 +308,7 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
 });
 
 test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
-  await page.goto('/#/grouping');
+  await page.goto('/grouping');
   await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
   await page.reload();
   await page.locator('.names-field textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
@@ -325,7 +326,7 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
 
 test.describe.skip('网页版已停用的对战功能', () => {
 test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
@@ -340,7 +341,7 @@ test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) 
 });
 
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -440,7 +441,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
 });
 
 test('16 人双败逐列向分界线收拢', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill(
     Array.from({ length: 16 }, (_, index) => `选手${index + 1}`).join('\n'),
   );
@@ -470,7 +471,7 @@ test('16 人双败逐列向分界线收拢', async ({ page }) => {
 });
 
 test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('A1\nA2\nB1\nB2\nC1\nC2\nD1\nD2');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('button', { name: /^抽签/ }).click();
@@ -487,7 +488,7 @@ test('同组不对战按相邻两项成组并生成跨组的1对2', async ({ pag
 });
 
 test('同组不对战至少需要四组八项', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   const textarea = page.locator('.battle-config textarea');
   await textarea.fill('A1\nA2\nB1\nB2\nC1\nC2');
   await textarea.press('Alt+Enter');
@@ -500,7 +501,7 @@ test('同组不对战至少需要四组八项', async ({ page }) => {
 });
 
 test('单败和双败至少需要四项', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   const textarea = page.locator('.battle-config textarea');
   await textarea.fill('甲\n乙\n丙');
   await textarea.press('Alt+Enter');
@@ -517,7 +518,7 @@ test('单败和双败至少需要四项', async ({ page }) => {
 });
 
 test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取消', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
@@ -559,7 +560,7 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
 });
 
 test('Web 对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {
-  await page.goto('/#/battle');
+  await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();

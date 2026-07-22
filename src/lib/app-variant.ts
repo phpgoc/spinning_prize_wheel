@@ -5,11 +5,11 @@ export const BUILD_VARIANT: AppVariant = import.meta.env.VITE_APP_VARIANT === 'c
   ? 'caimi'
   : 'standard';
 
-export function variantFromHash(hash: string): AppVariant {
+export function variantFromPath(pathname: string): AppVariant {
   if (BUILD_VARIANT === 'caimi') return 'caimi';
-  return hash.startsWith('#/caimi/') || hash === '#/caimi' ? 'caimi' : 'standard';
+  return pathname.startsWith('/caimi/') || pathname === '/caimi' ? 'caimi' : 'standard';
 }
 
 export function variantRoute(variant: AppVariant, page: AppPage): string {
-  return variant === 'caimi' ? `#/caimi/${page}` : `#/${page}`;
+  return variant === 'caimi' ? `/caimi/${page}` : `/${page}`;
 }

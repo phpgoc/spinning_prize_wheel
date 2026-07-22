@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import caimiIconUrl from './assets/caimi-icon.png?url';
@@ -11,7 +12,7 @@
   import GroupingWorkspace from './components/GroupingWorkspace.svelte';
   import {
     BUILD_VARIANT,
-    variantFromHash,
+    variantFromPath,
     variantRoute,
     type AppPage,
     type AppVariant,
@@ -37,11 +38,11 @@
   onMount(() => {
     appUnmounted = false;
     syncRoute();
-    window.addEventListener('hashchange', syncRoute);
+    window.addEventListener('popstate', syncRoute);
     if (desktopRuntime) void registerCloseRequestedListener();
     return () => {
       appUnmounted = true;
-      window.removeEventListener('hashchange', syncRoute);
+      window.removeEventListener('popstate', syncRoute);
       removeCloseRequestedListener?.();
       removeCloseRequestedListener = null;
     };
@@ -84,25 +85,24 @@
     }
   }
 
-  function pageFromHash(hash: string): AppPage {
-    if (hash.endsWith('/battle')) return 'battle';
-    return hash.endsWith('/grouping') ? 'grouping' : 'wheel';
+  function pageFromPath(pathname: string): AppPage {
+    if (pathname.endsWith('/battle')) return 'battle';
+    return pathname.endsWith('/grouping') ? 'grouping' : 'wheel';
   }
 
   function syncRoute() {
-    page = pageFromHash(window.location.hash);
-    variant = variantFromHash(window.location.hash);
+    page = pageFromPath(window.location.pathname);
+    variant = variantFromPath(window.location.pathname);
   }
 
   function navigatePage(nextPage: AppPage) {
     if (nextPage === page || (nextPage !== 'wheel' && (wheelSpinning || continuousRunning))) return;
-    window.location.hash = variantRoute(variant, nextPage);
+    void goto(variantRoute(variant, nextPage)).then(syncRoute);
   }
 
   function navigateVariant(nextVariant: AppVariant) {
     if (desktopRuntime || nextVariant === variant) return;
-    window.location.hash = variantRoute(nextVariant, page);
-    window.location.reload();
+    void goto(variantRoute(nextVariant, page)).then(syncRoute);
   }
 
   function changeDrawMode(mode: DrawMode) {
