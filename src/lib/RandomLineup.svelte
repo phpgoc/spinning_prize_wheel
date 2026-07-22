@@ -3122,10 +3122,29 @@
   .battle-radio-empty { grid-column: 1 / -1; padding: 9px 10px; border: 1px dashed rgba(36, 37, 31, 0.2); border-radius: 8px; color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
-  .battle-preview-settings { margin-top: 18px; padding-top: 2px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
-  .battle-preview-settings .battle-format-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .battle-preview-settings .battle-double-final-option { grid-column: 3; }
+  .battle-preview-settings {
+    display: grid;
+    grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.72fr) minmax(250px, 1.28fr);
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .battle-preview-settings .battle-radio-group {
+    align-content: start;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+  }
+  .battle-preview-settings .battle-format-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .battle-preview-settings .battle-format-group > label:first-of-type { grid-column: 1 / -1; }
+  .battle-preview-settings .battle-double-final-option { grid-column: 1 / -1; }
+  .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .battle-preview-settings .battle-radio-group label { padding: 7px 8px; }
   .battle-preview-settings .battle-radio-group legend { color: var(--lineup-muted-on-dark); }
+  .battle-preview-settings .battle-count-status { grid-column: 1 / -1; margin-top: 0; }
   .battle-preview-settings .battle-count-status { border: 1px solid rgba(218, 91, 63, 0.18); background: rgba(218, 91, 63, 0.08); color: #e1a092; }
   .battle-preview-settings .battle-count-status.valid { border-color: rgba(231, 255, 114, 0.17); background: rgba(231, 255, 114, 0.07); color: #dce99b; }
 
@@ -4797,6 +4816,7 @@
     .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; contain: none; }
     .ranked-user-list { height: min(540px, 56vh); flex: none; }
     textarea { min-height: 220px; }
+    .battle-preview-settings { grid-template-columns: minmax(0, 1fr); }
   }
 
   @media (max-width: 600px) {

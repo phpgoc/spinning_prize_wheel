@@ -153,6 +153,27 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
   await expect(page.getByRole('radio', { name: '前 16 固定' })).toBeChecked();
 });
 
+test('宽屏并排显示三组对战选项', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill(
+    Array.from({ length: 33 }, (_, index) => `选手${index + 1}`).join('\n'),
+  );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+
+  const groups = page.locator('.battle-preview-settings fieldset');
+  await expect(groups).toHaveCount(3);
+  const boxes = await groups.evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y };
+  }));
+  expect(Math.max(...boxes.map((box) => box.y)) - Math.min(...boxes.map((box) => box.y))).toBeLessThan(2);
+  expect(new Set(boxes.map((box) => Math.round(box.x))).size).toBe(3);
+  const settingsBox = await page.locator('.battle-preview-settings').boundingBox();
+  expect(settingsBox!.height).toBeLessThan(240);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
