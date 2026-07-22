@@ -1950,12 +1950,12 @@
 
       <section class="setting-block">
         <div class="setting-title-row">
-          <div><h3>音效</h3></div>
+          <div><h3>音乐与音效</h3></div>
           <button
             type="button"
             class:active={soundEnabled}
             class="switch"
-            aria-label={soundEnabled ? '关闭音效' : '开启音效'}
+            aria-label={soundEnabled ? '关闭音乐与音效' : '开启音乐与音效'}
             aria-pressed={soundEnabled}
             on:click={toggleSound}
           ><span></span></button>

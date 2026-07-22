@@ -7,11 +7,15 @@ export interface DrawSoundController {
   dispose(): void;
 }
 
-export interface SpinTickShape {
-  intervalMs: number;
-  frequency: number;
-  volume: number;
-  accent: boolean;
+export interface SpinMusicStep {
+  offset: number;
+  duration: number;
+  chordFrequencies: readonly number[];
+  melodyFrequency: number;
+  bassFrequency: number | null;
+  kick: boolean;
+  snare: boolean;
+  hat: boolean;
 }
 
 export interface ResultNote {
@@ -23,6 +27,14 @@ export interface ResultNote {
 }
 
 const MINIMUM_GAIN = 0.0001;
+const SPIN_BEAT_SECONDS = 60 / 132;
+
+const SPIN_CHORDS = [
+  { pad: [261.63, 329.63, 392], melody: [523.25, 659.25, 783.99, 659.25], bass: 130.81 },
+  { pad: [220, 261.63, 329.63], melody: [440, 523.25, 659.25, 523.25], bass: 110 },
+  { pad: [174.61, 220, 261.63], melody: [349.23, 440, 523.25, 440], bass: 87.31 },
+  { pad: [196, 246.94, 293.66], melody: [392, 493.88, 587.33, 493.88], bass: 98 },
+] as const;
 
 const RESULT_NOTES: Record<DrawSoundOutcome, readonly ResultNote[]> = {
   success: [
@@ -42,18 +54,34 @@ const RESULT_NOTES: Record<DrawSoundOutcome, readonly ResultNote[]> = {
   ],
 };
 
-/** 转动越接近结束，触点节拍越慢、越沉，听感与画面的减速保持一致。 */
-export function spinTickShape(progress: number, tickIndex: number): SpinTickShape {
-  const normalized = Math.max(0, Math.min(1, progress));
-  const slowdown = normalized ** 2.2;
-  const accent = tickIndex % 4 === 0;
-  const pitchPattern = [1, 0.94, 1.03, 0.96][tickIndex % 4] ?? 1;
-  return {
-    intervalMs: 76 + 194 * slowdown,
-    frequency: (1040 - 430 * normalized) * pitchPattern,
-    volume: (accent ? 0.018 : 0.013) + normalized * 0.005,
-    accent,
-  };
+/** 生成完整的转动配乐：四和弦循环、琶音、低音和鼓组，末段随画面一起减速。 */
+export function spinMusicPlan(durationMs: number): SpinMusicStep[] {
+  const duration = Math.max(0.25, durationMs / 1000);
+  const baseStep = SPIN_BEAT_SECONDS / 2;
+  const steps: SpinMusicStep[] = [];
+  let offset = 0;
+  let stepIndex = 0;
+
+  while (offset < duration - 0.035) {
+    const progress = offset / duration;
+    const ending = Math.max(0, (progress - 0.68) / 0.32);
+    const stepDuration = baseStep * (1 + 0.72 * ending * ending);
+    const chord = SPIN_CHORDS[Math.floor(stepIndex / 4) % SPIN_CHORDS.length] ?? SPIN_CHORDS[0];
+    const hasRoomForPad = duration - offset >= baseStep * 1.5;
+    steps.push({
+      offset,
+      duration: Math.min(stepDuration, duration - offset),
+      chordFrequencies: stepIndex % 4 === 0 && hasRoomForPad ? [...chord.pad] : [],
+      melodyFrequency: chord.melody[stepIndex % 4] ?? chord.melody[0],
+      bassFrequency: stepIndex % 2 === 0 ? chord.bass : null,
+      kick: stepIndex % 4 === 0,
+      snare: stepIndex % 4 === 2 && progress < 0.9,
+      hat: progress < 0.92,
+    });
+    offset += stepDuration;
+    stepIndex += 1;
+  }
+  return steps;
 }
 
 /** 返回只读副本，防止播放方意外改变后续揭晓旋律。 */
@@ -67,8 +95,7 @@ export function createDrawSoundController(): DrawSoundController {
   let master: GainNode | null = null;
   let spinSources = new Set<AudioScheduledSourceNode>();
   let resultSources = new Set<AudioScheduledSourceNode>();
-  let spinTimer: ReturnType<typeof setTimeout> | null = null;
-  let spinGeneration = 0;
+  let spinBus: GainNode | null = null;
   let noiseBuffer: AudioBuffer | null = null;
 
   function audioContext(): AudioContext | null {
@@ -109,7 +136,7 @@ export function createDrawSoundController(): DrawSoundController {
 
   function createNoiseBuffer(current: AudioContext): AudioBuffer {
     if (noiseBuffer) return noiseBuffer;
-    const length = Math.max(1, Math.round(current.sampleRate * 0.025));
+    const length = Math.max(1, Math.round(current.sampleRate * 0.16));
     noiseBuffer = current.createBuffer(1, length, current.sampleRate);
     const channel = noiseBuffer.getChannelData(0);
     for (let index = 0; index < channel.length; index += 1) {
@@ -120,11 +147,6 @@ export function createDrawSoundController(): DrawSoundController {
   }
 
   function stopSpin() {
-    spinGeneration += 1;
-    if (spinTimer !== null) {
-      clearTimeout(spinTimer);
-      spinTimer = null;
-    }
     for (const source of spinSources) {
       try {
         source.stop();
@@ -133,6 +155,8 @@ export function createDrawSoundController(): DrawSoundController {
       }
     }
     spinSources.clear();
+    spinBus?.disconnect();
+    spinBus = null;
   }
 
   function stopResult() {
@@ -146,36 +170,116 @@ export function createDrawSoundController(): DrawSoundController {
     resultSources.clear();
   }
 
-  function playSpinTick(current: AudioContext, shape: SpinTickShape) {
-    const now = current.currentTime;
-    const destination = output(current);
+  function playSpinPad(
+    current: AudioContext,
+    frequencies: readonly number[],
+    start: number,
+    duration: number,
+    destination: AudioNode,
+  ) {
+    const filter = current.createBiquadFilter();
+    const volume = current.createGain();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1450, start);
+    filter.frequency.exponentialRampToValueAtTime(720, start + duration);
+    volume.gain.setValueAtTime(MINIMUM_GAIN, start);
+    volume.gain.exponentialRampToValueAtTime(0.014, start + Math.min(0.06, duration / 3));
+    volume.gain.setValueAtTime(0.014, Math.max(start + 0.061, start + duration - 0.16));
+    volume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, start + duration);
+    filter.connect(volume).connect(destination);
 
-    // 三角波提供柔和的触点主体，极短噪声只负责补足真实机械质感。
-    const body = current.createOscillator();
-    const bodyVolume = current.createGain();
-    body.type = 'triangle';
-    body.frequency.setValueAtTime(shape.frequency, now);
-    body.frequency.exponentialRampToValueAtTime(shape.frequency * 0.56, now + 0.036);
-    bodyVolume.gain.setValueAtTime(MINIMUM_GAIN, now);
-    bodyVolume.gain.exponentialRampToValueAtTime(shape.volume, now + 0.003);
-    bodyVolume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, now + 0.045);
-    body.connect(bodyVolume).connect(destination);
-    body.start(now);
-    body.stop(now + 0.05);
-    registerSource(body, spinSources);
+    for (const frequency of frequencies) {
+      const oscillator = current.createOscillator();
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(frequency, start);
+      oscillator.detune.value = frequency === frequencies[1] ? 3 : -3;
+      oscillator.connect(filter);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.015);
+      registerSource(oscillator, spinSources);
+    }
+  }
 
-    const click = current.createBufferSource();
-    const clickFilter = current.createBiquadFilter();
-    const clickVolume = current.createGain();
-    click.buffer = createNoiseBuffer(current);
-    clickFilter.type = 'bandpass';
-    clickFilter.frequency.value = shape.accent ? 1850 : 2250;
-    clickFilter.Q.value = 0.75;
-    clickVolume.gain.setValueAtTime(shape.accent ? 0.009 : 0.006, now);
-    clickVolume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, now + 0.022);
-    click.connect(clickFilter).connect(clickVolume).connect(destination);
-    click.start(now);
-    registerSource(click, spinSources);
+  function playSpinPluck(
+    current: AudioContext,
+    frequency: number,
+    start: number,
+    duration: number,
+    destination: AudioNode,
+  ) {
+    const oscillator = current.createOscillator();
+    const filter = current.createBiquadFilter();
+    const volume = current.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(frequency, start);
+    filter.type = 'lowpass';
+    filter.Q.value = 1.4;
+    filter.frequency.setValueAtTime(2600, start);
+    filter.frequency.exponentialRampToValueAtTime(680, start + duration);
+    volume.gain.setValueAtTime(MINIMUM_GAIN, start);
+    volume.gain.exponentialRampToValueAtTime(0.026, start + 0.006);
+    volume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, start + duration);
+    oscillator.connect(filter).connect(volume).connect(destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.012);
+    registerSource(oscillator, spinSources);
+  }
+
+  function playSpinBass(
+    current: AudioContext,
+    frequency: number,
+    start: number,
+    destination: AudioNode,
+  ) {
+    const oscillator = current.createOscillator();
+    const volume = current.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(frequency, start);
+    volume.gain.setValueAtTime(MINIMUM_GAIN, start);
+    volume.gain.exponentialRampToValueAtTime(0.032, start + 0.008);
+    volume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, start + 0.26);
+    oscillator.connect(volume).connect(destination);
+    oscillator.start(start);
+    oscillator.stop(start + 0.275);
+    registerSource(oscillator, spinSources);
+  }
+
+  function playSpinDrums(
+    current: AudioContext,
+    step: SpinMusicStep,
+    start: number,
+    destination: AudioNode,
+  ) {
+    if (step.kick) {
+      const kick = current.createOscillator();
+      const kickVolume = current.createGain();
+      kick.type = 'sine';
+      kick.frequency.setValueAtTime(125, start);
+      kick.frequency.exponentialRampToValueAtTime(48, start + 0.12);
+      kickVolume.gain.setValueAtTime(0.045, start);
+      kickVolume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, start + 0.15);
+      kick.connect(kickVolume).connect(destination);
+      kick.start(start);
+      kick.stop(start + 0.16);
+      registerSource(kick, spinSources);
+    }
+
+    if (step.hat || step.snare) {
+      const noise = current.createBufferSource();
+      const filter = current.createBiquadFilter();
+      const volume = current.createGain();
+      const noiseDuration = step.snare ? 0.105 : 0.035;
+      noise.buffer = createNoiseBuffer(current);
+      filter.type = step.snare ? 'bandpass' : 'highpass';
+      filter.frequency.value = step.snare ? 1750 : 5200;
+      filter.Q.value = step.snare ? 0.8 : 0.5;
+      volume.gain.setValueAtTime(step.snare ? 0.024 : 0.009, start);
+      volume.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, start + noiseDuration);
+      noise.connect(filter).connect(volume).connect(destination);
+      noise.start(start);
+      noise.stop(start + noiseDuration + 0.005);
+      registerSource(noise, spinSources);
+    }
   }
 
   function startSpin(durationMs: number) {
@@ -185,24 +289,32 @@ export function createDrawSoundController(): DrawSoundController {
     if (!current) return;
     resume(current);
 
-    const generation = spinGeneration;
     const startedAt = current.currentTime;
     const durationSeconds = Math.max(0.25, durationMs / 1000);
-    let tickIndex = 0;
+    spinBus = current.createGain();
+    spinBus.gain.setValueAtTime(MINIMUM_GAIN, startedAt);
+    spinBus.gain.exponentialRampToValueAtTime(0.9, startedAt + Math.min(0.045, durationSeconds / 4));
+    spinBus.gain.setValueAtTime(0.9, startedAt + Math.max(0.05, durationSeconds - 0.3));
+    spinBus.gain.exponentialRampToValueAtTime(MINIMUM_GAIN, startedAt + durationSeconds);
+    spinBus.connect(output(current));
 
-    const scheduleTick = () => {
-      if (generation !== spinGeneration) return;
-      const elapsed = current.currentTime - startedAt;
-      if (elapsed >= durationSeconds) {
-        spinTimer = null;
-        return;
+    const plan = spinMusicPlan(durationMs);
+    for (const step of plan) {
+      const start = startedAt + step.offset;
+      if (step.chordFrequencies.length > 0) {
+        const padDuration = Math.min(durationSeconds - step.offset, step.duration * 4.15);
+        playSpinPad(current, step.chordFrequencies, start, padDuration, spinBus);
       }
-      const shape = spinTickShape(elapsed / durationSeconds, tickIndex);
-      playSpinTick(current, shape);
-      tickIndex += 1;
-      spinTimer = setTimeout(scheduleTick, shape.intervalMs);
-    };
-    scheduleTick();
+      playSpinPluck(
+        current,
+        step.melodyFrequency,
+        start,
+        Math.min(0.28, step.duration * 1.25),
+        spinBus,
+      );
+      if (step.bassFrequency !== null) playSpinBass(current, step.bassFrequency, start, spinBus);
+      playSpinDrums(current, step, start, spinBus);
+    }
   }
 
   function playTone(current: AudioContext, note: ResultNote, startedAt: number) {
