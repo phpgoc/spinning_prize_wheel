@@ -313,9 +313,6 @@
       ? names.length === 8
       : names.length >= 4 && (battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput)
   );
-  $: battleTmpCompletedCount = battleTmpSnapshot?.matches.filter((match) => (
-    match.status === 'completed' || match.status === 'skipped'
-  )).length ?? 0;
   $: battlePreviewSnapshot = createBattlePreviewSnapshot(
     battlePage,
     battleTmpSnapshot,
@@ -1417,32 +1414,6 @@
     resetLineupReveal();
     await tick();
     focusLineupResult();
-  }
-
-  async function editLineupHistory(history: SavedLineup) {
-    const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number }>;
-    const sourceNames = Array.isArray(input.sourceNames)
-      ? input.sourceNames.filter((name): name is string => typeof name === 'string' && Boolean(name.trim()))
-      : [];
-    if (sourceNames.length === 0) {
-      historyError = '这条历史记录没有名单';
-      return;
-    }
-    const text = sourceNames.join('\n');
-    sourceText = text;
-    confirmedSourceText = text;
-    groupCount = Number.isInteger(input.groupCount) && Number(input.groupCount) >= 2
-      ? Number(input.groupCount)
-      : groupCount;
-    result = null;
-    resultHistory = null;
-    resultSourceNames = [];
-    resultOrderedNames = [];
-    historyStatus = 'idle';
-    historyError = '';
-    await resolveNames();
-    await tick();
-    sourceTextarea?.focus({ preventScroll: true });
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -2586,14 +2557,6 @@
     return '双败';
   }
 
-  function battleSyncStatusLabel(): string {
-    if (battleSyncStatus === 'loading') return '读取中';
-    if (battleSyncStatus === 'saving') return '同步中';
-    if (battleSyncStatus === 'saved') return '已同步';
-    if (battleSyncStatus === 'error') return '同步失败';
-    return '尚未执行';
-  }
-
   async function updateBattleScore(match: BattleTmpMatch, side: 'up' | 'down', event: Event) {
     const target = event.currentTarget as HTMLInputElement;
     const score = target.value.trim() === '' ? null : Number(target.value);
@@ -2855,37 +2818,16 @@
         <section class:open={desktopPanel === 'history'} class="desktop-accordion">
           <button
             type="button"
-            class:battle-state-toggle={battlePage}
             class="desktop-accordion-toggle"
             aria-expanded={desktopPanel === 'history'}
             on:click={() => toggleDesktopPanel('history')}
           >
-            <span>{battlePage ? '对战状态' : '分组历史'}</span><strong>{battlePage ? '实时同步' : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+            <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage ? '最近 20 条' : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
-              <div class="desktop-accordion-content history-panel battle-state-panel">
+              <div class="desktop-accordion-content history-panel">
                 <input bind:this={battleHistoryFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importBattleHistoryFile} />
-                {#if battleTmpSnapshot}
-                  <div class:error={battleSyncStatus === 'error'} class:saving={battleSyncStatus === 'saving'} class="battle-state-sync" role="status">
-                    <i></i><strong>{battleSyncStatusLabel()}</strong><span>{formatHistoryDate(battleTmpSnapshot.updatedAt)}</span>
-                  </div>
-                  <dl>
-                    <div><dt>赛制</dt><dd>{battleTmpFormatLabel(battleTmpSnapshot.format)}</dd></div>
-                    <div><dt>参赛者</dt><dd>{battleTmpSnapshot.participantCount} 人</dd></div>
-                    <div><dt>场次行</dt><dd>{battleTmpSnapshot.matches.length} 行</dd></div>
-                    <div><dt>已处理</dt><dd>{battleTmpCompletedCount} / {battleTmpSnapshot.matches.length}</dd></div>
-                  </dl>
-                  <p>所有赛程行已关系化保存；修改赛果时只同步该场及受影响的下游。</p>
-                  <div class="history-export-actions battle-state-actions">
-                    <button type="button" on:click={saveCurrentBattleHistory}>保存历史</button>
-                    <button type="button" on:click={exportBattleTmpExcel}>导出 Excel</button>
-                    <button type="button" on:click={exportBattleTmpJson}>导出 JSON</button>
-                    <button type="button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
-                  </div>
-                {:else}
-                  <p class="battle-state-empty">抽签后，这里会显示实时数据库状态。</p>
-                {/if}
                 <div class="history-dates battle-history-dates">
                   <label><span>开始日期</span><input type="date" bind:value={battleHistoryStart} /></label>
                   <label title="所选日期当天不计入结果"><span>结束前（不含）</span><input type="date" bind:value={battleHistoryEnd} /></label>
@@ -2939,7 +2881,6 @@
                         <small>预览 →</small>
                       </button>
                       <div class="history-item-actions">
-                        <button type="button" on:click={() => void editLineupHistory(history)}>编辑</button>
                         <button type="button" on:click={() => void exportLineupHistoryExcel(history)}>Excel</button>
                         <button type="button" on:click={() => void exportLineupHistoryJson(history)}>JSON</button>
                         <button
@@ -3201,6 +3142,7 @@
                 {#if hiddenBattleSlotCount > 0}
                   <button type="button" class="result-export-button reveal-all-button" on:click={revealAllBattleSlots}>显示全部</button>
                 {/if}
+                <button type="button" class="result-export-button" on:click={saveCurrentBattleHistory}>保存历史</button>
                 <button type="button" class="result-export-button" on:click={exportBattleTmpExcel}>Excel</button>
                 <button type="button" class="result-export-button" on:click={exportBattleTmpJson}>JSON</button>
                 <button type="button" class="result-export-button" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</button>
@@ -3229,7 +3171,7 @@
           {:else if battlePreviewSnapshot}
             <div class="battle-preview-bracket" aria-label="只读对战预览">
               {#key 'battle-preview'}
-                <BattleBracketViewer snapshot={battlePreviewSnapshot} maskUnfixed />
+                <BattleBracketViewer snapshot={battlePreviewSnapshot} maskUnfixed previewOnly />
               {/key}
             </div>
           {:else}
@@ -4373,22 +4315,8 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
   }
   .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .battle-state-panel > p { margin: 10px 2px 0; color: var(--lineup-dim-on-light); font-size: calc(11px * var(--font-scale, 1)); line-height: 1.6; }
-  .battle-state-panel > p.battle-state-empty { padding: 18px 8px; margin: 0; font-size: calc(12px * var(--font-scale, 1)); text-align: center; }
-  .battle-state-sync { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border: 1px solid rgba(83, 111, 32, 0.18); border-radius: 9px; background: rgba(127, 146, 63, 0.08); color: #52671f; }
-  .battle-state-sync i { width: 7px; height: 7px; border-radius: 50%; background: #7f923f; box-shadow: 0 0 0 3px rgba(127, 146, 63, 0.12); }
-  .battle-state-sync strong { font-size: calc(11px * var(--font-scale, 1)); }
-  .battle-state-sync span { margin-left: auto; color: var(--lineup-dim-on-light); font-size: calc(9px * var(--font-scale, 1)); }
-  .battle-state-sync.saving i { animation: battle-sync-pulse 900ms ease-in-out infinite; }
-  .battle-state-sync.error { border-color: rgba(161, 48, 48, 0.22); background: rgba(161, 48, 48, 0.08); color: #9c3030; }
-  .battle-state-sync.error i { background: #b23e3e; box-shadow: 0 0 0 3px rgba(178, 62, 62, 0.12); }
-  .battle-state-panel dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 10px 0 0; }
-  .battle-state-panel dl div { padding: 8px 9px; border: 1px solid rgba(36, 37, 31, 0.08); border-radius: 8px; background: rgba(255, 255, 255, 0.32); }
-  .battle-state-panel dt { color: var(--lineup-dim-on-light); font-size: calc(9px * var(--font-scale, 1)); }
-  .battle-state-panel dd { margin: 3px 0 0; color: #363c28; font-size: calc(12px * var(--font-scale, 1)); font-weight: 750; }
   .battle-state-actions { justify-content: stretch; }
   .battle-state-actions button { flex: 1; }
-  @keyframes battle-sync-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
 
   .slow-reveal-setting {
     display: inline-flex;
@@ -4539,14 +4467,6 @@
     font-size: calc(16px * var(--font-scale, 1));
     font-style: normal;
     text-align: right;
-  }
-
-  .desktop-accordion-toggle.battle-state-toggle {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .desktop-accordion-toggle.battle-state-toggle i {
-    white-space: nowrap;
   }
 
   .desktop-accordion.open .desktop-accordion-toggle {

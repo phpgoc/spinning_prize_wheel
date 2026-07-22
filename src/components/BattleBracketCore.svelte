@@ -18,6 +18,7 @@
   };
   type BattleBracketLayout = {
     groups: BattleRoundGroup[];
+    preview: BattleRoundGroup[];
     winner: BattleRoundGroup[];
     loser: BattleRoundGroup[];
     final: BattleRoundGroup[];
@@ -31,6 +32,7 @@
   export let snapshot: BattleTmpSnapshot;
   export let readOnly = false;
   export let maskUnfixed = false;
+  export let previewOnly = false;
   export let hiddenSlotKeys: ReadonlySet<string> = new Set();
   export let saving = false;
   export let onMatchKeydown: ((event: KeyboardEvent) => void) | undefined = undefined;
@@ -81,6 +83,11 @@
     const groups = groupBattleTmpMatches(current);
     return {
       groups,
+      // 抽签前没有任何晋级结果，因此不预先渲染败者组、决赛等未来场次。
+      preview: groups.filter((group) => (
+        group.matches[0].level === 1
+        && (group.stage === 'single' || group.stage === 'winner' || group.stage === 'pairing')
+      )),
       winner: groups.filter((group) => group.stage === 'winner'),
       loser: groups.filter((group) => group.stage === 'loser'),
       final: groups.filter((group) => group.stage === 'final'),
@@ -266,7 +273,13 @@
   </article>
 {/snippet}
 
-{#if snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair'}
+{#if previewOnly}
+  <div class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="battle-bracket battle-preview-rounds">
+    {#each layout.preview as round (round.id)}
+      <section class="battle-round"><h3>首轮签位</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
+    {/each}
+  </div>
+{:else if snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair'}
   <div use:observeSingleBracket class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="single-battle-bracket">
     {#if singleConnectorPaths.length > 0}
       <svg
