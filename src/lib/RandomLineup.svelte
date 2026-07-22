@@ -3430,7 +3430,7 @@
   .battle-preview-settings {
     display: grid;
     grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.72fr) minmax(250px, 1.28fr);
-    gap: 7px;
+    gap: 6px;
     margin-top: 18px;
     padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
