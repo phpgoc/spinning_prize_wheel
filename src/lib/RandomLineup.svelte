@@ -178,6 +178,8 @@
   let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
+  let revealedBattleSlots = new Set<string>();
+  let allBattleSlotsRevealed = false;
   let hiddenLineupCellKeys = new Set<string>();
   let battleFormat: BattleFormat = 'avoid-first-pair';
   let battleOrderMode: BattleOrderMode = 'input';
@@ -236,6 +238,18 @@
     )));
   })();
   $: hiddenLineupCellCount = hiddenLineupCellKeys.size;
+  $: hiddenBattleSlotKeys = (() => {
+    if (!battleTmpSnapshot || !slowRevealEnabled || allBattleSlotsRevealed) return new Set<string>();
+    return new Set(battleTmpSnapshot.matches.flatMap((match) => [
+      ...(match.level > 1 && match.up !== null && !revealedBattleSlots.has(battleSlotKey(match, 'up'))
+        ? [battleSlotKey(match, 'up')]
+        : []),
+      ...(match.level > 1 && match.down !== null && !revealedBattleSlots.has(battleSlotKey(match, 'down'))
+        ? [battleSlotKey(match, 'down')]
+        : []),
+    ]));
+  })();
+  $: hiddenBattleSlotCount = hiddenBattleSlotKeys.size;
   $: groupingUnrankedCount = desktopRuntime
     ? unrankedLineupNameCount(names, resolvedNames)
     : 0;
@@ -582,6 +596,7 @@
         });
       lastConfirmedBattleScore = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
+      resetBattleReveal();
       if (desktopRuntime) {
         battleSyncStatus = 'saving';
         try {
@@ -728,6 +743,7 @@
       }
       const state = parseBattleTmpSnapshot(value, variant);
       battleTmpSnapshot = state;
+      resetBattleReveal();
       battleFormat = state.format;
       battleOrderMode = state.orderMode;
       battleFixedSeedCount = state.fixedSeedCount;
@@ -909,9 +925,15 @@
     allLineupCellsRevealed = false;
   }
 
+  function resetBattleReveal() {
+    revealedBattleSlots = new Set();
+    allBattleSlotsRevealed = false;
+  }
+
   function updateSlowReveal(event: Event) {
     slowRevealEnabled = (event.currentTarget as HTMLInputElement).checked;
     resetLineupReveal();
+    resetBattleReveal();
   }
 
   function lineupCellKey(tierIndex: number, groupIndex: number): string {
@@ -929,6 +951,18 @@
 
   function revealAllLineupCells() {
     allLineupCellsRevealed = true;
+  }
+
+  function battleSlotKey(match: BattleTmpMatch, slot: 'up' | 'down'): string {
+    return `${match.matchId}:${slot}`;
+  }
+
+  function revealBattleSlot(match: BattleTmpMatch, slot: 'up' | 'down') {
+    revealedBattleSlots = new Set(revealedBattleSlots).add(battleSlotKey(match, slot));
+  }
+
+  function revealAllBattleSlots() {
+    allBattleSlotsRevealed = true;
   }
 
   async function openPreviewInsertion(index: number) {
@@ -2023,6 +2057,7 @@
     result = null;
     resultHistory = null;
     battleTmpSnapshot = null;
+    resetBattleReveal();
     lastConfirmedBattleScore = null;
     battleSyncStatus = 'idle';
     error = '';
@@ -2239,7 +2274,12 @@
       class:waiting={match.up === null}
       class="battle-side"
     >
-      <div><strong>{battleTmpSlotName(match, 'up')}</strong></div>
+      <div>
+        {#if hiddenBattleSlotKeys.has(`${match.matchId}:up`)}
+          <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, 'up')}`} on:click|stopPropagation={() => revealBattleSlot(match, 'up')}>·</button>
+          <span class="visually-hidden">{battleTmpSlotName(match, 'up')}</span>
+        {:else}<strong>{battleTmpSlotName(match, 'up')}</strong>{/if}
+      </div>
       <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="up" aria-label={`${battleTmpSlotName(match, 'up')} 上方比分`} value={match.upResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'up', event)} on:change={(event) => updateBattleScore(match, 'up', event)} />
     </div>
     <div
@@ -2248,7 +2288,12 @@
       class:waiting={match.down === null}
       class="battle-side"
     >
-      <div><strong>{battleTmpSlotName(match, 'down')}</strong></div>
+      <div>
+        {#if hiddenBattleSlotKeys.has(`${match.matchId}:down`)}
+          <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, 'down')}`} on:click|stopPropagation={() => revealBattleSlot(match, 'down')}>·</button>
+          <span class="visually-hidden">{battleTmpSlotName(match, 'down')}</span>
+        {:else}<strong>{battleTmpSlotName(match, 'down')}</strong>{/if}
+      </div>
       <input type="number" min="0" step="1" inputmode="numeric" data-battle-match-id={match.matchId} data-battle-side="down" aria-label={`${battleTmpSlotName(match, 'down')} 下方比分`} value={match.downResult ?? ''} disabled={match.up === null || match.down === null || battleSyncStatus === 'saving' || match.status === 'skipped'} on:focus={handleBattleScoreFocus} on:keydown={(event) => handleBattleScoreKeydown(match, 'down', event)} on:change={(event) => updateBattleScore(match, 'down', event)} />
     </div>
   </article>
@@ -2645,6 +2690,7 @@
                 至少 2 项
               {/if}
             </div>
+            <label class="slow-reveal-setting battle-reveal-setting"><input type="checkbox" checked={slowRevealEnabled} on:change={updateSlowReveal} /><span>悬念揭晓</span></label>
           </div>
         {/if}
 
@@ -2717,6 +2763,9 @@
             <div><span>03</span><div><h2>对战</h2><p>{battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battleFixedPreviewMatches.length > 0 ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
             {#if battleTmpSnapshot}
               <div class="result-output-actions">
+                {#if hiddenBattleSlotCount > 0}
+                  <button type="button" class="result-export-button reveal-all-button" on:click={revealAllBattleSlots}>显示全部</button>
+                {/if}
                 <button type="button" class="result-export-button" on:click={exportBattleTmpExcel}>Excel</button>
                 <button type="button" class="result-export-button" on:click={exportBattleTmpJson}>JSON</button>
               </div>
@@ -3421,6 +3470,30 @@
   .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
   .battle-side input:disabled { opacity: 0.4; }
   .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
+  .battle-reveal-slot {
+    display: block;
+    width: 100%;
+    min-height: 24px;
+    padding: 0;
+    border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: calc(21px * var(--font-scale, 1));
+    line-height: 1;
+  }
+  .battle-reveal-slot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
   table {
     width: 100%;
     min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));

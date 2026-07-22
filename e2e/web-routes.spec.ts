@@ -174,6 +174,29 @@ test('宽屏并排显示三组对战选项', async ({ page }) => {
   expect(settingsBox!.height).toBeLessThan(240);
 });
 
+test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+
+  const firstMatch = page.locator('.single-bracket-side .battle-match').first();
+  const firstName = (await firstMatch.locator('.battle-side strong').first().textContent())!.trim();
+  const firstInputs = firstMatch.locator('input[type="number"]');
+  await firstInputs.nth(0).fill('4');
+  await firstInputs.nth(1).fill('1');
+  await firstInputs.nth(1).press('Enter');
+
+  const finalMatch = page.locator('.single-bracket-final .battle-match');
+  await expect(finalMatch.locator('.battle-reveal-slot')).toHaveCount(1);
+  await expect(finalMatch).toContainText(firstName);
+  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
+  await finalMatch.getByRole('button', { name: `揭晓 ${firstName}` }).click();
+  await expect(finalMatch.locator('.battle-reveal-slot')).toHaveCount(0);
+  await expect(finalMatch.locator('.battle-side strong').first()).toContainText(firstName);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
