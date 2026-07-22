@@ -80,6 +80,23 @@ test('桌面抽奖不再占用 S，自动保存仍可通过设置切换', async 
   await expect(page.getByRole('button', { name: '开启自动保存历史' })).toBeVisible();
 });
 
+test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto('/#/draw');
+  await page.keyboard.press('z');
+
+  const battleShortcuts = page.locator('.shortcut-battle');
+  await expect(battleShortcuts.getByRole('heading', { name: '对战页' })).toBeVisible();
+  await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(7);
+  await expect(battleShortcuts).toContainText('聚焦对战区');
+  await expect(battleShortcuts).toContainText('聚焦名单');
+  await expect(battleShortcuts).toContainText('进入 / 返回全屏');
+  await expect(battleShortcuts).toContainText('比分框上 / 下');
+  await expect(battleShortcuts).toContainText('比分框左 / 右');
+  await expect(battleShortcuts).toContainText('打开 / 关闭排名');
+  await expect(battleShortcuts).toContainText('打开 / 关闭对战状态');
+});
+
 test('排名字号放大时排名框同步扩容', async ({ page }) => {
   await openDesktopLineup(page);
   const normalNumber = page.locator('.ranked-user-list .rank-number').first();
