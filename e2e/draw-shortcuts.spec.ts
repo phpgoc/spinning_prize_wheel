@@ -25,6 +25,19 @@ test('发布版默认不再带示例候选', async ({ page }) => {
   await expect(page.getByRole('button', { name: '＋ 保存为常用候选' })).toBeDisabled();
 });
 
+test('转盘音效可关闭并持久化', async ({ page }) => {
+  const soundToggle = page.getByRole('button', { name: '关闭音效' });
+  await expect(soundToggle).toHaveAttribute('aria-pressed', 'true');
+  await soundToggle.click();
+  await expect(page.getByRole('button', { name: '开启音效' })).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').soundEnabled
+  ))).toBe(false);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: '开启音效' })).toHaveAttribute('aria-pressed', 'false');
+});
+
 test('大窗口会继续放大转盘并保留候选栏空间', async ({ page }) => {
   const wheel = page.locator('.wheel-stage, .luxury-stage, .monopoly-stage');
   await expect(wheel).toHaveCount(1);

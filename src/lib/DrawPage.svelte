@@ -33,6 +33,7 @@
     filterDrawHistories,
     singleDrawHistoryStats,
   } from './draw-history';
+  import { createDrawSoundController, type DrawSoundOutcome } from './draw-sound';
   import { downloadExcel, downloadFormattedJson } from './file-export';
   import { parseOptionText } from './parse-options';
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from './text-shortcuts';
@@ -110,6 +111,7 @@
   export let mode: DrawMode = 'selected';
   let animationStyle: AnimationStyle = 'luxury';
   let durationSeconds = 4;
+  let soundEnabled = true;
   let rewardAmount = 0;
   let retryEnabled = true;
   let retryWeight = 0.65;
@@ -171,6 +173,7 @@
   let hydrated = false;
   let timer: number | undefined;
   let continuousTimer: number | undefined;
+  const drawSound = createDrawSoundController();
   let result: ResultCard = {
     eyebrow: '准备就绪',
     title: '好运正在路上',
@@ -247,6 +250,7 @@
         mode,
         animationStyle,
         durationSeconds,
+        soundEnabled,
         rewardAmount,
         retryEnabled,
         retryWeight,
@@ -266,6 +270,7 @@
           mode: DrawMode;
           animationStyle: AnimationStyle;
           durationSeconds: number;
+          soundEnabled: boolean;
           rewardAmount: number;
           retryEnabled: boolean;
           retryWeight: number;
@@ -283,6 +288,7 @@
         if (typeof parsed.durationSeconds === 'number') {
           durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
         }
+        if (typeof parsed.soundEnabled === 'boolean') soundEnabled = parsed.soundEnabled;
         if (typeof parsed.rewardAmount === 'number') {
           rewardAmount = Math.max(0, parsed.rewardAmount);
         }
@@ -308,7 +314,17 @@
   onDestroy(() => {
     if (timer) window.clearTimeout(timer);
     if (continuousTimer) window.clearTimeout(continuousTimer);
+    drawSound.dispose();
   });
+
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    if (!soundEnabled) drawSound.stopSpin();
+  }
+
+  function playDrawResultSound(outcome: DrawSoundOutcome) {
+    if (soundEnabled) drawSound.playResult(outcome);
+  }
 
   function createId(prefix: string): string {
     return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1167,6 +1183,7 @@
     }
 
     isSpinning = true;
+    if (soundEnabled) drawSound.startSpin(durationSeconds * 1000);
     result = {
       eyebrow: usesMonopoly ? '棋盘走格中' : '命运正在选择',
       title: '别眨眼…',
@@ -1250,6 +1267,7 @@
 
   function settleSingleDraw(picked: WheelOption) {
     isSpinning = false;
+    drawSound.stopSpin();
     singleAttempt += 1;
 
     if (picked.isRetry) {
@@ -1270,6 +1288,7 @@
         detail: '这次已记入重来统计，但不占用有效结果。',
         tone: 'retry',
       };
+      playDrawResultSound('retry');
       return;
     }
 
@@ -1291,6 +1310,7 @@
           : retryTotal > 0 ? `好运落定 · 当前累计重来 ${retryTotal} 次` : '好运落定，恭喜获得本次结果。',
         tone: 'success',
       };
+      playDrawResultSound('success');
       return;
     }
 
@@ -1330,6 +1350,7 @@
           : `${hit.name} 最后出局，轮盘上只剩下赢家。`,
         tone: 'success',
       };
+      playDrawResultSound('success');
     } else {
       addRecord({
         round: rouletteRound,
@@ -1349,6 +1370,7 @@
           : `${hit.name} 损失1命，还剩 ${livesLeft} 命，转盘比例已缩小。`,
         tone: 'danger',
       };
+      playDrawResultSound('eliminated');
     }
   }
 
@@ -1924,6 +1946,20 @@
           style={`--range-progress: ${((durationSeconds - 1) / 9) * 100}%`}
         />
         <div class="range-labels"><span>迅速</span><span>仪式感</span><span>史诗</span></div>
+      </section>
+
+      <section class="setting-block">
+        <div class="setting-title-row">
+          <div><h3>音效</h3></div>
+          <button
+            type="button"
+            class:active={soundEnabled}
+            class="switch"
+            aria-label={soundEnabled ? '关闭音效' : '开启音效'}
+            aria-pressed={soundEnabled}
+            on:click={toggleSound}
+          ><span></span></button>
+        </div>
       </section>
 
       <section class="setting-block duration-block">
