@@ -3469,7 +3469,7 @@
   }
   .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
   .battle-side input:disabled { opacity: 0.4; }
-  .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(12px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
+  .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(24px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
   .battle-reveal-slot {
     display: block;
     width: 100%;

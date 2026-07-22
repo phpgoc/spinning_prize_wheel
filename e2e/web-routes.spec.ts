@@ -197,6 +197,14 @@ test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
   await expect(finalMatch.locator('.battle-side strong').first()).toContainText(firstName);
 });
 
+test('对战选手名默认字号加倍', async ({ page }) => {
+  await page.goto('/#/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  await expect(page.locator('.battle-match strong').first()).toHaveCSS('font-size', '24px');
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/#/battle');
   await page.locator('.battle-config textarea').fill(
