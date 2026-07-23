@@ -2,22 +2,30 @@ import { defineConfig } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [tailwindcss(), sveltekit()],
   clearScreen: false,
   optimizeDeps: {
     // 工程位于 Windows 挂载盘时，全量扫描 Svelte 页面会让冷启动卡住很久。
-    // ExcelJS 是唯一必须预构建的 CommonJS 依赖，其余依赖均可直接按 ESM 提供。
+    // 开发服务仍预构建 ExcelJS，确保 CommonJS 互操作稳定；生产构建则保持按需加载。
     noDiscovery: true,
-    include: ['exceljs'],
+    ...(command === 'serve' ? { include: ['exceljs'] } : {}),
   },
   build: {
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
-    // Web 发布包刻意生成单文件，体积告警按完整离线包计算。
+    // 静态资源内联，ExcelJS 仍拆成导出时才请求的独立 chunk。
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/exceljs/')) return 'exceljs';
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port: 5173,
     strictPort: true,
   },
-});
+}));

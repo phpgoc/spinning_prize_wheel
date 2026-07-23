@@ -5005,6 +5005,14 @@
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
     .lineup-workbench.desktop .lineup-center { grid-column: 2; grid-row: 1; }
     .lineup-workbench.desktop .lineup-config { grid-column: 2; grid-row: 2; width: min(100%, 420px); }
+
+    /* 对战结果区在中等窗口也会比整页窄，颜色控件需要换到工具栏下一行，不能横向裁掉。 */
+    .battle-result-toolbar { flex-wrap: wrap; }
+    .battle-color-controls {
+      flex: 1 1 100%;
+      grid-template-columns: max-content minmax(0, 1fr) max-content;
+    }
+    .battle-color-custom { min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @media (max-width: 900px) {
@@ -5029,6 +5037,8 @@
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .battle-result-toolbar { align-items: flex-start; flex-direction: column; }
     .battle-color-controls { grid-template-columns: minmax(0, 1fr); }
+    .battle-color-actions { flex-direction: row; }
+    .battle-color-actions :global(button) { flex: 1; }
     .lineup-actions { flex-direction: column; }
     .lineup-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
   }

@@ -87,6 +87,35 @@ test('对战比分数字输入隐藏原生微调并支持 Alt 上下调整', asy
   await expect(score).toHaveCSS('appearance', 'textfield');
 });
 
+test('单败最终轮卡片宽度随轮次放大而不会被外层轨道压缩', async ({ page }) => {
+  await drawBattle(page, '单败', 8);
+
+  const widths = await page.locator('.single-battle-bracket [data-battle-stage="single"]')
+    .evaluateAll((matches) => matches.map((match) => ({
+      level: Number(match.getAttribute('data-battle-level')),
+      width: match.getBoundingClientRect().width,
+    })));
+  const widthByLevel = new Map<number, number>();
+  for (const entry of widths) widthByLevel.set(entry.level, entry.width);
+
+  expect(widthByLevel.get(2)).toBeGreaterThan((widthByLevel.get(1) ?? 0) * 1.05);
+  expect(widthByLevel.get(3)).toBeGreaterThan((widthByLevel.get(2) ?? 0) * 1.05);
+});
+
+test('中等宽度对战页的四个颜色控件和存档按钮不会被横向裁掉', async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.goto('/battle');
+  await expect(page.locator('.battle-result')).toBeVisible();
+
+  const controls = page.locator('.battle-color-controls');
+  await expect(controls.locator('.ui-color-palette')).toHaveCount(4);
+  const overflow = await controls.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  for (const buttonName of ['保存配色', '加载配色']) {
+    await expect(controls.getByRole('button', { name: buttonName })).toBeVisible();
+  }
+});
+
 async function drawBattle(page: Page, label: string, count: number) {
   await page.goto('/battle', { waitUntil: 'domcontentloaded' });
   const textarea = page.locator('.names-field textarea');

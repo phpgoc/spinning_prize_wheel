@@ -93,7 +93,13 @@
   />
 {/snippet}
 
-<div use:observeBracket class:read-only={readOnly} class:mask-unfixed={maskUnfixed} class="single-battle-bracket">
+<div
+  use:observeBracket
+  class:read-only={readOnly}
+  class:mask-unfixed={maskUnfixed}
+  class="single-battle-bracket"
+  style={`--battle-final-growth: ${layout.final ? battleRoundGrowth('single', layout.final.level) : 1};`}
+>
   {#if connectorPaths.length > 0}
     <svg class="single-bracket-connectors" width={connectorWidth} height={connectorHeight} viewBox={`0 0 ${connectorWidth} ${connectorHeight}`} aria-hidden="true">
       {#each connectorPaths as path}<path d={path}></path>{/each}
@@ -124,10 +130,16 @@
     --battle-round-width: calc(235px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     --battle-match-row-gap: calc(36px * var(--battle-layout-scale, 1));
     --battle-round-column-gap: calc(108px * var(--battle-layout-scale, 1));
+    --battle-final-width: calc(
+      (235px + 24px)
+      * var(--battle-layout-scale, 1)
+      * var(--battle-final-growth, 1)
+      + 2px
+    );
     position: relative;
     display: grid;
     min-width: 0;
-    grid-template-columns: max-content var(--battle-round-width) max-content;
+    grid-template-columns: max-content var(--battle-final-width) max-content;
     gap: var(--battle-round-column-gap);
     align-items: center;
     margin-top: 18px;
