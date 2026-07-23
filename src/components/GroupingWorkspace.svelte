@@ -2288,7 +2288,25 @@
     const selector = group === 'single'
       ? '.single-battle-bracket .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)'
       : `.double-${group}-section .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)`;
-    const target = lineupResultElement.querySelector<HTMLInputElement>(selector);
+    const inputs = [...lineupResultElement.querySelectorAll<HTMLInputElement>(selector)];
+    // 魔法键按“未填写优先、层级优先、签位顺序”找目标，不能让左侧已完成的首轮把右侧首轮空位挤掉。
+    const orderedInputs = inputs
+      .map((input, index) => ({
+        input,
+        index,
+        empty: input.value.trim() === '',
+        level: Number(input.closest<HTMLElement>('.battle-match')?.dataset.battleLevel) || Number.MAX_SAFE_INTEGER,
+        position: Number(input.closest<HTMLElement>('.battle-match')?.dataset.battlePosition) || Number.MAX_SAFE_INTEGER,
+        side: input.dataset.battleSide === 'down' ? 1 : 0,
+      }))
+      .sort((left, right) => (
+        Number(right.empty) - Number(left.empty)
+        || left.level - right.level
+        || left.position - right.position
+        || left.side - right.side
+        || left.index - right.index
+      ));
+    const target = orderedInputs[0]?.input;
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }

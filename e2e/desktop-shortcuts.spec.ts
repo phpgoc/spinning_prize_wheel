@@ -664,6 +664,16 @@ test('单败左右晋级，上下衔接且对战快捷键不被比分框占用',
   await singleP4.locator('input').nth(1).press('s');
   await expect(page.locator('.single-battle-bracket input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-position', '1');
 
+  // 左侧首轮完成后，右侧首轮仍有空位时，S 不能提前跳到左侧第二轮。
+  const leftFirstRound = page.locator('.single-bracket-side.left .battle-round').first();
+  await enterDesktopBattleScore(leftFirstRound.locator('.battle-match').nth(0), 4, 1);
+  await enterDesktopBattleScore(leftFirstRound.locator('.battle-match').nth(1), 4, 1);
+  await leftFirstRound.locator('.battle-match').nth(1).locator('input').first().focus();
+  await page.keyboard.press('s');
+  const singleMagicTarget = page.locator('.single-battle-bracket input:focus').locator('xpath=ancestor::article[1]');
+  await expect(singleMagicTarget).toHaveAttribute('data-battle-level', '1');
+  await expect(singleMagicTarget).toHaveAttribute('data-battle-position', '3');
+
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
@@ -682,13 +692,26 @@ test('单败左右晋级，上下衔接且对战快捷键不被比分框占用',
   }
   await expect(page.locator('[data-battle-stage="loser"][data-battle-level="1"][data-battle-status="ready"]')).not.toHaveCount(0);
   await firstWinnerRound.first().locator('input').first().focus();
+  await firstWinnerRound.first().locator('input').first().press('w');
+  await expect(page.locator('.double-winner-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-level', '2');
+  await firstWinnerRound.first().locator('input').first().focus();
   await firstWinnerRound.first().locator('input').first().press('l');
   await expect(page.locator('.double-loser-section input:focus')).toHaveCount(1);
   await expect(page.locator('.double-loser-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-status', 'ready');
 
-  await firstWinnerRound.first().locator('input').first().focus();
-  await firstWinnerRound.first().locator('input').first().press('w');
-  await expect(page.locator('.double-winner-section input:focus').locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-level', '2');
+  // 败者组第二层已经有空位时，仍要先处理败者组第一层剩下的空位。
+  const firstLoserRound = page.locator('[data-battle-stage="loser"][data-battle-level="1"]');
+  await enterDesktopBattleScore(firstLoserRound.first(), 4, 1);
+  const secondWinnerRound = page.locator('[data-battle-stage="winner"][data-battle-level="2"]');
+  await enterDesktopBattleScore(secondWinnerRound.nth(0), 4, 1);
+  await enterDesktopBattleScore(secondWinnerRound.nth(1), 4, 1);
+  await expect(page.locator('[data-battle-stage="loser"][data-battle-level="2"][data-battle-status="ready"]')).toHaveCount(1);
+  await firstLoserRound.nth(1).locator('input').first().focus();
+  await page.keyboard.press('l');
+  const loserMagicTarget = page.locator('.double-loser-section input:focus').locator('xpath=ancestor::article[1]');
+  await expect(loserMagicTarget).toHaveAttribute('data-battle-level', '1');
+  await expect(loserMagicTarget).toHaveAttribute('data-battle-position', '2');
+
   await expect(page.locator('.double-loser-section .battle-round').nth(0).getByRole('heading')).toHaveText('第 1 轮');
   await expect(page.locator('.double-loser-section .battle-round').nth(1).getByRole('heading')).toHaveText('第 2 轮');
 
