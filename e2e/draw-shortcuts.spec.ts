@@ -256,16 +256,22 @@ test('高级转盘启动和落点具有分层动效', async ({ page }) => {
 });
 
 test('中奖结果展示在抽签区右下角且不显示有效次数', async ({ page }) => {
-  await importCandidates(page, ['星河', '流光', '月桂', '极光']);
+  const candidates = ['星河', '流光', '月桂', '极光'];
+  await importCandidates(page, candidates);
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
   await page.getByLabel('动画时长').fill('1');
+  const wheel = page.locator('.luxury-stage');
+  const wheelBefore = await wheel.boundingBox();
   await page.locator('.luxury-button').click();
 
   const winner = page.locator('.wheel-stack .winner-reveal');
   const winnerName = winner.locator('strong');
   await expect(winner).toBeVisible({ timeout: 4_000 });
   await expect(winnerName).not.toBeEmpty();
-  await expect(winner).not.toContainText(/第\s*\d+\s*次有效结果/u);
+  expect(candidates).toContain((await winnerName.textContent())?.trim());
   await expect(winner.locator('span')).toHaveCount(0);
+  await expect(winner.locator('button')).toHaveCount(0);
+  await expect(winner.locator(':scope > *')).toHaveCount(1);
 
   const layout = await page.locator('.wheel-stack').evaluate((stack) => {
     const wheel = stack.querySelector('.luxury-stage')?.getBoundingClientRect();
@@ -276,16 +282,25 @@ test('中奖结果展示在抽签区右下角且不显示有效次数', async ({
       wheel,
       winner,
       stackBox,
+      stackDisplay: getComputedStyle(stack).display,
+      winnerPosition: winner ? getComputedStyle(stack.querySelector('.winner-reveal')!).position : '',
       winnerFontSize: winnerTitle ? Number.parseFloat(getComputedStyle(winnerTitle).fontSize) : 0,
     };
   });
 
+  expect(wheelBefore).toBeTruthy();
   expect(layout.wheel).toBeTruthy();
   expect(layout.winner).toBeTruthy();
-  expect(layout.winnerFontSize).toBeGreaterThanOrEqual(38);
-  expect(layout.winner!.left).toBeGreaterThanOrEqual(layout.wheel!.right);
-  expect(layout.winner!.left).toBeGreaterThan(layout.stackBox.left + layout.stackBox.width / 2);
-  expect(layout.winner!.bottom).toBeGreaterThan(layout.stackBox.top + layout.stackBox.height * 0.62);
+  expect(layout.winnerFontSize).toBeGreaterThanOrEqual(48);
+  expect(layout.stackDisplay).toBe('flex');
+  expect(layout.winnerPosition).toBe('absolute');
+  expect(layout.wheel!.width).toBeCloseTo(wheelBefore!.width, 0);
+  expect(layout.wheel!.height).toBeCloseTo(wheelBefore!.height, 0);
+  expect(layout.wheel!.left).toBeCloseTo(wheelBefore!.x, 0);
+  expect(layout.winner!.right).toBeGreaterThan(layout.stackBox.left + layout.stackBox.width * 0.6);
+  expect(layout.winner!.bottom).toBeGreaterThan(layout.stackBox.top + layout.stackBox.height * 0.58);
+  expect(layout.stackBox.right - layout.winner!.right).toBeGreaterThanOrEqual(48);
+  expect(layout.stackBox.bottom - layout.winner!.bottom).toBeGreaterThanOrEqual(54);
 });
 
 test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) => {

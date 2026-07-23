@@ -174,6 +174,7 @@
   let rouletteRound = 1;
   let singleAttempt = 0;
   let monopolyTargetId: string | null = null;
+  let revealedCandidateName: string | null = null;
   let singleCompleted = 0;
   let records: DrawRecord[] = [];
   let currentDrawId = createId('draw');
@@ -210,8 +211,7 @@
   );
   $: spinDisabled =
     enabledPrizes.length < 2 ||
-    resultLimitReached ||
-    (mode === 'roulette' && rouletteFinished);
+    resultLimitReached;
   $: retryTotal = records.filter((record) => record.outcome === 'retry').length;
   $: totalRewardAmount = records.reduce((total, record) => total + (record.rewardAmount || 0), 0);
   $: currentStats = createCurrentStats(prizes, records, validCompleted);
@@ -585,6 +585,7 @@
     singleAttempt = 0;
     singleCompleted = 0;
     monopolyTargetId = null;
+    revealedCandidateName = null;
     drawSidePanel = 'candidates';
     exitCandidateKeyboard();
     exitCommonKeyboard();
@@ -955,6 +956,7 @@
     rouletteRound = 1;
     singleAttempt = 0;
     monopolyTargetId = null;
+    revealedCandidateName = null;
     result = next === 'selected'
       ? {
           eyebrow: '选中模式',
@@ -1149,9 +1151,12 @@
   function spin() {
     if (
       isSpinning ||
-      enabledPrizes.length < 2 ||
-      (mode === 'roulette' && rouletteFinished)
+      enabledPrizes.length < 2
     ) return;
+    if (mode === 'roulette' && rouletteFinished) {
+      startNewRouletteRound();
+      return;
+    }
     if (resultLimitReached) {
       showResultLimitReached();
       return;
@@ -1195,6 +1200,7 @@
     }
 
     isSpinning = true;
+    revealedCandidateName = null;
     if (soundEnabled) drawSound.startSpin(durationSeconds * 1000);
     result = {
       eyebrow: usesMonopoly ? '棋盘走格中' : '命运正在选择',
@@ -1322,6 +1328,7 @@
           : retryTotal > 0 ? `好运落定 · 当前累计重来 ${retryTotal} 次` : '好运落定，恭喜获得本次结果。',
         tone: 'success',
       };
+      revealedCandidateName = picked.label;
       playDrawResultSound('success');
       return;
     }
@@ -1362,6 +1369,7 @@
           : `${hit.name} 最后出局，轮盘上只剩下赢家。`,
         tone: 'success',
       };
+      revealedCandidateName = winner.name;
       playDrawResultSound('success');
     } else {
       addRecord({
@@ -1382,6 +1390,7 @@
           : `${hit.name} 损失1命，还剩 ${livesLeft} 命，转盘比例已缩小。`,
         tone: 'danger',
       };
+      revealedCandidateName = hit.name;
       playDrawResultSound('eliminated');
     }
   }
@@ -1421,6 +1430,7 @@
     rouletteHits = {};
     rouletteFinished = false;
     monopolyTargetId = null;
+    revealedCandidateName = null;
     result = {
       eyebrow: `俄罗斯轮盘 · 第 ${rouletteRound}/${MAX_ROULETTE_ROUNDS} 局`,
       title: '所有选项重新入场',
@@ -2161,7 +2171,7 @@
       <div class="draw-workbench">
         <div class="draw-core">
       <div class="wheel-wrap">
-        <div class:has-winner-reveal={!isSpinning && result.tone !== 'idle'} class="wheel-stack">
+        <div class="wheel-stack">
           <div class="wheel-status" class:busy={isSpinning} role="status" aria-live="polite">
             <i aria-hidden="true"></i>
             <span>{isSpinning ? '旋转中' : '等待开始'}</span>
@@ -2174,7 +2184,7 @@
             duration={durationSeconds * 1000}
             spinning={isSpinning}
             disabled={spinDisabled}
-            centerLabel={rouletteFinished ? '结束' : '开始'}
+            centerLabel={rouletteFinished ? '下一局' : '开始'}
             integerCellWeights={monopolyLifeWeights}
             onSpin={spin}
           />
@@ -2186,7 +2196,7 @@
             eliminatedIds={[]}
             spinning={isSpinning}
             disabled={spinDisabled}
-            centerLabel={rouletteFinished ? '结束' : '开启'}
+            centerLabel={rouletteFinished ? '下一局' : '开启'}
             onSpin={spin}
           />
         {:else}
@@ -2198,32 +2208,19 @@
             eliminatedIds={[]}
             spinning={isSpinning}
             disabled={spinDisabled}
-            centerLabel={rouletteFinished ? '结束' : '开始'}
+            centerLabel={rouletteFinished ? '下一局' : '开始'}
             onSpin={spin}
           />
         {/if}
-        {#if !isSpinning && result.tone !== 'idle'}
+        {#if !isSpinning && revealedCandidateName}
           <div
             class:success={result.tone === 'success'}
-            class:retry={result.tone === 'retry'}
             class:danger={result.tone === 'danger'}
             class="winner-reveal"
             role="status"
             aria-live="polite"
           >
-            {#if result.eyebrow}
-              <span>{result.eyebrow}</span>
-            {/if}
-            <strong>{result.title}</strong>
-            {#if mode === 'roulette' && rouletteFinished}
-              <button
-                type="button"
-                disabled={resultLimitReached || rouletteRound >= MAX_ROULETTE_ROUNDS}
-                on:click={startNewRouletteRound}
-              >
-                {resultLimitReached ? '已达上限' : rouletteRound >= MAX_ROULETTE_ROUNDS ? `满 ${MAX_ROULETTE_ROUNDS} 局` : '新一局'}
-              </button>
-            {/if}
+            <strong>{revealedCandidateName}</strong>
           </div>
         {/if}
         </div>
