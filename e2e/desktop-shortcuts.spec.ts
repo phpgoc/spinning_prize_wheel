@@ -174,8 +174,8 @@ test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整�
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
-  await expect(page.locator('.battle-preview-bracket .battle-preview-rounds')).toBeVisible();
-  await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(0);
+  await expect(page.locator('.battle-preview-bracket .single-battle-bracket')).toBeVisible();
+  await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(1);
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('＋');
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 
@@ -370,6 +370,14 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   ))).toEqual(['甲', '乙', '丁', '未录入']);
 
   const previewBracket = page.locator('.battle-preview-bracket');
+  await expect(previewBracket.locator('.single-battle-bracket')).toBeVisible();
+  const [previewLeft, previewFinal, previewRight] = await Promise.all([
+    previewBracket.locator('.single-bracket-side.left').boundingBox(),
+    previewBracket.locator('.single-bracket-final').boundingBox(),
+    previewBracket.locator('.single-bracket-side.right').boundingBox(),
+  ]);
+  expect(previewLeft!.x + previewLeft!.width).toBeLessThan(previewFinal!.x);
+  expect(previewFinal!.x + previewFinal!.width).toBeLessThan(previewRight!.x);
   await expect(previewBracket.locator('.battle-match .fixed strong')).toHaveText(['甲', '乙']);
   await expect(previewBracket.locator('.battle-match[data-battle-level="1"] .battle-side:not(.fixed) strong')).toHaveText(['待随机', '待随机']);
   await expect(previewBracket.locator('.battle-match input:not(:disabled)')).toHaveCount(0);
@@ -385,8 +393,7 @@ test('对战只要求固定人数有排名', async ({ page }) => {
     level: match.getAttribute('data-battle-level'),
     position: match.getAttribute('data-battle-position'),
   })));
-  expect(resultStructure.filter((match) => match.level === '1')).toEqual(previewStructure);
-  expect(resultStructure.length).toBeGreaterThan(previewStructure.length);
+  expect(resultStructure).toEqual(previewStructure);
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 });
@@ -440,7 +447,7 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   await page.keyboard.press('Enter');
 
   await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
   await expect(page.locator('.battle-preview-bracket input:not(:disabled)')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
@@ -484,7 +491,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -617,7 +624,7 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
 
   await page.getByRole('button', { name: /对战历史/u }).click();
   await page.locator('.history-panel .ui-history-summary').first().click();
@@ -632,7 +639,7 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
 
   await page.getByRole('button', { name: '返回当前对战' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战预览');
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
 });
 
 test('单败左右晋级，上下衔接且对战快捷键不被比分框占用', async ({ page }) => {

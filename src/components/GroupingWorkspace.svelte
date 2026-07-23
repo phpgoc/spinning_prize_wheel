@@ -3237,9 +3237,9 @@
               />
             {/key}
           {:else if battlePreviewSnapshot}
-            <div class="battle-preview-bracket" aria-label="只读对战预览">
+            <div class="battle-preview-bracket" aria-label="只读对战查看">
               {#key 'battle-preview'}
-                <BattleBracketViewer snapshot={battlePreviewSnapshot} maskUnfixed previewOnly />
+                <BattleBracketViewer snapshot={battlePreviewSnapshot} maskUnfixed viewOnly />
               {/key}
             </div>
           {:else}

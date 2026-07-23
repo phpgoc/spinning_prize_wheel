@@ -7,7 +7,7 @@ async function clearDesktopBattle(page: Page) {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await expect(page.locator('.battle-config textarea')).toBeEnabled();
-  await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(0);
+  await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(1);
 }
 
 test('默认站点图标可在页面挂载前直接加载', async ({ page, request }) => {
@@ -126,7 +126,8 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
   await expect(page.locator('.ui-color-palette')).toHaveCount(4);
-  await expect(page.locator('.color-swatches button')).toHaveCount(32);
+  await expect(page.locator('.color-wheel')).toHaveCount(4);
+  await expect(page.locator('.color-swatches')).toHaveCount(0);
   await expect(presets.getByRole('button')).toHaveCount(3);
   await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
 
@@ -152,6 +153,9 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
     match: '#414868',
     preset: 'ocean',
   });
+
+  await page.locator('.color-wheel').first().click();
+  await expect(page.getByLabel('背景框颜色')).not.toHaveValue('#1a1b26');
 
   await page.getByLabel('背景框颜色').fill('#123456');
   await page.getByLabel('文字颜色', { exact: true }).fill('#fedcba');
@@ -480,7 +484,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('radio', { name: '前 4 固定' }).check();
 
-  await expect(page.locator('.battle-preview-bracket .battle-match')).toHaveCount(4);
+  await expect(page.locator('.battle-preview-bracket .battle-match')).toHaveCount(7);
   await expect(page.locator('.battle-preview-bracket .fixed strong')).toHaveText([
     '选手1', '选手4', '选手2', '选手3',
   ]);
@@ -569,6 +573,30 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(9);
   await expect(page.getByRole('heading', { name: '重赛', exact: true })).toBeVisible();
+});
+
+test('双败查看和编辑使用同一套胜败组布局且查看不显示比分', async ({ page }) => {
+  await page.goto('/battle');
+  await page.locator('.battle-config textarea').fill(
+    Array.from({ length: 8 }, (_, index) => `选手${index + 1}`).join('\n'),
+  );
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '双败' }).check();
+
+  const view = page.locator('.battle-preview-bracket .double-battle-bracket');
+  await expect(view).toBeVisible();
+  await expect(view.locator('.double-winner-section')).toBeVisible();
+  await expect(view.locator('.double-loser-section')).toBeVisible();
+  await expect(view.locator('.double-final-section')).toBeVisible();
+  await expect(view.locator('input:visible')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  const editor = page.locator('.lineup-result .double-battle-bracket');
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.double-winner-section')).toBeVisible();
+  await expect(editor.locator('.double-loser-section')).toBeVisible();
+  await expect(editor.locator('.double-final-section')).toBeVisible();
+  await expect(editor.locator('input:not(:disabled)').first()).toBeVisible();
 });
 
 test('16 人双败逐列向分界线收拢', async ({ page }) => {

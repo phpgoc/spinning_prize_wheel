@@ -4,8 +4,8 @@
 
   export let snapshot: BattleTmpSnapshot;
   export let maskUnfixed = false;
-  /** 未抽签时仅展示已可确定的首轮签位。 */
-  export let previewOnly = false;
+  /** 查看模式只显示签表，不提供比分编辑。 */
+  export let viewOnly = false;
 </script>
 
-<BattleBracketCore {snapshot} readOnly {maskUnfixed} {previewOnly} />
+<BattleBracketCore {snapshot} readOnly {maskUnfixed} {viewOnly} />
