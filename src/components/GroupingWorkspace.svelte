@@ -1057,28 +1057,38 @@
     }
   }
 
-  function saveBattleHistories() {
+  function saveBattleHistories(nextHistories: BattleHistory[]): boolean {
     try {
-      localStorage.setItem(battleHistoryStorageKey(), JSON.stringify(battleHistories));
-    } catch {
-      // 浏览器禁用本地存储时仍允许当前页面继续使用对战。
+      localStorage.setItem(battleHistoryStorageKey(), JSON.stringify(nextHistories));
+      battleHistoryError = '';
+      return true;
+    } catch (reason) {
+      battleHistoryError = messageFrom(reason, '无法写入对战历史本地存储');
+      return false;
     }
   }
 
-  function archiveBattleHistory(snapshot: BattleTmpSnapshot) {
+  function archiveBattleHistory(snapshot: BattleTmpSnapshot): boolean {
     const record: BattleHistory = {
       id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
       createdAt: snapshot.updatedAt,
       snapshot: structuredClone(snapshot),
     };
-    battleHistories = [record, ...battleHistories.filter((item) => item.snapshot.updatedAt !== snapshot.updatedAt)].slice(0, 20);
-    saveBattleHistories();
+    const nextHistories = [
+      record,
+      ...battleHistories.filter((item) => item.snapshot.updatedAt !== snapshot.updatedAt),
+    ].slice(0, 20);
+    if (!saveBattleHistories(nextHistories)) return false;
+    battleHistories = nextHistories;
+    return true;
   }
 
   /** 手动存档不会影响仍可继续编辑的临时签表。 */
   function saveCurrentBattleHistory() {
     if (!battleTmpSnapshot) return;
-    archiveBattleHistory(battleTmpSnapshot);
+    const previousHistoryError = battleHistoryError;
+    if (!archiveBattleHistory(battleTmpSnapshot)) error = battleHistoryError;
+    else if (error === previousHistoryError) error = '';
   }
 
   async function importBattleHistoryFile(event: Event) {
@@ -1094,7 +1104,7 @@
     try {
       const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
       const snapshot = parseBattleHistoryTransfer(value, variant);
-      archiveBattleHistory(snapshot);
+      if (!archiveBattleHistory(snapshot)) throw new Error(battleHistoryError);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
     } finally {
@@ -1139,10 +1149,12 @@
   function confirmDeleteBattleHistory() {
     const history = pendingBattleHistoryDeletion;
     if (!history) return;
-    battleHistories = battleHistories.filter((item) => item.id !== history.id);
-    if (battleHistoryView?.id === history.id) battleHistoryView = null;
+    const nextHistories = battleHistories.filter((item) => item.id !== history.id);
+    if (saveBattleHistories(nextHistories)) {
+      battleHistories = nextHistories;
+      if (battleHistoryView?.id === history.id) battleHistoryView = null;
+    }
     pendingBattleHistoryDeletion = null;
-    saveBattleHistories();
   }
 
   function confirmClearBattleHistories() {
@@ -1151,8 +1163,7 @@
       return;
     }
     if (battleHistoryDeleteConfirmation !== 2) return;
-    battleHistories = [];
-    saveBattleHistories();
+    if (saveBattleHistories([])) battleHistories = [];
     battleHistoryDeleteConfirmation = 0;
   }
 

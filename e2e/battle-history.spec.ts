@@ -148,6 +148,52 @@ test('对战历史导出显示忙碌状态并在失败后恢复', async ({ page 
   expect(pageErrors).toEqual([]);
 });
 
+test('对战历史本地写入失败时不会伪造保存或删除', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (reason) => pageErrors.push(reason.message));
+  await openDesktopBattle(page);
+  await createScoredBattle(page);
+
+  const failHistoryWrites = () => page.evaluate(() => {
+    const prototype = Storage.prototype as any;
+    prototype.__E2E_ORIGINAL_SET_ITEM__ ??= prototype.setItem;
+    prototype.setItem = function setItem(this: Storage, key: string, value: string) {
+      if (key.startsWith('battle-history-v1:')) throw new Error('模拟对战历史本地写入失败');
+      return prototype.__E2E_ORIGINAL_SET_ITEM__.call(this, key, value);
+    };
+  });
+  const restoreHistoryWrites = () => page.evaluate(() => {
+    const prototype = Storage.prototype as any;
+    if (prototype.__E2E_ORIGINAL_SET_ITEM__) {
+      prototype.setItem = prototype.__E2E_ORIGINAL_SET_ITEM__;
+    }
+  });
+
+  await failHistoryWrites();
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await expect(page.getByRole('alert')).toContainText('模拟对战历史本地写入失败');
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  const historyCards = battleHistoryCards(page);
+  await expect(historyCards).toHaveCount(0);
+  expect(await page.evaluate(() => (
+    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
+  ))).toEqual([]);
+
+  await restoreHistoryWrites();
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await expect(historyCards).toHaveCount(1);
+  await failHistoryWrites();
+  await historyCards.getByRole('button', { name: /删除 .* 的对战历史/u }).click();
+  await page.keyboard.press('Enter');
+  await expect(historyCards).toHaveCount(1);
+  await expect(page.locator('.history-panel').getByRole('alert')).toContainText('模拟对战历史本地写入失败');
+  expect(await page.evaluate(() => (
+    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]').length
+  ))).toBe(1);
+  await restoreHistoryWrites();
+  expect(pageErrors).toEqual([]);
+});
+
 test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ page }) => {
   await openDesktopBattle(page);
   await createScoredBattle(page);
