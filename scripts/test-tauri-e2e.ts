@@ -10,6 +10,19 @@ const debugDirectory = join(e2eTargetDirectory, 'debug');
 const generatedStandardConfig = join(tauriDirectory, 'tauri.e2e-standard.conf.json');
 const generatedCaimiConfig = join(tauriDirectory, 'tauri.e2e-caimi.conf.json');
 const version = await readProjectVersion();
+const commandArguments = process.argv.slice(2).filter((argument) => argument !== '--');
+const fixedBattleMode = commandArguments.includes('--fixed');
+const requestedBattleCount = commandArguments.find((argument) => argument === 'all' || /^\d+$/u.test(argument));
+
+if (fixedBattleMode && requestedBattleCount && requestedBattleCount !== 'all') {
+  const count = Number(requestedBattleCount);
+  if (!Number.isInteger(count) || count < 8 || count > 33) {
+    throw new Error(`前 N 固定 E2E 的人数必须在 8 到 33 之间，收到 ${requestedBattleCount}`);
+  }
+}
+if (!fixedBattleMode && requestedBattleCount) {
+  throw new Error('人数参数只适用于 bun run test:e2e:tauri:fixed -- <8-33|all>');
+}
 
 const caimiConfig = JSON.parse(
   await readFile(join(tauriDirectory, 'tauri.caimi.conf.json'), 'utf8'),
@@ -36,14 +49,22 @@ await Promise.all([
 
 try {
   const buildEnvironment = { CARGO_TARGET_DIR: e2eTargetDirectory };
-  await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedCaimiConfig], buildEnvironment);
+  if (!fixedBattleMode) {
+    await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedCaimiConfig], buildEnvironment);
+  }
   await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedStandardConfig], buildEnvironment);
 
+  const playwrightArguments = ['bun', 'x', 'playwright', 'test', '--config', 'playwright.tauri.config.ts'];
+  if (fixedBattleMode) {
+    // 真实桌面窗口本身保持可见；--headed 让命令语义和人工观察模式一致。
+    playwrightArguments.push('--headed', '--grep', '慢速检查前 N 固定签位');
+  }
   await run(
-    ['bun', 'x', 'playwright', 'test', '--config', 'playwright.tauri.config.ts'],
+    playwrightArguments,
     {
       TAURI_E2E_STANDARD_APP: join(debugDirectory, '转盘.exe'),
       TAURI_E2E_CAIMI_APP: join(debugDirectory, '转盘-猜蜜版.exe'),
+      ...(fixedBattleMode ? { TAURI_BATTLE_COUNT: requestedBattleCount ?? 'all' } : {}),
     },
   );
 } finally {

@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: 'tauri-smoke.spec.ts',
+  testIgnore: /tauri-.*\.spec\.ts$/u,
   fullyParallel: true,
   forbidOnly: true,
   retries: 0,

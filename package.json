@@ -13,6 +13,7 @@
     "test:e2e": "bun run test:e2e:web && bun run test:e2e:tauri",
     "test:e2e:web": "npx playwright test --config playwright.config.ts",
     "test:e2e:tauri": "bun run scripts/test-tauri-e2e.ts",
+    "test:e2e:tauri:fixed": "bun run scripts/test-tauri-e2e.ts --fixed",
     "test:e2e:headed": "npx playwright test --headed",
     "tauri:dev": "tauri dev",
     "tauri:dev:caimi": "tauri dev --config src-tauri/tauri.caimi.conf.json",

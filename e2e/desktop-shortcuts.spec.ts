@@ -178,7 +178,7 @@ test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整�
   await page.getByRole('radio', { name: '按排名' }).check();
   await expect(page.locator('.battle-preview-bracket .single-battle-bracket')).toBeVisible();
   await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(1);
-  await expect(page.locator('.battle-preview-bracket .fixed strong')).toHaveText(['选手1', '选手2']);
+  await expect(page.locator('.battle-preview-bracket .seed-fixed strong')).toHaveText(['选手1', '选手2']);
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('＋');
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 
@@ -429,8 +429,23 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   ]);
   expect(previewLeft!.x + previewLeft!.width).toBeLessThan(previewFinal!.x);
   expect(previewFinal!.x + previewFinal!.width).toBeLessThan(previewRight!.x);
-  await expect(previewBracket.locator('.battle-match .fixed strong')).toHaveText(['甲', '乙']);
-  await expect(previewBracket.locator('.battle-match[data-battle-level="1"] .battle-side:not(.fixed) strong')).toHaveText(['待随机', '待随机']);
+  await expect(previewBracket.locator('.battle-match .seed-fixed strong')).toHaveText(['甲', '乙']);
+  await expect(previewBracket.locator('.battle-match[data-battle-level="1"] .battle-side:not(.seed-fixed) strong')).toHaveText(['待随机', '待随机']);
+  const fixedSlotGeometry = await previewBracket.locator('.battle-match .seed-fixed').evaluateAll((elements) => elements.map((element) => {
+    const card = element.closest<HTMLElement>('.battle-match');
+    const side = element.getBoundingClientRect();
+    if (!card) throw new Error('固定签位缺少对战卡片');
+    const cardStyle = getComputedStyle(card);
+    return {
+      position: getComputedStyle(element).position,
+      width: side.width,
+      cardContentWidth: card.clientWidth
+        - Number.parseFloat(cardStyle.paddingLeft)
+        - Number.parseFloat(cardStyle.paddingRight),
+    };
+  }));
+  expect(fixedSlotGeometry.every((slot) => slot.position === 'static')).toBe(true);
+  expect(fixedSlotGeometry.every((slot) => Math.abs(slot.width - slot.cardContentWidth) < 1)).toBe(true);
   await expect(previewBracket.locator('.battle-match input:not(:disabled)')).toHaveCount(0);
   const previewStructure = await previewBracket.locator('.battle-match').evaluateAll((matches) => matches.map((match) => ({
     stage: match.getAttribute('data-battle-stage'),

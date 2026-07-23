@@ -128,7 +128,7 @@
   </small>
   {#each BATTLE_SIDES as side (side)}
     <div
-      class:fixed={battleTmpParticipantFixed(match[side])}
+      class:seed-fixed={battleTmpParticipantFixed(match[side])}
       class:winner={battleTmpParticipantWon(match, match[side])}
       class:waiting={match[side] === null}
       class:score-left={scorePosition === 'left'}
@@ -219,7 +219,7 @@
   .battle-participant strong { max-width: 100%; }
 
   .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); }
-  .battle-side.fixed { --battle-side-border: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .battle-side.seed-fixed { --battle-side-border: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .battle-side.waiting { color: var(--lineup-dim-on-dark); }
   .battle-side.winner {
     --battle-side-border: var(--accent);
@@ -292,7 +292,7 @@
 
   .battle-reveal-slot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .mask-unfixed.read-only :global(.ui-number-input) { visibility: hidden; }
-  .mask-unfixed.read-only .battle-side:not(.fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
+  .mask-unfixed.read-only .battle-side:not(.seed-fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
 
   :global(.double-battle-bracket) .battle-match { padding: calc(6px * var(--battle-round-growth, 1)); }
   :global(.double-battle-bracket) .battle-match > small { margin-bottom: calc(3px * var(--battle-round-growth, 1)); font-size: calc(8px * var(--font-scale, 1) * var(--battle-round-growth, 1)); }

@@ -173,6 +173,19 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 `test:e2e:web` 会启动本地网页并测试六个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
+前 N 固定签位的真实桌面 E2E 使用可见 Tauri 窗口，并默认在每个操作后停留 2 秒，便于人工检查焦点和签位位置。人数参数只运行一个人数：
+
+```powershell
+bun run test:e2e:tauri:fixed -- 8
+bun run test:e2e:tauri:fixed -- 17
+```
+
+需要完整跑完 8 到 33 人时使用 `all`；测试会先导入 33 个连续排名，再逐项输入当前人数名单，并依次检查前 2、前 4、前 8 固定（当前人数不支持的选项会跳过）：
+
+```powershell
+bun run test:e2e:tauri:fixed -- all
+```
+
 任意一条命令失败时，应先处理错误再发布产物。
 
 ## 9. 最终用户依赖

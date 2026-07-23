@@ -573,7 +573,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   await page.getByRole('radio', { name: '前 4 固定' }).check();
 
   await expect(page.locator('.battle-preview-bracket .battle-match')).toHaveCount(7);
-  await expect(page.locator('.battle-preview-bracket .fixed strong')).toHaveText([
+  await expect(page.locator('.battle-preview-bracket .seed-fixed strong')).toHaveText([
     '选手1', '选手4', '选手2', '选手3',
   ]);
   await page.getByRole('button', { name: /^抽签/ }).click();
