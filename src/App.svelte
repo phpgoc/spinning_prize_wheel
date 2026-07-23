@@ -166,13 +166,21 @@
   }
 
   function saveFontScale() {
+    let saved: Record<string, unknown> = {};
     try {
-      const saved = JSON.parse(
+      const parsed = JSON.parse(
         localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
-      ) as Record<string, unknown>;
+      ) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        saved = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // 损坏的旧设置只保留本次有效字号。
+    }
+    try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
     } catch {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontScale }));
+      // 禁用本地存储时字号仍在当前会话生效。
     }
   }
 

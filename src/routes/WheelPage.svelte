@@ -255,22 +255,19 @@
         .map((option) => [option.id, Math.max(1, Math.round(option.weight))]))
     : null;
   $: if (hydrated) {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        mode,
-        animationStyle,
-        durationSeconds,
-        soundEnabled,
-        rewardAmount,
-        retryEnabled,
-        retryWeight,
-        autoSaveHistory,
-        continuousTarget,
-        staySeconds,
-        uiTheme,
-      }),
-    );
+    persistWheelSettings({
+      mode,
+      animationStyle,
+      durationSeconds,
+      soundEnabled,
+      rewardAmount,
+      retryEnabled,
+      retryWeight,
+      autoSaveHistory,
+      continuousTarget,
+      staySeconds,
+      uiTheme,
+    });
   }
 
   onMount(() => {
@@ -315,7 +312,11 @@
         uiTheme = normalizeUiTheme(parsed.uiTheme);
       }
     } catch {
-      localStorage.removeItem(STORAGE_KEY);
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // 浏览器禁用本地存储时继续使用默认设置。
+      }
     }
     void loadCommonSelections();
     void loadDrawHistories();
@@ -327,6 +328,26 @@
     if (continuousTimer) window.clearTimeout(continuousTimer);
     drawSound.dispose();
   });
+
+  /** 转盘设置与应用壳的字号共用一个键，写入时保留彼此字段。 */
+  function persistWheelSettings(next: Record<string, unknown>) {
+    let saved: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
+      ) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        saved = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // 损坏的旧设置直接由当前有效设置替换。
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, ...next }));
+    } catch {
+      // 禁用本地存储时仍允许当前会话继续调整界面。
+    }
+  }
 
   function toggleSound() {
     soundEnabled = !soundEnabled;

@@ -424,6 +424,41 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
+
+  await page.goto('/wheel');
+  await expect(page.locator('.wheel-page-host .workspace')).toBeVisible();
+  await page.getByRole('button', { name: UI_THEME_CASES[1].buttonName }).click();
+  expect(await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
+    return { fontScale: settings.fontScale, uiTheme: settings.uiTheme };
+  })).toEqual({ fontScale: 1.1, uiTheme: 'mist' });
+  await page.reload();
+  await expect.poll(() => shell.evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--font-scale').trim()
+  ))).toBe('1.1');
+  await expect(shell).toHaveAttribute('data-ui-theme', 'mist');
+});
+
+test('本地设置写入失败不会打断音效和字号调整', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (reason) => pageErrors.push(reason.message));
+  await page.evaluate(() => {
+    const prototype = Storage.prototype as any;
+    prototype.__E2E_ORIGINAL_SET_ITEM__ ??= prototype.setItem;
+    prototype.setItem = function setItem(this: Storage, key: string, value: string) {
+      if (key === 'wheel-settings-v1') throw new Error('模拟设置写入失败');
+      return prototype.__E2E_ORIGINAL_SET_ITEM__.call(this, key, value);
+    };
+  });
+
+  await page.getByRole('button', { name: '关闭音乐与音效' }).click();
+  await expect(page.getByRole('button', { name: '开启音乐与音效' })).toBeVisible();
+  await page.keyboard.press('Control+ArrowUp');
+  await expect.poll(() => page.locator('.app-shell').evaluate((element) => (
+    getComputedStyle(element).getPropertyValue('--font-scale').trim()
+  ))).toBe('1.1');
+  await page.waitForTimeout(0);
+  expect(pageErrors).toEqual([]);
 });
 
 test('文本区只用 Alt+回车确认，Esc 取消且单键不会越过输入作用域', async ({ page }) => {
