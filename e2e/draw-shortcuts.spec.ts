@@ -255,6 +255,39 @@ test('高级转盘启动和落点具有分层动效', async ({ page }) => {
   await expect(wheel).not.toHaveClass(/spinning/u);
 });
 
+test('中奖结果展示在抽签区右下角且不显示有效次数', async ({ page }) => {
+  await importCandidates(page, ['星河', '流光', '月桂', '极光']);
+  await page.getByLabel('动画时长').fill('1');
+  await page.locator('.luxury-button').click();
+
+  const winner = page.locator('.wheel-stack .winner-reveal');
+  const winnerName = winner.locator('strong');
+  await expect(winner).toBeVisible({ timeout: 4_000 });
+  await expect(winnerName).not.toBeEmpty();
+  await expect(winner).not.toContainText(/第\s*\d+\s*次有效结果/u);
+  await expect(winner.locator('span')).toHaveCount(0);
+
+  const layout = await page.locator('.wheel-stack').evaluate((stack) => {
+    const wheel = stack.querySelector('.luxury-stage')?.getBoundingClientRect();
+    const winner = stack.querySelector('.winner-reveal')?.getBoundingClientRect();
+    const stackBox = stack.getBoundingClientRect();
+    const winnerTitle = stack.querySelector('.winner-reveal strong');
+    return {
+      wheel,
+      winner,
+      stackBox,
+      winnerFontSize: winnerTitle ? Number.parseFloat(getComputedStyle(winnerTitle).fontSize) : 0,
+    };
+  });
+
+  expect(layout.wheel).toBeTruthy();
+  expect(layout.winner).toBeTruthy();
+  expect(layout.winnerFontSize).toBeGreaterThanOrEqual(38);
+  expect(layout.winner!.left).toBeGreaterThanOrEqual(layout.wheel!.right);
+  expect(layout.winner!.left).toBeGreaterThan(layout.stackBox.left + layout.stackBox.width / 2);
+  expect(layout.winner!.bottom).toBeGreaterThan(layout.stackBox.top + layout.stackBox.height * 0.62);
+});
+
 test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) => {
   await importCandidates(page, ['甲', '乙', '丙']);
   const monopolyButton = page.getByRole('button', { name: '大富翁' });

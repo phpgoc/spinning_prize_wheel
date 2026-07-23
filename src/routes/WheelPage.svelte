@@ -1315,7 +1315,7 @@
         detail: `第 ${singleCompleted} 次有效抽取命中 ${picked.label}`,
       });
       result = {
-        eyebrow: `第 ${singleCompleted} 次有效结果`,
+        eyebrow: '',
         title: picked.label,
         detail: normalizedRewardAmount() > 0
           ? `本次奖励金额 ${formatAmount(normalizedRewardAmount())}`
@@ -2161,7 +2161,7 @@
       <div class="draw-workbench">
         <div class="draw-core">
       <div class="wheel-wrap">
-        <div class="wheel-stack">
+        <div class:has-winner-reveal={!isSpinning && result.tone !== 'idle'} class="wheel-stack">
           <div class="wheel-status" class:busy={isSpinning} role="status" aria-live="polite">
             <i aria-hidden="true"></i>
             <span>{isSpinning ? '旋转中' : '等待开始'}</span>
@@ -2202,8 +2202,6 @@
             onSpin={spin}
           />
         {/if}
-        </div>
-
         {#if !isSpinning && result.tone !== 'idle'}
           <div
             class:success={result.tone === 'success'}
@@ -2213,7 +2211,9 @@
             role="status"
             aria-live="polite"
           >
-            <span>{result.eyebrow}</span>
+            {#if result.eyebrow}
+              <span>{result.eyebrow}</span>
+            {/if}
             <strong>{result.title}</strong>
             {#if mode === 'roulette' && rouletteFinished}
               <button
@@ -2226,6 +2226,7 @@
             {/if}
           </div>
         {/if}
+        </div>
       </div>
         </div>
 

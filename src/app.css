@@ -1105,25 +1105,22 @@ p {
 }
 
 .winner-reveal {
-  position: absolute;
-  bottom: 12px;
-  left: 50%;
   z-index: 20;
-  min-width: min(82%, 440px);
-  padding: 18px 28px 14px;
+  width: min(100%, 360px);
+  padding: 18px 4px 14px 22px;
   color: #f5f2e9;
   pointer-events: none;
-  text-align: center;
+  text-align: right;
   text-shadow: 0 4px 18px rgba(0, 0, 0, 0.85);
-  transform: translateX(-50%);
+  transform-origin: right bottom;
   animation: winner-arrive 420ms cubic-bezier(0.18, 0.9, 0.28, 1.2) both;
 }
 
 .winner-reveal::before {
   position: absolute;
-  inset: 0;
+  inset: -18px -12px -16px 4px;
   z-index: -1;
-  background: radial-gradient(ellipse, rgba(8, 9, 6, 0.92), rgba(8, 9, 6, 0.56) 52%, transparent 74%);
+  background: radial-gradient(ellipse at 78% 80%, rgba(8, 9, 6, 0.9), rgba(8, 9, 6, 0.48) 54%, transparent 76%);
   content: '';
   filter: blur(2px);
 }
@@ -1140,15 +1137,17 @@ p {
 }
 
 .winner-reveal strong {
-  margin-top: 3px;
+  margin-top: 0;
+  overflow-wrap: anywhere;
   color: var(--accent);
   font-size: clamp(
-    calc(31px * var(--font-scale, 1)),
-    calc(3.2vw * var(--font-scale, 1)),
-    calc(49px * var(--font-scale, 1))
+    calc(38px * var(--font-scale, 1)),
+    calc(4.2vw * var(--font-scale, 1)),
+    calc(68px * var(--font-scale, 1))
   );
   font-weight: 950;
-  letter-spacing: -0.055em;
+  letter-spacing: 0;
+  line-height: 0.96;
 }
 
 .winner-reveal.retry strong {
@@ -1172,8 +1171,8 @@ p {
 }
 
 @keyframes winner-arrive {
-  from { opacity: 0; transform: translate(-50%, 18px) scale(0.84); }
-  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  from { opacity: 0; transform: translateY(18px) scale(0.84); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 kbd {
@@ -2473,6 +2472,73 @@ kbd {
   align-items: center;
   flex-direction: column;
   gap: 12px;
+}
+
+/* 揭晓后把结果独立放在抽签区右下角，始终不覆盖转盘。 */
+.wheel-stack.has-winner-reveal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.46fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: clamp(14px, 2vw, 34px);
+  align-items: center;
+}
+
+.wheel-stack.has-winner-reveal > .wheel-status {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.wheel-stack.has-winner-reveal > .wheel-stage,
+.wheel-stack.has-winner-reveal > .luxury-stage,
+.wheel-stack.has-winner-reveal > .monopoly-stage {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: center;
+  max-width: 100%;
+}
+
+.wheel-stack.has-winner-reveal > .winner-reveal {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+  justify-self: end;
+  margin: 0 0 clamp(12px, 3vh, 38px);
+}
+
+@media (max-width: 860px) {
+  .wheel-stack.has-winner-reveal {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 0.36fr);
+    column-gap: 10px;
+  }
+
+  .winner-reveal {
+    width: min(100%, 240px);
+    padding-left: 10px;
+  }
+
+  .winner-reveal strong {
+    font-size: clamp(
+      calc(31px * var(--font-scale, 1)),
+      calc(5vw * var(--font-scale, 1)),
+      calc(48px * var(--font-scale, 1))
+    );
+  }
+}
+
+@media (max-width: 600px) {
+  .wheel-stack.has-winner-reveal {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .wheel-stack.has-winner-reveal > .winner-reveal {
+    grid-column: 1;
+    grid-row: 3;
+    margin: -8px 4px 0 auto;
+  }
 }
 
 .current-statistics {
