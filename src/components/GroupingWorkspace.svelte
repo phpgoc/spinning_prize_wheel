@@ -2092,9 +2092,12 @@
     }
 
     if (clearLineupConfirmation) {
-      if (event.key === 'Escape' || key === 'n') {
+      if (event.key === 'Escape') {
         event.preventDefault();
         clearLineupConfirmation = 0;
+      } else if (key === 'n') {
+        event.preventDefault();
+        void cancelClearAll();
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
         void confirmClearAll();
@@ -2564,7 +2567,7 @@
     if (step === 2) {
       return desktopRuntime ? '2/3 直接删除桌面对战临时表？' : '2/3 放弃当前页面的对战状态？';
     }
-    return '3/3 删除当前对战？';
+    return '3/3 是否同时清空设置和名单？';
   }
 
   function clearConfirmationDetail(step: 0 | 1 | 2 | 3): string {
@@ -2577,14 +2580,14 @@
         ? '删除后即使关闭并重新启动软件，也无法恢复这场对战。'
         : '清空后当前签表不会保留，刷新页面也无法恢复。';
     }
-    return '名单、赛制、固定位置和当前浏览内容都会保留。';
+    return '无论选择哪一项，当前签表和临时表都会删除；只决定是否重置对战设置和名单。';
   }
 
   function clearConfirmationAction(step: 0 | 1 | 2 | 3): string {
     if (!battlePage) return '确认清空';
     if (step === 1) return '删除签表和比分';
     if (step === 2) return desktopRuntime ? '删除临时表' : '放弃当前对战';
-    return '删除当前对战';
+    return '清空设置和名单';
   }
 
   async function confirmClearAll() {
@@ -2593,10 +2596,19 @@
       clearLineupConfirmation = (clearLineupConfirmation + 1) as 2 | 3;
       return;
     }
-    await clearAll();
+    await clearAll(true);
   }
 
-  async function clearAll() {
+  async function cancelClearAll() {
+    if (clearingBattleTmp) return;
+    if (battlePage && clearLineupConfirmation === 3) {
+      await clearAll(false);
+      return;
+    }
+    clearLineupConfirmation = 0;
+  }
+
+  async function clearAll(clearBattleSetup = true) {
     if (battlePage) {
       if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
       if (desktopRuntime) {
@@ -2618,6 +2630,17 @@
       lastConfirmedBattleScore = null;
       battleSyncStatus = 'idle';
       error = '';
+      if (clearBattleSetup) {
+        sourceText = '';
+        confirmedSourceText = '';
+        resolutionRequest += 1;
+        resolvedNames = [];
+        resolvingNames = false;
+        battleFormat = 'avoid-first-pair';
+        battleOrderMode = 'input';
+        battleFixedSeedCount = 0;
+        battleDoubleGrandFinal = false;
+      }
       return;
     }
     clearLineupConfirmation = 0;
@@ -3258,7 +3281,9 @@
                 <UiButton size="md" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
                 <UiButton size="md" on:click={exportBattleTmpExcel}>Excel</UiButton>
                 <UiButton size="md" on:click={exportBattleTmpJson}>JSON</UiButton>
-                <UiButton size="md" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                {#if desktopRuntime}
+                  <UiButton size="md" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                {/if}
               </div>
             {/if}
           </div>
@@ -3300,7 +3325,9 @@
               {/if}
               <UiButton size="sm" on:click={exportLineupExcel}>Excel</UiButton>
               <UiButton size="sm" on:click={exportLineupJson}>JSON</UiButton>
-              <UiButton size="sm" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+              {#if desktopRuntime}
+                <UiButton size="sm" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+              {/if}
               {#if desktopRuntime}
                 <div class="history-save-control">
                   <button
@@ -3373,9 +3400,11 @@
     title={clearConfirmationTitle(clearLineupConfirmation)}
     detail={clearConfirmationDetail(clearLineupConfirmation)}
     confirmLabel={clearConfirmationAction(clearLineupConfirmation)}
+    cancelLabel={battlePage && clearLineupConfirmation === 3 ? '保留设置和名单' : '取消'}
+    cancelShortcuts={battlePage && clearLineupConfirmation === 3 ? 'N' : 'N Escape'}
     confirmDisabled={clearingBattleTmp}
     cancelDisabled={clearingBattleTmp}
-    on:cancel={() => (clearLineupConfirmation = 0)}
+    on:cancel={cancelClearAll}
     on:confirm={confirmClearAll}
   />
 {/if}

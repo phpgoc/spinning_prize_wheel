@@ -417,7 +417,7 @@ test('桌面对战全屏会同步切换 Tauri 窗口', async ({ page }) => {
   ))).toBe(false);
 });
 
-test('桌面对战经过三次确认后直接清空临时表', async ({ page }) => {
+test('桌面对战经过三次确认后可删除临时表并保留设置名单', async ({ page }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
   await page.getByRole('radio', { name: '单败' }).check();
@@ -440,13 +440,14 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
   await expect(page.getByText('删除后即使关闭并重新启动软件，也无法恢复这场对战。')).toBeVisible();
   await expect(page.getByRole('button', { name: '删除临时表' })).toBeVisible();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '3/3 删除当前对战？' })).toBeVisible();
-  await expect(page.getByText('名单、赛制、固定位置和当前浏览内容都会保留。')).toBeVisible();
-  await expect(page.getByRole('button', { name: '删除当前对战' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '3/3 是否同时清空设置和名单？' })).toBeVisible();
+  await expect(page.getByText('无论选择哪一项，当前签表和临时表都会删除；只决定是否重置对战设置和名单。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '清空设置和名单' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保留设置和名单' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).not.toBeNull();
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
 
   await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
   await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
@@ -459,6 +460,26 @@ test('桌面对战经过三次确认后直接清空临时表', async ({ page }) 
     (window as any).__E2E_TAURI_STATE__.invocations
       .filter((entry: any) => entry.cmd === 'clear_battle_tmp_state').length
   ))).toBe(1);
+});
+
+test('桌面对战第三次确认可同时清空设置和名单', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('radio', { name: '前 2 固定' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '清空设置和名单' }).click();
+
+  await expect(page.locator('.names-field textarea')).toHaveValue('');
+  await expect(page.locator('.preview-row')).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: '同组不对战1对2' })).toBeChecked();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).toBeNull();
 });
 
 test('桌面对战历史编辑按临时表状态确认并保留原记录', async ({ page }) => {

@@ -2426,12 +2426,9 @@
             <div class="side-stats-actions">
               <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</UiButton>
               <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</UiButton>
-              <UiButton
-                size="sm"
-                title={desktopRuntime ? '在资源管理器中打开下载目录' : '网页版由浏览器管理下载目录'}
-                disabled={!desktopRuntime}
-                on:click={openDrawDownloadFolder}
-              >打开下载</UiButton>
+              {#if desktopRuntime}
+                <UiButton size="sm" title="在资源管理器中打开下载目录" on:click={openDrawDownloadFolder}>打开下载</UiButton>
+              {/if}
             </div>
           {/if}
         </aside>
@@ -2608,7 +2605,9 @@
           <div class="history-actions sidebar-history-actions">
             <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</UiButton>
             <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</UiButton>
-            <UiButton size="sm" on:click={openDrawDownloadFolder}>打开下载</UiButton>
+            {#if desktopRuntime}
+              <UiButton size="sm" on:click={openDrawDownloadFolder}>打开下载</UiButton>
+            {/if}
             <UiButton size="sm" tone="danger" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</UiButton>
           </div>
         {/if}

@@ -76,6 +76,18 @@ test('网页版对战页只提示使用桌面版', async ({ page }) => {
   await expect(page.locator('.battle-config, .battle-result, .battle-sidebar')).toHaveCount(0);
 });
 
+test('网页版不显示无法使用的打开下载按钮', async ({ page }) => {
+  await page.goto('/wheel');
+  await page.getByRole('button', { name: '统计 0' }).click();
+  await expect(page.getByRole('button', { name: '打开下载' })).toHaveCount(0);
+
+  await page.goto('/grouping');
+  await page.locator('.names-field textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.names-field textarea').press('Alt+Enter');
+  await page.getByRole('button', { name: '开始分组' }).click();
+  await expect(page.getByRole('button', { name: '打开下载' })).toHaveCount(0);
+});
+
 test.describe('桌面版对战显示与配置', () => {
 test.beforeEach(async ({ page }) => {
   await installTauriMock(page);
