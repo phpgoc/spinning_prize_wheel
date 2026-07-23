@@ -330,6 +330,49 @@ describe('对战签位', () => {
     expect(excelRows.some((row) => row[0] === '败者组')).toBe(true);
   });
 
+  test('解析对战快照接受完整拓扑并拒绝损坏的参赛者和场次引用', () => {
+    for (const format of ['single-elimination', 'double-elimination'] as const) {
+      for (let count = 4; count <= 33; count += 1) {
+        const valid = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(count), {
+          format,
+          orderMode: 'input',
+          fixedSeedCount: 0,
+          doubleGrandFinal: format === 'double-elimination' && count % 2 === 0,
+          random: () => 0,
+        }), 1_700_000_000_000);
+        expect(parseBattleTmpSnapshot(valid, 'standard')).toEqual(valid);
+      }
+    }
+    const pairing = createBattleTmpSnapshot(
+      'standard',
+      createAvoidSameGroupPlan(names(8), () => 0),
+      1_700_000_000_000,
+    );
+    expect(parseBattleTmpSnapshot(pairing, 'standard')).toEqual(pairing);
+
+    const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
+      format: 'single-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 0,
+      random: () => 0,
+    }), 1_700_000_000_000);
+
+    const invalidParticipant = structuredClone(snapshot);
+    invalidParticipant.participants[0].id = '错误' as unknown as number;
+    expect(() => parseBattleTmpSnapshot(invalidParticipant, 'standard'))
+      .toThrow('对战临时状态格式不正确');
+
+    const invalidReference = structuredClone(snapshot);
+    invalidReference.matches[0].up = 999;
+    expect(() => parseBattleTmpSnapshot(invalidReference, 'standard'))
+      .toThrow('对战临时状态格式不正确');
+
+    const missingRound = structuredClone(snapshot);
+    missingRound.matches.pop();
+    expect(() => parseBattleTmpSnapshot(missingRound, 'standard'))
+      .toThrow('对战临时状态格式不正确');
+  });
+
   test('双败把胜者和败者分别送入正确下游', () => {
     let state = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(4), {
       format: 'double-elimination',

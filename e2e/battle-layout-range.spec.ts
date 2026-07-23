@@ -50,11 +50,15 @@ for (const format of formats) {
         (window as any).__E2E_TAURI_STATE__.invocations
           .filter((entry: any) => entry.cmd === 'export_binary_file').length
       ));
-      await page.getByRole('button', { name: 'Excel', exact: true }).click();
+      const excelButton = page.locator('[data-export="battle-excel"]');
+      await excelButton.click();
+      await expect(excelButton).toBeDisabled();
+      await expect(excelButton).toHaveText('导出中…');
       await expect.poll(() => page.evaluate(() => (
         (window as any).__E2E_TAURI_STATE__.invocations
           .filter((entry: any) => entry.cmd === 'export_binary_file').length
-      ))).toBe(exportCount + 1);
+      )), { timeout: 30_000 }).toBe(exportCount + 1);
+      await expect(excelButton).toBeEnabled();
 
       await page.getByRole('button', { name: '保存历史' }).click();
       await page.getByRole('button', { name: /对战历史/u }).click();
@@ -85,6 +89,24 @@ test('对战比分数字输入隐藏原生微调并支持 Alt 上下调整', asy
   await page.keyboard.press('Alt+ArrowDown');
   await expect(score).toHaveValue('0');
   await expect(score).toHaveCSS('appearance', 'textfield');
+});
+
+test('对战导出显示忙碌状态并在失败后恢复按钮', async ({ page }) => {
+  await drawBattle(page, '单败', 4);
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_binary_file = ['模拟磁盘写入失败'];
+  });
+
+  const excelButton = page.locator('[data-export="battle-excel"]');
+  const jsonButton = page.locator('[data-export="battle-json"]');
+  await excelButton.click();
+  await expect(excelButton).toBeDisabled();
+  await expect(excelButton).toHaveText('导出中…');
+  await expect(jsonButton).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('模拟磁盘写入失败', { timeout: 30_000 });
+  await expect(excelButton).toHaveText('Excel');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
 });
 
 test('单败最终轮卡片宽度随轮次放大而不会被外层轨道压缩', async ({ page }) => {

@@ -151,6 +151,24 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
     ...validTransfer,
     snapshot: { ...expectedSnapshot, variant: 'caimi' },
   }, '对战临时状态格式不正确');
+  await assertImportRejected('损坏参赛者.json', {
+    ...validTransfer,
+    snapshot: {
+      ...expectedSnapshot,
+      participants: expectedSnapshot.participants.map((participant: any, index: number) => (
+        index === 0 ? { ...participant, id: '错误' } : participant
+      )),
+    },
+  }, '对战临时状态格式不正确');
+  await assertImportRejected('损坏场次引用.json', {
+    ...validTransfer,
+    snapshot: {
+      ...expectedSnapshot,
+      matches: expectedSnapshot.matches.map((match: any, index: number) => (
+        index === 0 ? { ...match, up: 999 } : match
+      )),
+    },
+  }, '对战临时状态格式不正确');
   await assertImportRejected('错误扩展名.txt', validTransfer, '只支持 JSON 文件');
 
   await historyCard.getByRole('button', { name: /删除 .* 的对战历史/u }).click();

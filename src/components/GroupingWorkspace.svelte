@@ -222,6 +222,7 @@
   let battleColorPreset: BattleColorPresetSelection = 'classic';
   let battleColors: BattleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
   let battleColorSnapshotAvailable = false;
+  let battleExporting: 'excel' | 'json' | null = null;
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -2750,13 +2751,29 @@
   }
 
   async function exportBattleTmpJson() {
-    if (!battleTmpSnapshot) return;
-    await downloadFormattedJson('对战状态', battleTmpSnapshot);
+    if (!battleTmpSnapshot || battleExporting) return;
+    battleExporting = 'json';
+    try {
+      await downloadFormattedJson('对战状态', battleTmpSnapshot);
+      error = '';
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出对战状态 JSON');
+    } finally {
+      battleExporting = null;
+    }
   }
 
   async function exportBattleTmpExcel() {
-    if (!battleTmpSnapshot) return;
-    await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(battleTmpSnapshot));
+    if (!battleTmpSnapshot || battleExporting) return;
+    battleExporting = 'excel';
+    try {
+      await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(battleTmpSnapshot));
+      error = '';
+    } catch (reason) {
+      error = messageFrom(reason, '无法导出对战签表 Excel');
+    } finally {
+      battleExporting = null;
+    }
   }
 
   function showImportError(title: string, detail: string) {
@@ -3283,8 +3300,8 @@
                   <UiButton size="md" tone="accent" on:click={revealAllBattleSlots}>显示全部</UiButton>
                 {/if}
                 <UiButton size="md" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
-                <UiButton size="md" on:click={exportBattleTmpExcel}>Excel</UiButton>
-                <UiButton size="md" on:click={exportBattleTmpJson}>JSON</UiButton>
+                <UiButton size="md" data-export="battle-excel" disabled={battleExporting !== null} on:click={exportBattleTmpExcel}>{battleExporting === 'excel' ? '导出中…' : 'Excel'}</UiButton>
+                <UiButton size="md" data-export="battle-json" disabled={battleExporting !== null} on:click={exportBattleTmpJson}>{battleExporting === 'json' ? '导出中…' : 'JSON'}</UiButton>
                 {#if desktopRuntime}
                   <UiButton size="md" on:click={openLineupDownloadFolder}>打开下载</UiButton>
                 {/if}

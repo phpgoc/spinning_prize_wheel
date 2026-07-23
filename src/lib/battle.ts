@@ -182,14 +182,204 @@ export function parseBattleTmpSnapshot(
     || value.rulesVersion !== 1
     || value.kind !== 'battle-tmp'
     || value.variant !== expectedVariant
-    || !Number.isSafeInteger(value.updatedAt)
-    || Number(value.updatedAt) <= 0
+    || !isSafeIntegerAtLeast(value.updatedAt, 1)
+    || !['avoid-first-pair', 'single-elimination', 'double-elimination'].includes(String(value.format))
+    || !['rank', 'input'].includes(String(value.orderMode))
+    || !isSafeIntegerAtLeast(value.participantCount, 4)
+    || !isSafeIntegerAtLeast(value.bracketSize, 4)
+    || !isSafeIntegerAtLeast(value.fixedSeedCount, 0)
     || !Array.isArray(value.participants)
     || !Array.isArray(value.matches)
   ) {
     throw new Error('对战临时状态格式不正确');
   }
-  return value as unknown as BattleTmpSnapshot;
+
+  const snapshot = value as unknown as BattleTmpSnapshot;
+  if (!isValidBattleTmpMetadata(snapshot)
+    || !isValidBattleTmpParticipants(snapshot)
+    || !isValidBattleTmpMatches(snapshot)) {
+    throw new Error('对战临时状态格式不正确');
+  }
+  return snapshot;
+}
+
+/** 历史 JSON 来自用户文件，必须在进入查看区和临时表前完整校验。 */
+function isValidBattleTmpMetadata(snapshot: BattleTmpSnapshot): boolean {
+  let expectedBracketSize = 2;
+  while (expectedBracketSize < snapshot.participantCount) expectedBracketSize *= 2;
+  if (snapshot.bracketSize !== expectedBracketSize) return false;
+  if (snapshot.format === 'avoid-first-pair') {
+    return snapshot.participantCount === 8
+      && snapshot.bracketSize === 8
+      && snapshot.orderMode === 'input'
+      && snapshot.fixedSeedCount === 0;
+  }
+  return snapshot.fixedSeedCount === 0
+    || battleFixedSeedOptions(snapshot.participantCount).includes(snapshot.fixedSeedCount);
+}
+
+function isValidBattleTmpParticipants(snapshot: BattleTmpSnapshot): boolean {
+  if (snapshot.participants.length !== snapshot.participantCount) return false;
+  const ids = new Set<number>();
+  const sourceIndexes = new Set<number>();
+  const seeds = new Set<number>();
+  const names = new Set<string>();
+  for (const participant of snapshot.participants as unknown[]) {
+    if (!isRecord(participant)
+      || !isSafeIntegerAtLeast(participant.id, 1)
+      || typeof participant.name !== 'string'
+      || participant.name.trim() !== participant.name
+      || participant.name.length === 0
+      || !isSafeIntegerAtLeast(participant.sourceIndex, 0)
+      || Number(participant.sourceIndex) >= snapshot.participantCount
+      || !isSafeIntegerAtLeast(participant.seed, 1)
+      || Number(participant.seed) > snapshot.participantCount
+      || !isNullableSafeIntegerAtLeast(participant.groupIndex, 0)
+      || ![null, 1, 2].includes(participant.groupRank as null | number)) {
+      return false;
+    }
+    const id = Number(participant.id);
+    const sourceIndex = Number(participant.sourceIndex);
+    const seed = Number(participant.seed);
+    const normalizedName = participant.name.toLocaleLowerCase('zh-CN');
+    if (id !== sourceIndex + 1
+      || ids.has(id)
+      || sourceIndexes.has(sourceIndex)
+      || seeds.has(seed)
+      || names.has(normalizedName)) {
+      return false;
+    }
+    if (snapshot.format === 'avoid-first-pair') {
+      if (participant.groupIndex !== Math.floor(sourceIndex / 2)
+        || participant.groupRank !== sourceIndex % 2 + 1) return false;
+    } else if (participant.groupIndex !== null || participant.groupRank !== null) {
+      return false;
+    }
+    ids.add(id);
+    sourceIndexes.add(sourceIndex);
+    seeds.add(seed);
+    names.add(normalizedName);
+  }
+  return true;
+}
+
+function isValidBattleTmpMatches(snapshot: BattleTmpSnapshot): boolean {
+  const participantIds = new Set(snapshot.participants.map((participant) => participant.id));
+  const hasResetFinal = snapshot.matches.some((match) => (
+    isRecord(match) && match.matchId === 'GF-RESET-M1'
+  ));
+  const expectedMatches = expectedBattleTmpMatches(snapshot.format, snapshot.bracketSize, hasResetFinal);
+  if (snapshot.matches.length !== expectedMatches.size) return false;
+
+  const matchIds = new Set<string>();
+  const coordinates = new Set<string>();
+  for (const match of snapshot.matches as unknown[]) {
+    if (!isRecord(match)
+      || typeof match.matchId !== 'string'
+      || !['pairing', 'single', 'winner', 'loser', 'final'].includes(String(match.stage))
+      || !isSafeIntegerAtLeast(match.level, 1)
+      || !isSafeIntegerAtLeast(match.position, 1)
+      || !isNullableSafeIntegerAtLeast(match.up, 1)
+      || !isNullableSafeIntegerAtLeast(match.down, 1)
+      || !isNullableSafeIntegerAtLeast(match.upResult, 0)
+      || !isNullableSafeIntegerAtLeast(match.downResult, 0)
+      || !['pending', 'ready', 'completed', 'skipped'].includes(String(match.status))) {
+      return false;
+    }
+    const expected = expectedMatches.get(match.matchId);
+    const coordinate = `${match.stage}:${match.level}:${match.position}`;
+    if (!expected
+      || expected.stage !== match.stage
+      || expected.level !== match.level
+      || expected.position !== match.position
+      || matchIds.has(match.matchId)
+      || coordinates.has(coordinate)
+      || (match.up !== null && !participantIds.has(Number(match.up)))
+      || (match.down !== null && !participantIds.has(Number(match.down)))
+      || (match.up !== null && match.up === match.down)
+      || (match.up === null && match.upResult !== null)
+      || (match.down === null && match.downResult !== null)) {
+      return false;
+    }
+    matchIds.add(match.matchId);
+    coordinates.add(coordinate);
+  }
+
+  const openingStage = snapshot.format === 'double-elimination' ? 'winner' : 'single';
+  const openingParticipants = snapshot.matches
+    .filter((match) => match.stage === openingStage && match.level === 1)
+    .flatMap((match) => [match.up, match.down])
+    .filter((id): id is number => id !== null);
+  if (openingParticipants.length !== snapshot.participantCount
+    || new Set(openingParticipants).size !== snapshot.participantCount) return false;
+
+  const recomputed = recomputeBattleTmpSnapshot({
+    ...snapshot,
+    participants: snapshot.participants.map((participant) => ({ ...participant })),
+    matches: snapshot.matches.map((match) => ({ ...match })),
+  });
+  const recomputedById = new Map(recomputed.matches.map((match) => [match.matchId, match]));
+  return snapshot.matches.every((match) => {
+    const expected = recomputedById.get(match.matchId);
+    return expected !== undefined
+      && match.up === expected.up
+      && match.down === expected.down
+      && match.upResult === expected.upResult
+      && match.downResult === expected.downResult
+      && match.status === expected.status;
+  });
+}
+
+function expectedBattleTmpMatches(
+  format: BattleFormat,
+  bracketSize: number,
+  hasResetFinal: boolean,
+): Map<string, { stage: BattleBracket; level: number; position: number }> {
+  const expected = new Map<string, { stage: BattleBracket; level: number; position: number }>();
+  const addRound = (stage: BattleBracket, level: number, matchCount: number) => {
+    for (let position = 1; position <= matchCount; position += 1) {
+      const matchId = expectedBattleTmpMatchId(stage, level, position);
+      expected.set(matchId, { stage, level, position });
+    }
+  };
+  const winnerStage: BattleBracket = format === 'double-elimination' ? 'winner' : 'single';
+  let winnerLevelCount = 0;
+  for (let level = 1, matchCount = bracketSize / 2; matchCount >= 1; level += 1, matchCount /= 2) {
+    addRound(winnerStage, level, matchCount);
+    winnerLevelCount = level;
+  }
+  if (format !== 'double-elimination') return expected;
+
+  let loserLevel = 1;
+  addRound('loser', loserLevel, bracketSize / 4);
+  for (let winnerLevel = 2; winnerLevel <= winnerLevelCount; winnerLevel += 1) {
+    const droppingMatchCount = bracketSize / (2 ** winnerLevel);
+    loserLevel += 1;
+    addRound('loser', loserLevel, droppingMatchCount);
+    if (winnerLevel < winnerLevelCount) {
+      loserLevel += 1;
+      addRound('loser', loserLevel, droppingMatchCount / 2);
+    }
+  }
+  addRound('final', 1, 1);
+  if (hasResetFinal) addRound('final', 2, 1);
+  return expected;
+}
+
+function expectedBattleTmpMatchId(stage: BattleBracket, level: number, position: number): string {
+  if (stage === 'pairing') return `P-R${level}-M${position}`;
+  if (stage === 'single') return `S${level}-M${position}`;
+  if (stage === 'winner') return `W${level}-M${position}`;
+  if (stage === 'loser') return `L${level}-M${position}`;
+  return level === 1 ? `GF-M${position}` : `GF-RESET-M${position}`;
+}
+
+function isSafeIntegerAtLeast(value: unknown, minimum: number): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum;
+}
+
+function isNullableSafeIntegerAtLeast(value: unknown, minimum: number): value is number | null {
+  return value === null || isSafeIntegerAtLeast(value, minimum);
 }
 
 export function updateBattleTmpResult(
