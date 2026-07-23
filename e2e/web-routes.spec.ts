@@ -10,6 +10,16 @@ async function clearDesktopBattle(page: Page) {
   await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(0);
 }
 
+test('默认站点图标可在页面挂载前直接加载', async ({ page, request }) => {
+  const response = await request.get('/favicon.ico');
+  expect(response.status()).toBe(200);
+  expect(response.headers()['content-type']).toContain('image/svg+xml');
+  expect(await response.text()).toContain('<svg');
+
+  await page.goto('/wheel');
+  await expect(page.locator('link[rel="icon"][href="/favicon.ico"]')).toHaveCount(1);
+});
+
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
   const routes = [
     { path: '/wheel', title: '转盘', caimi: false },
