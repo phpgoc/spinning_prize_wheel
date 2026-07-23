@@ -1031,6 +1031,63 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(0);
 });
 
+test('抽奖历史导出期间锁定单条和汇总按钮，避免重复写文件', async ({ page }) => {
+  const drawHistory = {
+    version: 1,
+    id: 'draw-export-lock',
+    createdAt: new Date(2026, 6, 20, 12).getTime(),
+    mode: 'selected',
+    rewardAmount: 0,
+    prizes: [{ id: 'p-1', name: '甲', weight: 1, color: '#111111', enabled: true }],
+    records: [{
+      id: 'record-1',
+      sequence: 1,
+      round: 1,
+      attempt: 1,
+      optionId: 'p-1',
+      label: '甲',
+      outcome: 'selected',
+      detail: '已选中',
+      rewardAmount: 0,
+      mode: 'selected',
+      createdAt: new Date(2026, 6, 20, 12).getTime(),
+      source: 'single',
+    }],
+  };
+  await installTauriMock(page, undefined, { drawHistories: [drawHistory] });
+  await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
+  const historyPanel = page.locator('.history-content');
+  const summaryJson = historyPanel.locator('[data-export="draw-history-summary-json"]');
+  const cardJson = historyPanel.locator('.draw-history-card [data-export="draw-history-json"]');
+  await expect(summaryJson).toBeVisible();
+  await expect(cardJson).toHaveCount(1);
+
+  // 让导出请求保持 pending，才能稳定复现快速连点窗口。
+  await page.evaluate(() => {
+    const internals = (window as any).__TAURI_INTERNALS__;
+    const original = internals.invoke;
+    internals.invoke = async (command: string, args: Record<string, unknown>) => {
+      const result = await original(command, args);
+      if (command === 'export_text_file') await new Promise((resolve) => setTimeout(resolve, 500));
+      return result;
+    };
+  });
+  await page.evaluate(() => (window as any).__E2E_TAURI_STATE__.invocations = []);
+
+  await page.getByRole('button', { name: 'JSON', exact: true }).first().click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations.filter((entry: any) => entry.cmd === 'export_text_file').length
+  ))).toBe(1);
+  await expect(cardJson).toHaveText('导出中…');
+  await expect(summaryJson).toBeDisabled();
+  await expect(cardJson).toBeDisabled();
+  await expect(cardJson).toHaveText('JSON', { timeout: 5_000 });
+  await expect(summaryJson).toBeEnabled();
+  await expect(cardJson).toBeEnabled();
+});
+
 test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名', async ({ page }) => {
   await openDesktopLineup(page);
   const selectedBefore = await page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (

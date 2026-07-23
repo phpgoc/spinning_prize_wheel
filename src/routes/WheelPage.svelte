@@ -180,6 +180,8 @@
   let batchResult: BatchSimulation | null = null;
   let batchRunAt: number | null = null;
   let wheelExporting: 'stats-excel' | 'stats-json' | 'batch-json' | null = null;
+  // 历史导出共用一个锁，避免快速连点向 Tauri 发起重复写文件请求。
+  let drawHistoryExporting: string | null = null;
   let statsExportError = '';
   let batchExportError = '';
   let hydrated = false;
@@ -717,46 +719,47 @@
   async function exportDrawHistoriesExcel() {
     if (filteredDrawHistories.length === 0) return;
     const rows = aggregateDrawHistories(filteredDrawHistories);
-    drawHistoryError = '';
-    try {
-      await downloadExcel('转盘历史查询', [
-        ['名字', '参与次数', '中奖次数', '中奖金额'],
-        ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
-      ]);
-    } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 Excel');
-    }
+    await runDrawHistoryExport('summary-excel', '无法导出历史汇总 Excel', () => downloadExcel('转盘历史查询', [
+      ['名字', '参与次数', '中奖次数', '中奖金额'],
+      ...rows.map((row) => [row.name, row.participationCount, row.winCount, row.rewardTotal]),
+    ]));
   }
 
   async function exportDrawHistoriesJson() {
     if (filteredDrawHistories.length === 0) return;
-    drawHistoryError = '';
-    try {
-      await downloadFormattedJson('转盘历史查询', aggregateDrawHistories(filteredDrawHistories));
-    } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出历史汇总 JSON');
-    }
+    await runDrawHistoryExport('summary-json', '无法导出历史汇总 JSON', () => (
+      downloadFormattedJson('转盘历史查询', aggregateDrawHistories(filteredDrawHistories))
+    ));
   }
 
   async function exportDrawHistoryExcel(draw: SavedDraw) {
     const rows = singleDrawHistoryStats(draw);
-    drawHistoryError = '';
-    try {
-      await downloadExcel('抽奖历史', [
-        ['名字', '权重', '中奖次数', '中奖金额'],
-        ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
-      ]);
-    } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 Excel');
-    }
+    await runDrawHistoryExport(`draw:${draw.id}:excel`, '无法导出单条历史 Excel', () => downloadExcel('抽奖历史', [
+      ['名字', '权重', '中奖次数', '中奖金额'],
+      ...rows.map((row) => [row.name, row.weight, row.count, row.rewardTotal]),
+    ]));
   }
 
   async function exportDrawHistoryJson(draw: SavedDraw) {
+    await runDrawHistoryExport(`draw:${draw.id}:json`, '无法导出单条历史 JSON', () => (
+      downloadFormattedJson('抽奖历史', singleDrawHistoryStats(draw))
+    ));
+  }
+
+  async function runDrawHistoryExport(
+    key: string,
+    fallback: string,
+    action: () => Promise<unknown>,
+  ) {
+    if (drawHistoryExporting !== null) return;
+    drawHistoryExporting = key;
     drawHistoryError = '';
     try {
-      await downloadFormattedJson('抽奖历史', singleDrawHistoryStats(draw));
+      await action();
     } catch (reason) {
-      drawHistoryError = exportErrorMessage(reason, '无法导出单条历史 JSON');
+      drawHistoryError = exportErrorMessage(reason, fallback);
+    } finally {
+      drawHistoryExporting = null;
     }
   }
 
@@ -2643,8 +2646,18 @@
                   <div class="draw-history-bottom">
                     <p title={draw.prizes.map((prize) => prize.name).join('、')}>{draw.prizes.map((prize) => prize.name).join('、') || '空名单'}</p>
                     <div class="draw-history-export-actions">
-                      <UiButton size="xs" on:click={() => exportDrawHistoryExcel(draw)}>Excel</UiButton>
-                      <UiButton size="xs" on:click={() => exportDrawHistoryJson(draw)}>JSON</UiButton>
+                      <UiButton
+                        size="xs"
+                        data-export="draw-history-excel"
+                        disabled={drawHistoryExporting !== null}
+                        on:click={() => exportDrawHistoryExcel(draw)}
+                      >{drawHistoryExporting === `draw:${draw.id}:excel` ? '导出中…' : 'Excel'}</UiButton>
+                      <UiButton
+                        size="xs"
+                        data-export="draw-history-json"
+                        disabled={drawHistoryExporting !== null}
+                        on:click={() => exportDrawHistoryJson(draw)}
+                      >{drawHistoryExporting === `draw:${draw.id}:json` ? '导出中…' : 'JSON'}</UiButton>
                     </div>
                   </div>
                 </article>
@@ -2653,8 +2666,18 @@
 
           {/if}
           <div class="history-actions sidebar-history-actions">
-            <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesExcel}>汇总 Excel</UiButton>
-            <UiButton size="sm" disabled={filteredDrawHistories.length === 0} on:click={exportDrawHistoriesJson}>汇总 JSON</UiButton>
+            <UiButton
+              size="sm"
+              data-export="draw-history-summary-excel"
+              disabled={filteredDrawHistories.length === 0 || drawHistoryExporting !== null}
+              on:click={exportDrawHistoriesExcel}
+            >{drawHistoryExporting === 'summary-excel' ? '导出中…' : '汇总 Excel'}</UiButton>
+            <UiButton
+              size="sm"
+              data-export="draw-history-summary-json"
+              disabled={filteredDrawHistories.length === 0 || drawHistoryExporting !== null}
+              on:click={exportDrawHistoriesJson}
+            >{drawHistoryExporting === 'summary-json' ? '导出中…' : '汇总 JSON'}</UiButton>
             {#if desktopRuntime}
               <UiButton size="sm" on:click={openDrawDownloadFolder}>打开下载</UiButton>
             {/if}
