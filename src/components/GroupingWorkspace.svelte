@@ -7,6 +7,7 @@
   import BattleBracketViewer from './BattleBracketViewer.svelte';
   import UiButton from './ui/UiButton.svelte';
   import UiCheckbox from './ui/UiCheckbox.svelte';
+  import UiColorPalette from './ui/UiColorPalette.svelte';
   import UiConfirmDialog from './ui/UiConfirmDialog.svelte';
   import UiHistoryPanel from './ui/UiHistoryPanel.svelte';
   import UiHistoryRow from './ui/UiHistoryRow.svelte';
@@ -3202,10 +3203,10 @@
                 {/each}
               </div>
               <div class="battle-color-custom">
-                <label><span>背景</span><input type="color" aria-label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} /></label>
-                <label><span>文字</span><input type="color" aria-label="文字颜色" value={battleColors.text} on:input={(event) => updateBattleColor('text', event)} /></label>
-                <label><span>选手</span><input type="color" aria-label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} /></label>
-                <label><span>对战</span><input type="color" aria-label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} /></label>
+                <UiColorPalette label="背景框颜色" value={battleColors.background} on:input={(event) => updateBattleColor('background', event)} />
+                <UiColorPalette label="文字颜色" value={battleColors.text} on:input={(event) => updateBattleColor('text', event)} />
+                <UiColorPalette label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} />
+                <UiColorPalette label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} />
               </div>
             </fieldset>
           </div>
@@ -3900,31 +3901,10 @@
   }
 
   .battle-color-custom {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(116px, 1fr));
     align-items: center;
     gap: 5px;
-  }
-
-  .battle-color-custom label {
-    display: grid;
-    padding: 5px 7px;
-    border: 1px solid color-mix(in srgb, var(--battle-text-color) 18%, transparent);
-    border-radius: 8px;
-    align-items: center;
-    gap: 3px;
-    color: var(--battle-text-color);
-    font-size: calc(10px * var(--font-scale, 1));
-    justify-items: center;
-  }
-
-  .battle-color-controls input {
-    width: 27px;
-    height: 24px;
-    padding: 0;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    cursor: pointer;
   }
 
   .lineup-center {

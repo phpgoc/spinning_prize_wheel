@@ -1,14 +1,14 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import {
-    battleTmpScoreLocked,
     battleTmpSlotOrigin,
-    battleTmpWinnerId,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
   } from '../lib/battle';
+  import BattleMatchCard from './BattleMatchCard.svelte';
 
   type BattleSide = 'up' | 'down';
+  type BattleScorePosition = 'left' | 'right';
   const BATTLE_SIDES: BattleSide[] = ['up', 'down'];
   type BattleRoundGroup = {
     id: string;
@@ -137,76 +137,6 @@
     return `1/${matchCount}`;
   }
 
-  function battleTmpMatchCode(match: BattleTmpMatch): string {
-    const stage = match.stage === 'pairing' ? 'P'
-      : match.stage === 'single' ? 'S'
-        : match.stage === 'winner' ? 'W'
-          : match.stage === 'loser' ? 'L'
-            : 'F';
-    return `${stage}${match.level} P${match.position}`;
-  }
-
-  function battleTmpParticipantName(id: number | null): string {
-    if (id === null) return '等待上游';
-    return snapshot.participants.find((participant) => participant.id === id)?.name ?? `#${id}`;
-  }
-
-  function battleTmpSlotName(match: BattleTmpMatch, side: BattleSide): string {
-    const participantId = side === 'up' ? match.up : match.down;
-    const origin = battleTmpSlotOrigin(snapshot, match, side);
-    if (maskUnfixed && match.level > 1) {
-      const originMatch = origin
-        ? snapshot.matches.find((candidate) => candidate.matchId === origin.matchId)
-        : null;
-      return originMatch ? battleTmpMatchCode(originMatch) : '待定';
-    }
-    if (participantId !== null) {
-      const participant = snapshot.participants.find((candidate) => candidate.id === participantId);
-      if (maskUnfixed && (!participant || participant.seed > snapshot.fixedSeedCount)) return '待随机';
-      return battleTmpParticipantName(participantId);
-    }
-    if (match.stage === 'final' && match.level === 2 && match.status === 'skipped') return '无需重赛';
-    if (automaticAdvanceParticipant(match) !== null) return '轮空';
-    if (!origin) return match.status === 'skipped' ? '空签' : '待定';
-    const originMatch = snapshot.matches.find((candidate) => candidate.matchId === origin.matchId);
-    if (originMatch?.status === 'skipped') return '上游空场';
-    if (originMatch && origin.outcome === 'loser' && automaticAdvanceParticipant(originMatch) !== null) {
-      return '上游轮空，无败者';
-    }
-    return originMatch ? battleTmpMatchCode(originMatch) : '待定';
-  }
-
-  function battleTmpAutomaticStatus(match: BattleTmpMatch): string | null {
-    if (match.stage === 'final' && match.level === 2 && match.status === 'skipped') {
-      return '胜者组冠军已胜出，无需重赛';
-    }
-    const participantId = automaticAdvanceParticipant(match);
-    if (participantId !== null) {
-      const name = battleTmpParticipantName(participantId);
-      if (match.stage === 'single' && match.level === 1) return `${name} 轮空，自动进入第二轮`;
-      if (match.stage === 'winner' && match.level === 1) return `${name} 轮空，自动进入胜者组第二轮`;
-      if (match.stage === 'loser') return `${name} 无对手，自动进入败者组下一轮`;
-      return `${name} 无对手，自动晋级下一轮`;
-    }
-    if (match.status === 'skipped') return '没有可参赛选手，本场自动跳过';
-    return null;
-  }
-
-  function battleTmpParticipantWon(match: BattleTmpMatch, id: number | null): boolean {
-    return id !== null && battleTmpWinnerId(match) === id;
-  }
-
-  function battleTmpParticipantFixed(id: number | null): boolean {
-    if (id === null) return false;
-    const participant = snapshot.participants.find((item) => item.id === id);
-    return Boolean(participant && participant.seed <= snapshot.fixedSeedCount);
-  }
-
-  function scoreValue(match: BattleTmpMatch, side: BattleSide): number | '' {
-    if (maskUnfixed) return '';
-    return (side === 'up' ? match.upResult : match.downResult) ?? '';
-  }
-
   function observeSingleBracket(node: HTMLElement) {
     let frame = 0;
     const observer = new ResizeObserver(() => schedule());
@@ -272,63 +202,21 @@
 
 </script>
 
-{#snippet battleMatchCard(match: BattleTmpMatch)}
-  {@const automaticStatus = battleTmpAutomaticStatus(match)}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <article
-    class:read-only={readOnly}
-    class:auto-advance={automaticAdvanceParticipant(match) !== null}
-    class:auto-skipped={match.status === 'skipped'}
-    class="battle-match"
-    tabindex={readOnly ? undefined : 0}
-    aria-label={`${battleTmpMatchCode(match)} 对战`}
-    data-battle-stage={match.stage}
-    data-battle-level={match.level}
-    data-battle-position={match.position}
-    data-battle-status={match.status}
-    data-battle-match-id={match.matchId}
-    on:keydown={readOnly ? undefined : onMatchKeydown}
-  >
-    <small>
-      <span>{battleTmpMatchCode(match)}</span>
-      {#if automaticStatus}
-        <em>{automaticStatus}</em>
-      {/if}
-    </small>
-    {#each BATTLE_SIDES as side (side)}
-      <div
-        class:fixed={battleTmpParticipantFixed(match[side])}
-        class:winner={battleTmpParticipantWon(match, match[side])}
-        class:waiting={match[side] === null}
-        class="battle-side"
-      >
-        <div>
-          {#if !readOnly && hiddenSlotKeys.has(`${match.matchId}:${side}`)}
-            <button type="button" class="battle-reveal-slot" aria-label={`揭晓 ${battleTmpSlotName(match, side)}`} on:click|stopPropagation={() => onReveal?.(match, side)}>·</button>
-            <span class="visually-hidden">{battleTmpSlotName(match, side)}</span>
-          {:else}
-            <strong>{battleTmpSlotName(match, side)}</strong>
-          {/if}
-        </div>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          inputmode="numeric"
-          data-battle-match-id={match.matchId}
-          data-battle-side={side}
-          aria-label={`${battleTmpSlotName(match, side)} ${side === 'up' ? '上方' : '下方'}比分`}
-          value={scoreValue(match, side)}
-          disabled={readOnly || match.up === null || match.down === null || saving || match.status === 'skipped' || battleTmpScoreLocked(snapshot, match, side)}
-          title={!readOnly && battleTmpScoreLocked(snapshot, match, side) ? '下游已有比分' : ''}
-          on:focus={readOnly ? undefined : onScoreFocus}
-          on:keydown={readOnly ? undefined : (event) => onScoreKeydown?.(match, side, event)}
-          on:change={readOnly ? undefined : (event) => onScoreChange?.(match, side, event)}
-        />
-      </div>
-    {/each}
-  </article>
+{#snippet battleMatchCard(match: BattleTmpMatch, scorePosition: BattleScorePosition = 'right')}
+  <BattleMatchCard
+    {snapshot}
+    {match}
+    {readOnly}
+    {maskUnfixed}
+    {hiddenSlotKeys}
+    {saving}
+    {scorePosition}
+    {onMatchKeydown}
+    {onScoreFocus}
+    {onScoreKeydown}
+    {onScoreChange}
+    {onReveal}
+  />
 {/snippet}
 
 {#if !previewOnly && byeExplanation}
@@ -359,16 +247,16 @@
     {/if}
     <div class="single-bracket-side left">
       {#each layout.single.left as round (round.id)}
-        <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
+        <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match, 'right')}{/each}</div></section>
       {/each}
     </div>
     <section class="single-bracket-final">
       <h3>决赛</h3>
-      {#if layout.single.final}{@render battleMatchCard(layout.single.final)}{/if}
+      {#if layout.single.final}{@render battleMatchCard(layout.single.final, 'right')}{/if}
     </section>
     <div class="single-bracket-side right">
       {#each layout.single.right as round (round.id)}
-        <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match)}{/each}</div></section>
+        <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render battleMatchCard(match, 'left')}{/each}</div></section>
       {/each}
     </div>
   </div>
@@ -402,18 +290,16 @@
   .battle-bye-explanation { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--battle-text-color, var(--lineup-text-on-dark)); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.55; }
   .battle-bye-explanation strong { flex: 0 0 auto; color: var(--accent); }
   .battle-bye-explanation span { min-width: 0; }
-  .battle-bracket { display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
-  .single-battle-bracket { position: relative; display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(220px, 250px) minmax(max-content, 1fr); gap: 16px; align-items: center; margin-top: 18px; overflow: auto; isolation: isolate; transition: opacity 180ms ease; }
+  .battle-bracket { --battle-round-width: calc(235px * var(--battle-layout-scale, 1)); display: flex; gap: 13px; margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }
+  .single-battle-bracket { --battle-round-width: calc(235px * var(--battle-layout-scale, 1)); position: relative; display: grid; min-width: 0; grid-template-columns: max-content var(--battle-round-width) max-content; gap: calc(16px * var(--battle-layout-scale, 1)); align-items: center; margin-top: 18px; overflow: auto; isolation: isolate; transition: opacity 180ms ease; }
   .single-bracket-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
   .single-bracket-connectors path { fill: none; stroke: color-mix(in srgb, var(--accent) 42%, transparent); stroke-width: calc(2px * var(--battle-layout-scale, 1)); stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .single-bracket-side { position: relative; z-index: 1; display: flex; align-items: stretch; gap: 13px; }
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
-  .single-bracket-side .battle-round { display: flex; min-width: calc(220px * var(--battle-layout-scale, 1)); flex-direction: column; justify-content: center; }
-  .single-bracket-final { position: relative; z-index: 1; min-width: calc(220px * var(--battle-layout-scale, 1)); padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
+  .single-bracket-side .battle-round { display: flex; flex-direction: column; justify-content: center; }
+  .single-bracket-final { position: relative; z-index: 1; min-width: 0; padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
   .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
-  .single-bracket-side.right .battle-match { direction: rtl; }
-  .single-bracket-side.right .battle-match > * { direction: ltr; }
   .double-battle-scroll { margin-top: 18px; outline: 0; overflow: auto; scroll-behavior: smooth; }
   .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 34%, transparent); }
   .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: clamp(42px, 5vw, 86px); row-gap: clamp(34px, 5vh, 62px); transition: opacity 180ms ease; }
@@ -435,70 +321,10 @@
   .double-battle-bracket .battle-round > div { flex: 1; }
   .double-winner-section .battle-round > div { align-content: end; }
   .double-loser-section .battle-round > div { align-content: start; }
-  .double-battle-bracket .battle-match { padding: 6px; }
-  .double-battle-bracket .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
-  .double-battle-bracket .battle-match > div { padding: 4px 6px; }
-  .double-battle-bracket .battle-match > div + div { margin-top: 2px; }
-  .double-battle-bracket .battle-match > .battle-side { gap: 6px; }
-  .double-battle-bracket .battle-side input { min-height: 30px; }
   :global(.battle-fullscreen) .double-battle-scroll { margin-top: 10px; }
-  .battle-round { flex: 0 0 min(calc(235px * var(--battle-layout-scale, 1)), 74vw); }
+  .battle-round { flex: 0 0 var(--battle-round-width); }
   .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
   .battle-round > div { display: grid; gap: calc(10px * var(--battle-layout-scale, 1)); margin-top: 9px; }
   .single-bracket-side.left .battle-round:first-child > div,
   .single-bracket-side.right .battle-round:last-child > div { gap: calc(16px * var(--battle-layout-scale, 1)); }
-  .mask-unfixed .battle-match.read-only input { visibility: hidden; }
-  .mask-unfixed .battle-match.read-only .battle-side:not(.fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
-  .battle-match { min-width: 0; padding: calc(9px * var(--battle-layout-scale, 1)); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: calc(11px * var(--battle-layout-scale, 1)); background: var(--battle-match-color, rgba(255, 255, 255, 0.035)); }
-  .battle-match > small { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; margin-bottom: calc(6px * var(--battle-layout-scale, 1)); color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent); font-family: var(--font-mono); font-size: calc(9px * var(--font-scale, 1)); }
-  .battle-match > small em { padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 13%, transparent); color: color-mix(in srgb, var(--accent) 78%, var(--battle-text-color, white)); font-family: inherit; font-style: normal; font-weight: 750; }
-  .battle-match.auto-skipped > small em { background: rgba(255, 255, 255, 0.06); color: color-mix(in srgb, var(--battle-text-color, white) 62%, transparent); }
-  .battle-match > div { width: 100%; min-width: 0; padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1)); border: 0; border-left: 2px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.13); color: inherit; font: inherit; text-align: left; }
-  .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
-  .battle-match > div.fixed { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  .battle-match > div.waiting { color: var(--lineup-dim-on-dark); }
-  .battle-match > .battle-side { display: flex; align-items: center; gap: 8px; }
-  .battle-side > div { min-width: 0; flex: 1; }
-  .battle-side.winner { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .battle-side input {
-    width: calc(48px * var(--battle-layout-scale, 1));
-    min-height: calc(36px * var(--battle-layout-scale, 1));
-    padding: 4px 5px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 7px;
-    outline: 0;
-    background: rgba(0, 0, 0, 0.2);
-    color: #f4f5ec;
-    font-family: var(--font-mono);
-    font-size: calc(14px * var(--font-scale, 1));
-    font-weight: 800;
-    text-align: center;
-  }
-  .battle-side input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
-  .battle-side input:disabled { opacity: 0.4; }
-  .battle-match strong { display: block; overflow: hidden; color: var(--battle-participant-color, inherit); font-size: calc(24px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  .battle-reveal-slot {
-    display: block;
-    width: 100%;
-    min-height: 24px;
-    padding: 0;
-    border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--accent);
-    cursor: pointer;
-    font-size: calc(21px * var(--font-scale, 1));
-    line-height: 1;
-  }
-  .battle-reveal-slot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

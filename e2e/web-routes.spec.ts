@@ -107,6 +107,8 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   const battleResult = page.locator('.battle-result');
   const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
+  await expect(page.locator('.ui-color-palette')).toHaveCount(4);
+  await expect(page.locator('.color-swatches button')).toHaveCount(32);
   await expect(presets.getByRole('button')).toHaveCount(3);
   await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
 
@@ -359,6 +361,58 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
   });
   expect(largeCard!.width).toBeGreaterThan(normalCard!.width * 1.4);
   expect(largeGap).toBeGreaterThan(normalGap * 1.4);
+});
+
+test('窄屏最大字号时单败右侧不覆盖，比分仍朝签表中心', async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.goto('/battle');
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+
+  const bracket = page.locator('.single-battle-bracket');
+  const finalMatch = page.locator('[data-battle-stage="single"][data-battle-level="3"][data-battle-position="1"]');
+  const rightSemiFinal = page.locator('[data-battle-stage="single"][data-battle-level="2"][data-battle-position="2"]');
+  const [layout, finalBox, rightSemiFinalBox] = await Promise.all([
+    bracket.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth })),
+    finalMatch.boundingBox(),
+    rightSemiFinal.boundingBox(),
+  ]);
+  expect(layout.scrollWidth).toBeGreaterThan(layout.clientWidth);
+  expect(finalBox!.x + finalBox!.width).toBeLessThanOrEqual(rightSemiFinalBox!.x);
+
+  const rightScoreOrder = await rightSemiFinal.locator('.battle-side').first().evaluate((side) => {
+    const participant = side.querySelector('.battle-participant')!.getBoundingClientRect();
+    const score = side.querySelector('input')!.getBoundingClientRect();
+    return { participant, score, scoreLeft: side.classList.contains('score-left') };
+  });
+  expect(rightScoreOrder.scoreLeft).toBe(true);
+  expect(rightScoreOrder.score.right).toBeLessThanOrEqual(rightScoreOrder.participant.left);
+});
+
+test('悬念揭晓不会改变对战框高度，双败比分统一靠右', async ({ page }) => {
+  await page.goto('/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+
+  const firstMatch = page.locator('.single-bracket-side .battle-match').first();
+  const beforeReveal = await firstMatch.boundingBox();
+  await firstMatch.getByRole('button', { name: /^揭晓 /u }).first().click();
+  const afterReveal = await firstMatch.boundingBox();
+  expect(afterReveal!.height).toBeCloseTo(beforeReveal!.height, 4);
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.getByRole('radio', { name: '双败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  await expect(page.locator('.double-battle-bracket .battle-side.score-left')).toHaveCount(0);
 });
 });
 
