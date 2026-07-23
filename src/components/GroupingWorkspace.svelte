@@ -943,8 +943,6 @@
         const snapshot = parseBattleTmpSnapshot(structuredClone(target.history.snapshot), variant);
         const current = await readBattleTmpState();
         battleTmpAvailable = current !== null;
-        if (current) archiveBattleHistory(current);
-        else if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
         battleSyncStatus = 'saving';
         await invoke('save_battle_tmp_state', { variant, state: snapshot });
         applyBattleTmpSnapshot(snapshot);
@@ -992,7 +990,7 @@
     if (pending.confirmation === 2) {
       return pending.target.kind === 'current'
         ? '将重新读取数据库中的关系化临时表；页面内容全部以数据库为准。'
-        : '现有临时签表会先保存到对战历史；所选历史随后覆盖关系化临时表。';
+        : '现有临时签表不会自动保存；未手动保存的状态会被所选历史覆盖。';
     }
     return pending.target.kind === 'current'
       ? '加载完成后配置继续锁定，只有签表中的比分可以修改。'
@@ -2615,7 +2613,6 @@
 
   async function clearAll(clearBattleSetup = true) {
     if (battlePage) {
-      if (battleTmpSnapshot) archiveBattleHistory(battleTmpSnapshot);
       if (desktopRuntime) {
         clearingBattleTmp = true;
         try {

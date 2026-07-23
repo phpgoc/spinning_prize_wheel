@@ -278,7 +278,7 @@ test('比分同步失败会恢复数据库状态并在重试成功后清除错�
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-test('历史覆盖写入失败会保留当前临时表并归档当前比分', async ({ page }) => {
+test('历史覆盖写入失败会保留当前临时表且不会自动归档当前比分', async ({ page }) => {
   await openDesktopBattle(page);
   const textarea = page.locator('.names-field textarea');
   await textarea.fill('甲\n乙\n丙\n丁');
@@ -310,5 +310,5 @@ test('历史覆盖写入失败会保留当前临时表并归档当前比分', as
   ))).toEqual(currentSnapshot);
   await expect(firstMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
   await expect(firstMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
-  await expect(battleHistoryCards(page)).toHaveCount(2);
+  await expect(battleHistoryCards(page)).toHaveCount(1);
 });
