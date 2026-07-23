@@ -20,11 +20,11 @@ test('单败在抽签、部分比分和完赛时导出完全相同的预留签�
     'J5:K5',
     'M5:N5',
   ]));
-  expect(initialSheet.getCell('A5').value).toBe('第 1 轮');
-  expect(initialSheet.getCell('D5').value).toBe('第 2 轮');
+  expect(initialSheet.getCell('A5').value).toBe('1/4');
+  expect(initialSheet.getCell('D5').value).toBe('半决赛');
   expect(initialSheet.getCell('G5').value).toBe('决赛');
-  expect(initialSheet.getCell('J5').value).toBe('第 2 轮');
-  expect(initialSheet.getCell('M5').value).toBe('第 1 轮');
+  expect(initialSheet.getCell('J5').value).toBe('半决赛');
+  expect(initialSheet.getCell('M5').value).toBe('1/4');
   expect(initialSheet.getCell('A10').value).toBeNull();
   expect(initialSheet.getCell('M10').value).toBeNull();
   expect(initialSheet.getCell('G16').value).toBe('等待决赛');
@@ -65,9 +65,9 @@ test('同组不对战 1 对 2 使用相同左右签表并在完赛后原位写�
   const initialSheet = await exportBattleWorksheet(page);
   expect(initialSheet.getCell('A1').value).toBe('同组不对战1对2对战签表');
   expect(initialSheet.getCell('A5').value).toBe('1 对 2');
-  expect(initialSheet.getCell('D5').value).toBe('第 2 轮');
+  expect(initialSheet.getCell('D5').value).toBe('半决赛');
   expect(initialSheet.getCell('G5').value).toBe('决赛');
-  expect(initialSheet.getCell('J5').value).toBe('第 2 轮');
+  expect(initialSheet.getCell('J5').value).toBe('半决赛');
   expect(initialSheet.getCell('M5').value).toBe('1 对 2');
   expect(initialSheet.getCell('G16').value).toBe('等待决赛');
 

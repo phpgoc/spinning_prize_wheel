@@ -34,11 +34,17 @@ export async function createExcelWorkbook(
   });
   worksheet.addRows(rows.map((row) => [...row]));
 
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+  });
+
   if (rows.length > 0) {
     const header = worksheet.getRow(1);
     header.font = { bold: true, color: { argb: 'FF24251F' } };
     header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EFBC' } };
-    header.alignment = { vertical: 'middle' };
+    header.alignment = { vertical: 'middle', horizontal: 'center' };
   }
 
   worksheet.columns.forEach((column) => {

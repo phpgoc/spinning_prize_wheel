@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import {
+  battleRoundLabel,
   battleTmpWinnerId,
   type BattleTmpMatch,
   type BattleTmpSnapshot,
@@ -29,14 +30,14 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
   const nameById = new Map(snapshot.participants.map((participant) => [participant.id, participant.name]));
   const singleLike = snapshot.format === 'single-elimination' || snapshot.format === 'avoid-first-pair';
   const singleLevels = singleLike
-    ? groupedLevels(snapshot.matches.filter((match) => match.stage === 'single'), '第')
+    ? groupedLevels(snapshot.matches.filter((match) => match.stage === 'single'), snapshot.format, 'single')
     : [];
   const singleLayout = singleLike ? createSingleExcelLayout(singleLevels.length) : null;
   const doubleLevels = snapshot.format === 'double-elimination'
     ? {
-      winner: groupedLevels(snapshot.matches.filter((match) => match.stage === 'winner'), 'W'),
-      loser: groupedLevels(snapshot.matches.filter((match) => match.stage === 'loser'), 'L'),
-      final: groupedLevels(snapshot.matches.filter((match) => match.stage === 'final'), 'GF'),
+      winner: groupedLevels(snapshot.matches.filter((match) => match.stage === 'winner'), snapshot.format, 'winner'),
+      loser: groupedLevels(snapshot.matches.filter((match) => match.stage === 'loser'), snapshot.format, 'loser'),
+      final: groupedLevels(snapshot.matches.filter((match) => match.stage === 'final'), snapshot.format, 'final'),
     }
     : null;
   const doubleLayout = doubleLevels
@@ -515,7 +516,11 @@ function renderSingleRound(
   });
 }
 
-function groupedLevels(matches: BattleTmpMatch[], prefix: string) {
+function groupedLevels(
+  matches: BattleTmpMatch[],
+  format: BattleTmpSnapshot['format'],
+  stage: BattleTmpMatch['stage'],
+) {
   const byLevel = new Map<number, BattleTmpMatch[]>();
   for (const match of matches) {
     const levelMatches = byLevel.get(match.level) ?? [];
@@ -525,8 +530,8 @@ function groupedLevels(matches: BattleTmpMatch[], prefix: string) {
   return [...byLevel.entries()]
     .sort(([left], [right]) => left - right)
     .map(([level, levelMatches]) => ({
-      label: prefix === '第' ? `第 ${level} 轮` : `${prefix}${level}`,
       matches: levelMatches.sort((left, right) => left.position - right.position),
+      label: battleRoundLabel(format, stage, level, levelMatches.length).replace('1对2', '1 对 2'),
     }));
 }
 
@@ -552,7 +557,7 @@ function renderBattleSlot(
   for (const cell of [nameCell, scoreCell]) {
     cell.font = { bold: winner, color: { argb: participantId === null ? 'FF979C8D' : 'FF30352A' } };
     cell.fill = solidFill(winner ? WINNER_FILL : SLOT_FILL);
-    cell.alignment = { vertical: 'middle', horizontal: cell === scoreCell ? 'center' : 'left', indent: cell === nameCell ? 1 : 0 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', indent: cell === nameCell ? 1 : 0 };
     cell.border = thinBorder();
   }
 }

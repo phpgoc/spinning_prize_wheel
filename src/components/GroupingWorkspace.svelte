@@ -5,6 +5,7 @@
   import type { AppVariant } from '../lib/app-variant';
   import BattleBracketEditor from './BattleBracketEditor.svelte';
   import BattleBracketViewer from './BattleBracketViewer.svelte';
+  import LineupPreviewRow from './LineupPreviewRow.svelte';
   import UiButton from './ui/UiButton.svelte';
   import UiCheckbox from './ui/UiCheckbox.svelte';
   import UiColorPalette from './ui/UiColorPalette.svelte';
@@ -2985,7 +2986,7 @@
     <section class="lineup-center" aria-live="polite">
       <fieldset class="preview-panel app-surface-dark" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
-          <div><span>02</span><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
+          <div><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
           <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
             {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
@@ -3010,34 +3011,22 @@
                   {#if insertError}<small role="alert">{insertError}</small>{/if}
                 </form>
               {/if}
-              <div
-                class:unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
-                class="preview-row"
-              >
-                <div class="preview-leading-actions">
-                  <button type="button" class:active={insertIndex === index} class="insert-before-button" title={`在 ${row.name} 前插入`} aria-label={`在 ${row.name} 前插入`} on:click={() => openPreviewInsertion(index)}>＋</button>
-                  <span class="preview-position">{String(index + 1).padStart(2, '0')}</span>
-                </div>
-                <div class="preview-name">
-                  <input value={row.name} aria-label={`第 ${index + 1} 个名称`} on:change={(event) => updatePreviewName(index, (event.currentTarget as HTMLInputElement).value)} />
-                  {#if desktopRuntime}
-                    <small>{resolvingNames
-                      ? '核对中'
-                      : row.resolved?.known
-                        ? `本名 ${row.resolved.canonicalName} · 排名 ${row.resolved.rank}`
-                        : '未录入排名'}</small>
-                  {/if}
-                </div>
-                <div class="preview-trailing-actions">
-                  {#if desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
-                    <div class="preview-link-actions">
-                      <button type="button" class="link-preview-user" title="关联到现有排名" on:click={() => startAliasLink(row.name)}>关联</button>
-                      <button type="button" class="add-preview-user" title="直接加入无排名" disabled={rankingSaving} on:click={() => addUnknownPerson(row.name)}>录入</button>
-                    </div>
-                  {/if}
-                  <button type="button" class="remove-preview-user" title={`移除 ${row.name}`} aria-label={`移除 ${row.name}`} on:click={() => removePreviewName(index)}>删除</button>
-                </div>
-              </div>
+              <LineupPreviewRow
+                variant={battlePage ? 'battle' : 'grouping'}
+                name={row.name}
+                {index}
+                resolved={row.resolved}
+                {desktopRuntime}
+                {resolvingNames}
+                unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
+                insertActive={insertIndex === index}
+                {rankingSaving}
+                onRename={(name) => updatePreviewName(index, name)}
+                onInsert={() => openPreviewInsertion(index)}
+                onLink={() => startAliasLink(row.name)}
+                onRecord={() => addUnknownPerson(row.name)}
+                onRemove={() => removePreviewName(index)}
+              />
             {/each}
             {#if insertIndex === previewRows.length}
               <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
@@ -4072,94 +4061,6 @@
     background: linear-gradient(90deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.38), transparent);
   }
 
-  .preview-row {
-    position: relative;
-    display: grid;
-    min-width: 0;
-    min-height: calc(44px + 22px * var(--lineup-layout-scale, 1));
-    grid-template-columns: minmax(0, 1fr) minmax(90px, 1.35fr) minmax(0, 1fr);
-    align-items: center;
-    gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
-    padding: calc(5px + 4px * var(--lineup-layout-scale, 1)) calc(6px + 4px * var(--lineup-layout-scale, 1));
-    border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
-    border-radius: calc(7px + 4px * var(--lineup-layout-scale, 1));
-    background:
-      linear-gradient(100deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.065), transparent 54%),
-      rgba(255, 255, 255, 0.035);
-    box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
-  }
-
-  .preview-row.unknown {
-    border-color: rgba(221, 151, 132, 0.24);
-    background: rgba(221, 151, 132, 0.035);
-    box-shadow: inset 2px 0 rgba(221, 151, 132, 0.5);
-  }
-
-  .preview-position {
-    padding: 0;
-    color: var(--lineup-dim-on-dark);
-    font-family: var(--font-mono);
-    font-size: calc(11px * var(--font-scale, 1));
-    text-align: center;
-  }
-
-  .preview-leading-actions,
-  .preview-trailing-actions {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
-  }
-
-  .preview-leading-actions { justify-content: flex-start; }
-  .preview-trailing-actions { justify-content: flex-end; flex-wrap: wrap; }
-
-  .preview-row > div { min-width: 0; }
-
-  .preview-row > .preview-name {
-    display: grid;
-    min-height: calc(30px + 16px * var(--lineup-layout-scale, 1));
-    align-content: center;
-    justify-items: stretch;
-    padding: 0 calc(4px + 4px * var(--lineup-layout-scale, 1));
-    text-align: center;
-  }
-
-  .preview-row input {
-    width: 100%;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--on-dark);
-    font-family: var(--font-sans);
-    font-size: calc(18px * var(--font-scale, 1));
-    font-weight: 900;
-    letter-spacing: 0.025em;
-    text-align: center;
-    text-shadow: 0 2px 12px rgb(var(--app-accent-rgb, 231 255 114) / 0.14);
-  }
-
-  .preview-row input:focus {
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.055);
-    box-shadow: 0 0 0 2px rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
-  }
-
-  .preview-row small {
-    display: block;
-    overflow: hidden;
-    margin-top: 3px;
-    color: var(--lineup-muted-on-dark);
-    font-size: calc(9px * var(--font-scale, 1));
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .preview-row.unknown small { color: #d8aaa0; }
-
-  .insert-before-button,
   .append-preview-user,
   .preview-insert-form button {
     border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
@@ -4168,21 +4069,6 @@
     cursor: pointer;
   }
 
-  .insert-before-button {
-    display: grid;
-    width: calc(27px * var(--app-component-scale, 1));
-    min-width: calc(27px * var(--app-component-scale, 1));
-    height: calc(27px * var(--app-component-scale, 1));
-    padding: 0;
-    border-radius: 6px;
-    font-size: calc(16px * var(--font-scale, 1));
-    font-weight: 850;
-    line-height: 1;
-    place-items: center;
-  }
-
-  .insert-before-button:hover,
-  .insert-before-button.active,
   .append-preview-user:hover,
   .preview-insert-form button:hover {
     border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.48);
@@ -4251,46 +4137,6 @@
     color: #ff957d;
     font-size: calc(10px * var(--font-scale, 1));
   }
-
-  .link-preview-user,
-  .add-preview-user,
-  .remove-preview-user {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .preview-link-actions {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 3px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  .link-preview-user,
-  .add-preview-user {
-    padding: 4px 6px;
-    border: 1px solid rgba(221, 170, 155, 0.24);
-    border-radius: 6px;
-    color: #d8b1a7;
-    font-size: calc(10px * var(--font-scale, 1));
-  }
-
-  .link-preview-user { border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.22); color: var(--accent); }
-
-  .remove-preview-user {
-    padding: 4px 6px;
-    border: 1px solid rgba(221, 151, 132, 0.24);
-    border-radius: 6px;
-    color: #d8aaa0;
-    font-size: calc(10px * var(--font-scale, 1));
-    line-height: 1;
-  }
-
-  .remove-preview-user:hover { background: rgba(255, 255, 255, 0.06); color: var(--on-dark-muted); }
 
   .preview-empty {
     display: grid;

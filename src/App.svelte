@@ -40,6 +40,7 @@
   let removeCloseRequestedListener: (() => void) | null = null;
   let appUnmounted = false;
   let closingWindow = false;
+  const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
   onMount(() => {
     appUnmounted = false;
@@ -151,9 +152,30 @@
     fontScale = normalizeFontScale(fontScale + (event.key === 'ArrowUp' ? 0.1 : -0.1));
     saveFontScale();
   }
+
+  function handleGlobalPageShortcut(event: KeyboardEvent) {
+    if (
+      !event.altKey
+      || event.ctrlKey
+      || event.metaKey
+      || event.shiftKey
+      || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+    ) return;
+
+    event.preventDefault();
+    const currentIndex = APP_PAGE_ORDER.indexOf(page);
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const nextIndex = (currentIndex + direction + APP_PAGE_ORDER.length) % APP_PAGE_ORDER.length;
+    navigatePage(APP_PAGE_ORDER[nextIndex]);
+  }
+
+  function handleGlobalShortcut(event: KeyboardEvent) {
+    handleGlobalFontScaleShortcut(event);
+    handleGlobalPageShortcut(event);
+  }
 </script>
 
-<svelte:window on:keydown={handleGlobalFontScaleShortcut} />
+<svelte:window on:keydown={handleGlobalShortcut} />
 
 <svelte:head>
   <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'wheel' ? '转盘' : page === 'grouping' ? '分组' : '对战'}{page === 'wheel' ? '' : ' · 转盘'}</title>

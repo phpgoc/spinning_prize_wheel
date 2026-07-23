@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { installTauriMock } from './helpers/tauri-mock';
 
 async function confirmNames(page: Page, names: string[]) {
   const textarea = page.locator('.names-field textarea');
@@ -35,6 +36,27 @@ test('名单文本区延迟到 Alt+回车集中确认，Esc 恢复上次确认�
   await textarea.press('Escape');
   await expect(textarea).toHaveValue('甲\n乙');
   await expect(page.locator('.preview-row')).toHaveCount(2);
+});
+
+test('分组和对战设置使用不同风格的选手行组件且仍可直接编辑', async ({ page }) => {
+  await page.goto('/grouping');
+  const groupingTextarea = page.locator('.names-field textarea');
+  await groupingTextarea.fill('甲\n乙');
+  await groupingTextarea.press('Alt+Enter');
+  await expect(page.locator('.preview-row.grouping')).toHaveCount(2);
+  await expect(page.locator('.preview-panel .result-heading > div > span')).toHaveCount(0);
+  await expect(page.locator('.preview-row.battle')).toHaveCount(0);
+  await page.locator('.preview-row.grouping input').first().fill('甲改');
+  await page.locator('.preview-row.grouping input').first().press('Tab');
+  await expect(page.locator('.preview-row.grouping input').first()).toHaveValue('甲改');
+
+  await installTauriMock(page);
+  await page.goto('/battle');
+  const battleTextarea = page.locator('.battle-config textarea');
+  await battleTextarea.fill('甲\n乙');
+  await battleTextarea.press('Alt+Enter');
+  await expect(page.locator('.preview-row.battle')).toHaveCount(2);
+  await expect(page.locator('.preview-row.grouping')).toHaveCount(0);
 });
 
 test('清空名单会明确提示并同时清空名单预览', async ({ page }) => {

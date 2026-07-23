@@ -19,4 +19,7 @@ test('Excel 导出生成标准 XLSX 并保留中文、数字和表头', async ()
   expect(worksheet?.getCell('B2').value).toBe('张三');
   expect(worksheet?.getCell('C2').value).toBe(12);
   expect(worksheet?.getCell('A1').font.bold).toBe(true);
+  expect(worksheet?.getCell('A1').alignment.horizontal).toBe('center');
+  expect(worksheet?.getCell('B2').alignment.horizontal).toBe('center');
+  expect(worksheet?.getCell('C2').alignment.horizontal).toBe('center');
 });

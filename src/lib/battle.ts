@@ -95,6 +95,25 @@ export interface BattleTmpSlotOrigin {
   outcome: 'winner' | 'loser';
 }
 
+/** 根据赛制和签表层级生成用户可读的轮次名称。 */
+export function battleRoundLabel(
+  format: BattleFormat,
+  stage: BattleBracket,
+  level: number,
+  matchCount: number,
+): string {
+  if (stage === 'pairing' || (format === 'avoid-first-pair' && stage === 'single' && level === 1)) {
+    return '1对2';
+  }
+  if (stage === 'final') return level === 2 ? '重赛' : '总决赛';
+  if (format === 'double-elimination' && (stage === 'winner' || stage === 'loser')) {
+    return `第 ${level} 轮`;
+  }
+  if (matchCount === 1) return '决赛';
+  if (matchCount === 2) return '半决赛';
+  return `1/${matchCount}`;
+}
+
 export interface SeededBattleOptions {
   format: 'single-elimination' | 'double-elimination';
   orderMode: BattleOrderMode;

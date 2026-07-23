@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import {
     battleTmpSlotOrigin,
+    battleRoundLabel,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
   } from '../lib/battle';
@@ -85,7 +86,7 @@
     }
     return [...groups.values()].map((group) => ({
       ...group,
-      label: battleTmpColumnLabel(current.format, group.stage, group.matches[0].level, group.matches.length),
+      label: battleRoundLabel(current.format, group.stage, group.matches[0].level, group.matches.length),
     }));
   }
 
@@ -121,20 +122,6 @@
       final: groups.filter((group) => group.stage === 'final'),
       single: createSingleBattleLayout(current, groups),
     };
-  }
-
-  function battleTmpColumnLabel(
-    format: BattleTmpSnapshot['format'],
-    stage: BattleTmpMatch['stage'],
-    level: number,
-    matchCount: number,
-  ): string {
-    if (stage === 'pairing' || format === 'avoid-first-pair' && stage === 'single' && level === 1) return '1对2';
-    if (stage === 'final') return level === 2 ? '重赛' : '总决赛';
-    if (stage === 'loser') return `第 ${level} 轮`;
-    if (matchCount === 1) return '决赛';
-    if (matchCount === 2) return '半决赛';
-    return `1/${matchCount}`;
   }
 
   function observeSingleBracket(node: HTMLElement) {

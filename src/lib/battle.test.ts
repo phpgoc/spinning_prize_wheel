@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  battleRoundLabel,
   battleFixedSeedOptions,
   battleTmpScoresWithMagicFill,
   battleTmpScoreLocked,
@@ -17,6 +18,17 @@ import {
 const names = (count: number) => Array.from({ length: count }, (_, index) => `选手${index + 1}`);
 
 describe('对战签位', () => {
+  test('轮次名称按单败签位数和双败轮次显示', () => {
+    expect(battleRoundLabel('single-elimination', 'single', 1, 16)).toBe('1/16');
+    expect(battleRoundLabel('single-elimination', 'single', 2, 8)).toBe('1/8');
+    expect(battleRoundLabel('single-elimination', 'single', 3, 4)).toBe('1/4');
+    expect(battleRoundLabel('single-elimination', 'single', 4, 2)).toBe('半决赛');
+    expect(battleRoundLabel('single-elimination', 'single', 5, 1)).toBe('决赛');
+    expect(battleRoundLabel('avoid-first-pair', 'single', 1, 4)).toBe('1对2');
+    expect(battleRoundLabel('double-elimination', 'winner', 2, 2)).toBe('第 2 轮');
+    expect(battleRoundLabel('double-elimination', 'loser', 3, 1)).toBe('第 3 轮');
+  });
+
   test('33 人可以选择前 2、4、8、16、32 固定', () => {
     expect(battleFixedSeedOptions(33)).toEqual([2, 4, 8, 16, 32]);
   });

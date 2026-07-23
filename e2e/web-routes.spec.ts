@@ -52,6 +52,24 @@ test('抽奖、分组和对战切换时头部保持在同一位置', async ({ pa
   expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(1);
 });
 
+test('桌面端 Alt 左右按转盘、分组、对战顺序循环切换', async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto('/wheel');
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(page).toHaveURL(/\/grouping$/u);
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(page).toHaveURL(/\/battle$/u);
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(page).toHaveURL(/\/wheel$/u);
+  await page.keyboard.press('Alt+ArrowLeft');
+  await expect(page).toHaveURL(/\/battle$/u);
+  await page.keyboard.press('Alt+ArrowLeft');
+  await expect(page).toHaveURL(/\/grouping$/u);
+  await page.keyboard.press('Alt+ArrowLeft');
+  await expect(page).toHaveURL(/\/wheel$/u);
+});
+
 test('网页版对战页只提示使用桌面版', async ({ page }) => {
   await page.goto('/battle');
   await expect(page.getByRole('main').getByText('对战仅支持桌面版')).toBeVisible();
@@ -510,9 +528,9 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
   ) / 2;
   expect(Math.abs(grandFinalBox!.y + grandFinalBox!.height / 2 - bracketFinalMiddle)).toBeLessThan(4);
   await expect(page.locator('.double-battle-bracket')).not.toContainText(/顺位|W\d+-M\d+|L\d+-M\d+/u);
-  await expect(page.locator('.double-winner-section .battle-round').nth(0).getByRole('heading')).toHaveText('1/4');
-  await expect(page.locator('.double-winner-section .battle-round').nth(1).getByRole('heading')).toHaveText('半决赛');
-  await expect(page.locator('.double-winner-section .battle-round').nth(2).getByRole('heading')).toHaveText('决赛');
+  await expect(page.locator('.double-winner-section .battle-round').nth(0).getByRole('heading')).toHaveText('第 1 轮');
+  await expect(page.locator('.double-winner-section .battle-round').nth(1).getByRole('heading')).toHaveText('第 2 轮');
+  await expect(page.locator('.double-winner-section .battle-round').nth(2).getByRole('heading')).toHaveText('第 3 轮');
   const winnerCenters = await battleRoundMatchCenters(page.locator('.double-winner-section .battle-round'));
   const loserCenters = await battleRoundMatchCenters(page.locator('.double-loser-section .battle-round'));
   const winnerEdges = await battleRoundMatchEdges(page.locator('.double-winner-section .battle-round'));

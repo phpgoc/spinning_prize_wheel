@@ -24,11 +24,13 @@ describe('对战签表 Excel', () => {
     const workbook = await loadWorkbook(await createBattleBracketWorkbook(snapshot));
     const worksheet = workbook.getWorksheet('对战签表')!;
     expect(worksheet.getCell('A1').value).toBe('单败对战签表');
-    expect(worksheet.getCell('A5').value).toBe('第 1 轮');
-    expect(worksheet.getCell('D5').value).toBe('第 2 轮');
+    expect(worksheet.getCell('A5').value).toBe('1/4');
+    expect(worksheet.getCell('D5').value).toBe('半决赛');
     expect(worksheet.getCell('G5').value).toBe('决赛');
-    expect(worksheet.getCell('J5').value).toBe('第 2 轮');
-    expect(worksheet.getCell('M5').value).toBe('第 1 轮');
+    expect(worksheet.getCell('J5').value).toBe('半决赛');
+    expect(worksheet.getCell('M5').value).toBe('1/4');
+    expect(worksheet.getCell('A6').alignment.horizontal).toBe('center');
+    expect(worksheet.getCell('B6').alignment.horizontal).toBe('center');
     expect(worksheet.model.merges).toEqual(expect.arrayContaining([
       'A5:B5',
       'D5:E5',
