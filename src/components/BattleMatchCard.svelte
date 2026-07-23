@@ -199,7 +199,8 @@
   .battle-side {
     --battle-side-border: rgb(255 255 255 / 18%);
     display: flex;
-    width: 100%;
+    width: auto;
+    max-width: 100%;
     min-width: 0;
     align-items: center;
     gap: 8px;
@@ -211,6 +212,10 @@
     font: inherit;
     text-align: left;
   }
+
+  /* 预览签表的列宽固定，避免 flex 子项按长文本撑出卡片边界。 */
+  .battle-participant { width: auto; max-width: 100%; }
+  .battle-participant strong { max-width: 100%; }
 
   .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
   .battle-side.fixed { --battle-side-border: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }

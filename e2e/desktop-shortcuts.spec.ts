@@ -173,9 +173,11 @@ test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整�
   await expect(page.locator('.battle-shortcut-hint')).toHaveCount(0);
   await confirmDesktopNames(page, rankedUsers.map((user) => user.name));
   await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('radio', { name: '前 2 固定' }).check();
   await page.getByRole('radio', { name: '按排名' }).check();
   await expect(page.locator('.battle-preview-bracket .single-battle-bracket')).toBeVisible();
   await expect(page.locator('.battle-preview-bracket .single-bracket-connectors')).toHaveCount(1);
+  await expect(page.locator('.battle-preview-bracket .fixed strong')).toHaveText(['选手1', '选手2']);
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '在 选手1 前插入' })).toHaveText('＋');
   await expect(page.locator('.preview-row').first().getByRole('button', { name: '移除 选手1' })).toHaveText('删除');
 

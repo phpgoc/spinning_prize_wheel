@@ -1,135 +1,145 @@
 <script lang="ts">
+  import iro from '@jaames/iro';
+  import { onDestroy, tick } from 'svelte';
+
   export let label: string;
   export let value: string;
 
   let input: HTMLInputElement;
+  let pickerHost: HTMLDivElement | null = null;
+  let picker: iro.ColorPicker | null = null;
+  let pickerChangeHandler: ((color: iro.Color) => void) | null = null;
+  let open = false;
 
-  $: hue = hueFromHex(value);
-  $: pointerX = 50 + Math.sin(hue * Math.PI / 180) * 36;
-  $: pointerY = 50 - Math.cos(hue * Math.PI / 180) * 36;
+  $: panelId = `color-palette-${label.replace(/[^\p{L}\p{N}]+/gu, '-')}`;
+
+  // 外部色盘只在浮层打开后初始化，避免四个控件常驻时增加页面负担。
+  $: if (open && pickerHost && !picker) {
+    void tick().then(() => {
+      if (!picker && pickerHost) createPicker();
+    });
+  }
+
+  // 预设按钮或外部输入改变颜色时，同步已经打开的色盘。
+  $: if (picker && value && picker.color.hexString.toLowerCase() !== value.toLowerCase()) {
+    picker.color.set(value);
+  }
+
+  function createPicker() {
+    if (!pickerHost) return;
+    const nextPicker = iro.ColorPicker(pickerHost, {
+      width: 132,
+      color: value,
+      wheelLightness: false,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.28)',
+      layout: [{ component: iro.ui.Wheel }],
+    });
+    picker = nextPicker;
+    pickerChangeHandler = (color: iro.Color) => selectColor(color.hexString);
+    nextPicker.on('color:change', pickerChangeHandler);
+  }
 
   function selectColor(color: string) {
     input.value = color;
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  function selectFromWheel(event: PointerEvent) {
-    const wheel = event.currentTarget as HTMLElement;
-    const rect = wheel.getBoundingClientRect();
-    const x = event.clientX - (rect.left + rect.width / 2);
-    const y = event.clientY - (rect.top + rect.height / 2);
-    const angle = Math.atan2(x, -y) * 180 / Math.PI;
-    const nextHue = (angle + 360) % 360;
-    // 圆盘负责选择色相，明度和饱和度保持在适合深色对战区的范围。
-    selectColor(hsvToHex(nextHue, 0.78, 0.94));
+  async function togglePalette() {
+    open = !open;
+    if (open) await tick();
+    else destroyPicker();
   }
 
-  function moveWheel(event: KeyboardEvent) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    const nextHue = (hue + (event.key === 'ArrowRight' ? 8 : -8) + 360) % 360;
-    selectColor(hsvToHex(nextHue, 0.78, 0.94));
+  function destroyPicker() {
+    if (picker && pickerChangeHandler) picker.off('color:change', pickerChangeHandler);
+    picker = null;
+    pickerChangeHandler = null;
   }
 
-  function hueFromHex(color: string): number {
-    const normalized = color.trim().replace('#', '');
-    if (!/^[\da-f]{6}$/iu.test(normalized)) return 0;
-    const values = [0, 2, 4].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255);
-    const [red, green, blue] = values;
-    const max = Math.max(red, green, blue);
-    const min = Math.min(red, green, blue);
-    const delta = max - min;
-    if (delta === 0) return 0;
-    let result = red === max
-      ? ((green - blue) / delta) % 6
-      : green === max
-        ? (blue - red) / delta + 2
-        : (red - green) / delta + 4;
-    result *= 60;
-    return result < 0 ? result + 360 : result;
+  function closePaletteOnEscape(event: KeyboardEvent) {
+    if (open && event.key === 'Escape') {
+      event.preventDefault();
+      open = false;
+      destroyPicker();
+    }
   }
 
-  function hsvToHex(hueValue: number, saturation: number, brightness: number): string {
-    const chroma = brightness * saturation;
-    const segment = hueValue / 60;
-    const x = chroma * (1 - Math.abs(segment % 2 - 1));
-    const [red, green, blue] = segment < 1
-      ? [chroma, x, 0]
-      : segment < 2
-        ? [x, chroma, 0]
-        : segment < 3
-          ? [0, chroma, x]
-          : segment < 4
-            ? [0, x, chroma]
-            : segment < 5
-              ? [x, 0, chroma]
-              : [chroma, 0, x];
-    const offset = brightness - chroma;
-    return `#${[red, green, blue].map((component) => Math.round((component + offset) * 255).toString(16).padStart(2, '0')).join('')}`;
+  function closePaletteOutside(node: HTMLElement) {
+    function handlePointerDown(event: PointerEvent) {
+      if (open && event.target instanceof Node && !node.contains(event.target)) {
+        open = false;
+        destroyPicker();
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return {
+      destroy() {
+        document.removeEventListener('pointerdown', handlePointerDown, true);
+      },
+    };
   }
+
+  onDestroy(() => {
+    destroyPicker();
+  });
 </script>
 
-<div class="ui-color-palette">
-  <div class="palette-heading">
-    <strong>{label.replace('颜色', '')}</strong>
-    <output>{value}</output>
-  </div>
-  <div class="palette-control">
-    <button
-      type="button"
-      class="color-wheel"
-      aria-label="色盘"
-      style={`--pointer-x: ${pointerX}%; --pointer-y: ${pointerY}%;`}
-      on:pointerdown={selectFromWheel}
-      on:keydown={moveWheel}
-    >
-      <span class="wheel-pointer"></span>
-      <span class="wheel-center" style={`--color-value: ${value};`}></span>
-    </button>
-    <label class="native-color-input" title="打开系统取色器">
-      <span class="color-well" style={`--color-value: ${value};`}></span>
-      <input bind:this={input} type="color" aria-label={label} {value} on:input />
-    </label>
-  </div>
+<svelte:window on:keydown={closePaletteOnEscape} />
+
+<div use:closePaletteOutside class:open class="ui-color-palette">
+  <button
+    type="button"
+    class="palette-trigger"
+    aria-label={`展开${label.replace('颜色', '')}色盘`}
+    aria-expanded={open}
+    aria-controls={panelId}
+    on:click={togglePalette}
+  >
+    <span class="trigger-color" style={`--color-value: ${value};`}></span>
+    <span>{label.replace('颜色', '')}</span>
+    <small>{value}</small>
+  </button>
+  <label class="native-color-input" title="打开系统取色器">
+    <span class="color-well" style={`--color-value: ${value};`}></span>
+    <input bind:this={input} type="color" aria-label={label} {value} on:input />
+  </label>
+
+  {#if open}
+    <div id={panelId} class="palette-popover" role="dialog" aria-label={`${label.replace('颜色', '')}色盘`}>
+      <div bind:this={pickerHost} class="iro-picker"></div>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .ui-color-palette {
+  .ui-color-palette { position: relative; display: flex; min-width: 0; align-items: stretch; gap: 4px; color: var(--battle-text-color, var(--color-app-text)); }
+  .palette-trigger {
     display: grid;
     min-width: 0;
-    gap: 6px;
-    padding: calc(8px * var(--app-component-scale, 1));
+    min-height: calc(38px * var(--app-component-scale, 1));
+    flex: 1;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 1px 6px;
+    padding: 5px 7px;
     border: 1px solid color-mix(in srgb, var(--battle-text-color, var(--color-app-text)) 18%, transparent);
-    border-radius: 12px;
+    border-radius: 8px;
     background: color-mix(in srgb, var(--battle-text-color, var(--color-app-text)) 4%, transparent);
-    color: var(--battle-text-color, var(--color-app-text));
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
   }
-
-  .palette-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
-  .palette-heading strong { overflow: hidden; font-size: calc(10px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  .palette-heading output { color: color-mix(in srgb, currentColor 60%, transparent); font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(9px * var(--font-scale, 1)); }
-  .palette-control { display: flex; align-items: center; justify-content: center; gap: 8px; }
-
-  .color-wheel {
-    position: relative;
-    display: block;
-    width: calc(76px * var(--app-component-scale, 1));
-    height: calc(76px * var(--app-component-scale, 1));
-    padding: 0;
-    border: 3px solid color-mix(in srgb, var(--battle-text-color, white) 28%, transparent);
-    border-radius: 50%;
-    background:
-      radial-gradient(circle at center, rgb(0 0 0 / 0) 0 25%, rgb(0 0 0 / 18%) 78%, rgb(0 0 0 / 42%) 100%),
-      conic-gradient(#ff3b30, #ffcc00, #34c759, #00c7be, #007aff, #af52de, #ff2d55, #ff3b30);
-    box-shadow: 0 3px 12px rgb(0 0 0 / 22%), inset 0 0 0 1px rgb(255 255 255 / 18%);
-    cursor: crosshair;
-  }
-
-  .color-wheel:focus-visible { outline: 2px solid var(--accent, var(--color-app-accent)); outline-offset: 3px; }
-  .wheel-pointer { position: absolute; top: var(--pointer-y); left: var(--pointer-x); width: 10px; height: 10px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #20211b, 0 1px 5px rgb(0 0 0 / 45%); pointer-events: none; }
-  .wheel-center { position: absolute; top: 50%; left: 50%; width: 17px; height: 17px; transform: translate(-50%, -50%); border: 2px solid rgb(255 255 255 / 78%); border-radius: 50%; background: var(--color-value); box-shadow: 0 1px 4px rgb(0 0 0 / 42%); pointer-events: none; }
-
-  .native-color-input { position: relative; display: block; width: 20px; height: 20px; cursor: pointer; }
-  .color-well { display: block; width: 100%; height: 100%; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; background: var(--color-value); box-shadow: inset 0 0 0 2px rgb(0 0 0 / 18%); }
+  .palette-trigger:hover,
+  .open .palette-trigger { border-color: color-mix(in srgb, var(--accent) 52%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .palette-trigger > span:nth-child(2) { overflow: hidden; font-size: calc(10px * var(--font-scale, 1)); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .palette-trigger small { grid-column: 2; color: color-mix(in srgb, currentColor 58%, transparent); font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(8px * var(--font-scale, 1)); }
+  .trigger-color { width: 17px; height: 17px; grid-row: 1 / 3; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; background: var(--color-value); box-shadow: inset 0 0 0 2px rgb(0 0 0 / 18%); }
+  .palette-popover { position: absolute; z-index: 120; top: calc(100% + 7px); right: 0; display: grid; min-width: 150px; justify-items: center; padding: 10px; border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 24%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, black); box-shadow: 0 12px 30px rgb(0 0 0 / 42%); }
+  .iro-picker { width: 132px; min-height: 132px; }
+  :global(.IroColorPicker) { margin: 0 auto; }
+  .native-color-input { position: relative; display: grid; width: calc(30px * var(--app-component-scale, 1)); min-width: calc(30px * var(--app-component-scale, 1)); border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 18%, transparent); border-radius: 8px; cursor: pointer; place-items: center; }
+  .color-well { display: block; width: 16px; height: 16px; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; background: var(--color-value); box-shadow: inset 0 0 0 2px rgb(0 0 0 / 18%); }
   .native-color-input input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 </style>

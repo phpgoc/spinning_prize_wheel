@@ -126,7 +126,10 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
   await expect(page.locator('.ui-color-palette')).toHaveCount(4);
-  await expect(page.locator('.color-wheel')).toHaveCount(4);
+  const paletteTriggers = page.getByRole('button', { name: /展开.*色盘/u });
+  await expect(paletteTriggers).toHaveCount(4);
+  await expect(paletteTriggers.first()).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.color-wheel')).toHaveCount(0);
   await expect(page.locator('.color-swatches')).toHaveCount(0);
   await expect(presets.getByRole('button')).toHaveCount(3);
   await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
@@ -154,8 +157,13 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
     preset: 'ocean',
   });
 
-  await page.locator('.color-wheel').first().click();
-  await expect(page.getByLabel('背景框颜色')).not.toHaveValue('#1a1b26');
+  await paletteTriggers.first().click();
+  await expect(paletteTriggers.first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.iro-picker')).toHaveCount(1);
+  await expect(page.locator('.iro-picker')).toBeVisible();
+  await page.locator('.iro-picker').click({ position: { x: 120, y: 20 } });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.iro-picker')).toHaveCount(0);
 
   await page.getByLabel('背景框颜色').fill('#123456');
   await page.getByLabel('文字颜色', { exact: true }).fill('#fedcba');
