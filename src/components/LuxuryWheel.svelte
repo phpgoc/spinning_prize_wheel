@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { afterUpdate, onDestroy } from 'svelte';
   import type { WheelOption } from '../lib/types';
   import { createWeightedSegments, type WeightedSegment } from '../lib/wheel-geometry';
 
@@ -16,8 +17,14 @@
   const radius = 167;
   const bulbs = Array.from({ length: 48 });
   const sparkles = Array.from({ length: 18 });
+  const compassTicks = Array.from({ length: 36 });
+  const orbitEmbers = Array.from({ length: 10 });
+  const burstRays = Array.from({ length: 12 });
   const sparkleChars = ['✦','✧','·','✦','✧','✦','·','✧','✦','·','✦','✧','✦','·','✧','✦','✧','·'];
   const sparkleSizes = [13,11,9,13,11,13,9,11,13,9,13,11,13,9,11,13,11,9];
+  let previousSpinning = spinning;
+  let landed = false;
+  let landingTimer: number | undefined;
 
   function segmentGradientId(index: number) { return `seg-metallic-${index}`; }
 
@@ -78,13 +85,49 @@
 
   $: eliminated = new Set(eliminatedIds);
   $: weightedSegments = createWeightedSegments(options);
+
+  afterUpdate(() => {
+    const justLanded = previousSpinning && !spinning;
+    previousSpinning = spinning;
+    if (spinning) {
+      landed = false;
+      if (landingTimer) window.clearTimeout(landingTimer);
+      return;
+    }
+    if (!justLanded) return;
+    landed = true;
+    if (landingTimer) window.clearTimeout(landingTimer);
+    landingTimer = window.setTimeout(() => {
+      landed = false;
+      landingTimer = undefined;
+    }, 1180);
+  });
+
+  onDestroy(() => {
+    if (landingTimer) window.clearTimeout(landingTimer);
+  });
 </script>
 
-<div class:spinning class="luxury-stage">
+<div class:spinning class:landed class="luxury-stage">
+  <div class="stage-vignette"></div>
   <div class="velvet-aura"></div>
+  <div class="kinetic-halo halo-one" aria-hidden="true"></div>
+  <div class="kinetic-halo halo-two" aria-hidden="true"></div>
   <div class="ring-glow" aria-hidden="true"></div>
   <div class="art-deco-ring ring-one"></div>
   <div class="art-deco-ring ring-two"></div>
+
+  <div class="compass-scale" aria-hidden="true">
+    {#each compassTicks as _, index}
+      <i class:major={index % 3 === 0} style={`--tick-angle: ${index * 10}deg`}></i>
+    {/each}
+  </div>
+
+  <div class="orbit-embers" aria-hidden="true">
+    {#each orbitEmbers as _, index}
+      <i style={`--ember-angle: ${index * 36 + 8}deg; --ember-delay: ${-index * 0.13}s`}></i>
+    {/each}
+  </div>
 
   <div class="sparkles" aria-hidden="true">
     {#each sparkles as _, index}
@@ -98,7 +141,14 @@
     {/each}
   </div>
 
+  <div class="settle-burst" aria-hidden="true">
+    {#each burstRays as _, index}
+      <i style={`--ray-angle: ${index * 30}deg; --ray-delay: ${index * 0.025}s`}></i>
+    {/each}
+  </div>
+
   <div class="royal-pointer" aria-hidden="true">
+    <span class="pointer-crown"></span>
     <span class="pointer-gem"></span>
     <span class="pointer-tip"></span>
   </div>
@@ -197,6 +247,29 @@
     isolation: isolate;
   }
 
+  .stage-vignette {
+    position: absolute;
+    inset: -10%;
+    z-index: -5;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, rgba(245, 205, 105, 0.12) 0 16%, transparent 42%),
+      conic-gradient(from 0deg, transparent 0 8%, rgba(247, 211, 111, 0.09) 13%, transparent 20% 32%, rgba(247, 211, 111, 0.06) 39%, transparent 48% 61%, rgba(247, 211, 111, 0.09) 67%, transparent 74%);
+    filter: blur(12px);
+    pointer-events: none;
+    transition: opacity 300ms ease, transform 300ms ease;
+  }
+
+  .spinning .stage-vignette {
+    opacity: 1;
+    animation: vignette-breathe 1.25s ease-in-out infinite;
+  }
+
+  @keyframes vignette-breathe {
+    0%, 100% { transform: scale(0.92); opacity: 0.45; }
+    50% { transform: scale(1.1); opacity: 1; }
+  }
+
   .velvet-aura {
     position: absolute;
     inset: 4%;
@@ -209,6 +282,40 @@
       conic-gradient(from 130deg, rgba(180, 120, 40, 0.09) 0 12%, transparent 15% 55%, rgba(180, 120, 40, 0.08) 58%);
     filter: blur(3px) drop-shadow(0 30px 40px rgba(3, 2, 1, 0.6));
   }
+
+  .kinetic-halo {
+    position: absolute;
+    z-index: -2;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .halo-one {
+    inset: 1.2%;
+    border: 1px solid rgba(250, 222, 136, 0.22);
+    background: conic-gradient(from 12deg, transparent 0 7%, rgba(255, 237, 172, 0.42) 8% 10%, transparent 12% 31%, rgba(255, 209, 86, 0.26) 34% 36%, transparent 39% 63%, rgba(255, 237, 172, 0.38) 67% 69%, transparent 72%);
+    -webkit-mask: radial-gradient(circle, transparent 64%, #000 65% 68%, transparent 69%);
+    mask: radial-gradient(circle, transparent 64%, #000 65% 68%, transparent 69%);
+  }
+
+  .halo-two {
+    inset: 7.8%;
+    border: 1px solid rgba(255, 233, 159, 0.18);
+    background: repeating-conic-gradient(from 0deg, rgba(255, 235, 167, 0.32) 0 1deg, transparent 1deg 13deg);
+    -webkit-mask: radial-gradient(circle, transparent 72%, #000 73% 75%, transparent 76%);
+    mask: radial-gradient(circle, transparent 72%, #000 73% 75%, transparent 76%);
+  }
+
+  .spinning .kinetic-halo {
+    opacity: 1;
+  }
+
+  .spinning .halo-one { animation: halo-spin 2.4s linear infinite; }
+  .spinning .halo-two { animation: halo-spin-reverse 1.35s linear infinite; }
+
+  @keyframes halo-spin { to { transform: rotate(360deg) scale(1.04); } }
+  @keyframes halo-spin-reverse { to { transform: rotate(-360deg) scale(0.97); } }
 
   .art-deco-ring {
     position: absolute;
@@ -243,6 +350,45 @@
     animation: ring-pulse 1.6s ease-in-out infinite;
   }
 
+  .compass-scale {
+    position: absolute;
+    inset: 2.2%;
+    z-index: 8;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .compass-scale i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    transform: rotate(var(--tick-angle));
+  }
+
+  .compass-scale i::after {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(255, 234, 171, 0.45);
+    box-shadow: 0 0 6px rgba(255, 215, 111, 0.25);
+    content: '';
+    transform: translateX(-50%);
+  }
+
+  .compass-scale i.major::after {
+    width: 2px;
+    height: 10px;
+    background: #ffe7a1;
+    box-shadow: 0 0 9px rgba(255, 220, 125, 0.72);
+  }
+
+  .spinning .compass-scale { animation: compass-orbit 4.8s linear infinite; }
+
+  @keyframes compass-orbit { to { transform: rotate(360deg); } }
+
   @keyframes ring-pulse {
     0%, 100% { box-shadow: 0 0 18px 4px rgba(226, 176, 71, 0.2), inset 0 0 12px rgba(226, 176, 71, 0.1); }
     50% { box-shadow: 0 0 44px 14px rgba(226, 176, 71, 0.58), inset 0 0 26px rgba(226, 176, 71, 0.28); }
@@ -265,6 +411,20 @@
       0 20px 55px rgba(0, 0, 0, 0.65),
       0 0 60px rgba(226, 176, 71, 0.36),
       0 0 100px rgba(226, 176, 71, 0.16);
+  }
+
+  .spinning .gold-frame { animation: frame-charge 820ms ease-in-out infinite alternate; }
+  .landed .gold-frame { animation: frame-impact 580ms cubic-bezier(.17, .85, .23, 1.35); }
+
+  @keyframes frame-charge {
+    from { filter: brightness(1) saturate(1); box-shadow: inset 0 0 0 3px #fff0bc, inset 0 0 0 7px #6f491e, 0 0 0 3px #27170c, 0 0 0 6px #f0cf78, 0 0 0 10px #5a3817, 0 20px 55px rgba(0, 0, 0, 0.65), 0 0 60px rgba(226, 176, 71, 0.36), 0 0 100px rgba(226, 176, 71, 0.16); }
+    to { filter: brightness(1.16) saturate(1.24); box-shadow: inset 0 0 0 3px #fff0bc, inset 0 0 0 7px #6f491e, 0 0 0 3px #27170c, 0 0 0 7px #fff0ad, 0 0 0 11px #8d5f24, 0 20px 55px rgba(0, 0, 0, 0.65), 0 0 78px rgba(255, 207, 96, 0.68), 0 0 132px rgba(226, 176, 71, 0.3); }
+  }
+
+  @keyframes frame-impact {
+    0% { filter: brightness(1.55) saturate(1.45); }
+    42% { filter: brightness(1.08) saturate(1.15); }
+    100% { filter: none; }
   }
 
   .gold-frame::before {
@@ -290,8 +450,10 @@
     overflow: hidden;
     will-change: transform;
     transition-property: transform;
-    transition-timing-function: cubic-bezier(0.08, 0.66, 0.04, 1);
+    transition-timing-function: cubic-bezier(0.07, 0.75, 0.08, 1);
   }
+
+  .spinning .luxury-rotor { filter: saturate(1.16) brightness(1.06); }
 
   svg {
     display: block;
@@ -368,6 +530,14 @@
     pointer-events: none;
   }
 
+  .spinning .glass-sheen { animation: sheen-sweep 1.45s linear infinite; }
+
+  @keyframes sheen-sweep {
+    from { opacity: 0.42; transform: rotate(0deg) scale(1.03); }
+    50% { opacity: 0.84; }
+    to { opacity: 0.42; transform: rotate(360deg) scale(1.03); }
+  }
+
   .marquee {
     position: absolute;
     inset: 5.9%;
@@ -437,6 +607,105 @@
     45% { opacity: 1; filter: brightness(1.7); }
   }
 
+  .orbit-embers {
+    position: absolute;
+    inset: -0.8%;
+    z-index: 9;
+    border-radius: 50%;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .orbit-embers i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    transform: rotate(var(--ember-angle));
+  }
+
+  .orbit-embers i::after {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff6c5;
+    box-shadow: 0 0 8px 2px rgba(255, 211, 91, 0.92);
+    content: '';
+    transform: translateX(-50%);
+  }
+
+  .spinning .orbit-embers { animation: ember-orbit 2.8s linear infinite; }
+  .spinning .orbit-embers i { animation: ember-flicker 650ms ease-in-out infinite alternate; animation-delay: var(--ember-delay); }
+
+  @keyframes ember-orbit { to { transform: rotate(-360deg); } }
+  @keyframes ember-flicker { to { opacity: 0.18; filter: brightness(0.6); } }
+
+  .settle-burst {
+    position: absolute;
+    inset: 10%;
+    z-index: 13;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .settle-burst::before,
+  .settle-burst::after {
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgba(255, 234, 165, 0.92);
+    border-radius: 50%;
+    box-shadow: 0 0 28px rgba(255, 205, 72, 0.72), inset 0 0 20px rgba(255, 236, 167, 0.34);
+    content: '';
+    transform: scale(0.2);
+  }
+
+  .settle-burst i {
+    position: absolute;
+    inset: -31%;
+    display: block;
+    transform: rotate(var(--ray-angle));
+  }
+
+  .settle-burst i::after {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 25%;
+    border-radius: 999px;
+    background: linear-gradient(to bottom, rgba(255, 248, 208, 0), #fff5c5 38%, rgba(255, 192, 58, 0));
+    box-shadow: 0 0 10px rgba(255, 205, 82, 0.82);
+    content: '';
+    opacity: 0;
+    transform: translateX(-50%) scaleY(0.1);
+    transform-origin: bottom;
+  }
+
+  .landed .settle-burst { animation: burst-flash 1.18s ease-out both; }
+  .landed .settle-burst::before { animation: burst-ring 940ms cubic-bezier(.08, .7, .23, 1) both; }
+  .landed .settle-burst::after { animation: burst-ring 940ms 95ms cubic-bezier(.08, .7, .23, 1) both; }
+  .landed .settle-burst i::after { animation: burst-ray 780ms var(--ray-delay) ease-out both; }
+
+  @keyframes burst-flash {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  @keyframes burst-ring {
+    0% { opacity: 0.95; transform: scale(0.15); }
+    100% { opacity: 0; transform: scale(1.76); }
+  }
+
+  @keyframes burst-ray {
+    0% { opacity: 0; transform: translateX(-50%) scaleY(0.08); }
+    18% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) scaleY(1); }
+  }
+
   .royal-pointer {
     position: absolute;
     top: 4.3%;
@@ -447,6 +716,49 @@
     filter: drop-shadow(0 8px 7px rgba(0, 0, 0, 0.5));
     transform: translateX(-50%);
   }
+
+  .spinning .royal-pointer { animation: pointer-rattle 220ms cubic-bezier(.2, .7, .28, 1) infinite alternate; }
+  .landed .royal-pointer { animation: pointer-impact 520ms cubic-bezier(.12, .84, .26, 1.25); }
+
+  @keyframes pointer-rattle {
+    from { transform: translateX(-50%) rotate(-1.2deg) translateY(-1px); }
+    to { transform: translateX(-50%) rotate(1.2deg) translateY(2px); }
+  }
+
+  @keyframes pointer-impact {
+    0% { transform: translateX(-50%) translateY(-12px) scale(1.07); }
+    38% { transform: translateX(-50%) translateY(4px) scale(.96); }
+    100% { transform: translateX(-50%) translateY(0) scale(1); }
+  }
+
+  .pointer-crown {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    width: 35px;
+    height: 18px;
+    border: 2px solid #6c451c;
+    border-bottom: 0;
+    border-radius: 50% 50% 30% 30%;
+    background: linear-gradient(145deg, #fff5bf, #d89e37 74%);
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, .76), 0 3px 7px rgba(0, 0, 0, .35);
+    transform: translateX(-50%);
+  }
+
+  .pointer-crown::before,
+  .pointer-crown::after {
+    position: absolute;
+    bottom: 11px;
+    width: 8px;
+    height: 12px;
+    border-radius: 8px 8px 0 0;
+    background: #f6d56f;
+    box-shadow: 0 0 0 1px #6c451c;
+    content: '';
+  }
+
+  .pointer-crown::before { left: 4px; transform: rotate(-18deg); }
+  .pointer-crown::after { right: 4px; transform: rotate(18deg); }
 
   .pointer-gem {
     position: absolute;
@@ -542,6 +854,17 @@
     opacity: 0.72;
   }
 
+  .spinning .luxury-button:disabled {
+    filter: saturate(1.2) brightness(1.12);
+    opacity: 1;
+    animation: hub-charge 880ms ease-in-out infinite alternate;
+  }
+
+  @keyframes hub-charge {
+    from { box-shadow: 0 0 0 5px #6c451c, 0 0 0 8px rgba(242, 213, 129, 0.86), 0 0 34px rgba(239, 199, 100, 0.38), 0 8px 22px rgba(0, 0, 0, 0.52), inset 0 0 16px rgba(239, 199, 100, 0.16); }
+    to { box-shadow: 0 0 0 6px #8f6328, 0 0 0 10px #ffe6a0, 0 0 48px rgba(255, 207, 87, 0.76), 0 8px 22px rgba(0, 0, 0, 0.52), inset 0 0 22px rgba(255, 230, 150, 0.34); }
+  }
+
   .luxury-button strong {
     margin-top: 0;
     font-family: Georgia, var(--font-sans);
@@ -566,5 +889,25 @@
     .marquee i::after { width: 5px; height: 5px; }
     .royal-pointer { top: 3.4%; transform: translateX(-50%) scale(0.84); }
     .luxury-button { min-width: 66px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinning .stage-vignette,
+    .spinning .kinetic-halo,
+    .spinning .compass-scale,
+    .spinning .gold-frame,
+    .spinning .glass-sheen,
+    .spinning .orbit-embers,
+    .spinning .orbit-embers i,
+    .spinning .royal-pointer,
+    .landed .gold-frame,
+    .landed .royal-pointer,
+    .landed .settle-burst,
+    .landed .settle-burst::before,
+    .landed .settle-burst::after,
+    .landed .settle-burst i::after,
+    .spinning .luxury-button:disabled {
+      animation: none;
+    }
   }
 </style>

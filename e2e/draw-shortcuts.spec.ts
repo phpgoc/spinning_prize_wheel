@@ -236,6 +236,25 @@ test('大窗口会继续放大转盘并保留候选栏空间', async ({ page }) 
   expect(largeBox!.x + largeBox!.width).toBeLessThanOrEqual(sidebarBox!.x);
 });
 
+test('高级转盘启动和落点具有分层动效', async ({ page }) => {
+  await importCandidates(page, ['星河', '流光', '月桂', '极光']);
+  const wheel = page.locator('.luxury-stage');
+  await expect(wheel).toHaveCount(1);
+  await expect(wheel.locator('.compass-scale')).toHaveCount(1);
+  await expect(wheel.locator('.kinetic-halo')).toHaveCount(2);
+  await expect(wheel.locator('.settle-burst')).toHaveCount(1);
+
+  await page.getByLabel('动画时长').fill('1');
+  const startButton = page.getByRole('button', { name: '开启奢华转盘' });
+  await expect(startButton).toBeEnabled();
+  await startButton.click();
+  await expect(wheel).toHaveClass(/spinning/u);
+  await expect.poll(() => page.evaluate(() => (
+    document.querySelector('.luxury-stage')?.classList.contains('landed') ?? false
+  ))).toBe(true);
+  await expect(wheel).not.toHaveClass(/spinning/u);
+});
+
 test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) => {
   await importCandidates(page, ['甲', '乙', '丙']);
   const monopolyButton = page.getByRole('button', { name: '大富翁' });
