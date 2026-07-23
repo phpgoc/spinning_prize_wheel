@@ -250,6 +250,54 @@ test('桌面抽奖统计操作等宽并能打开下载文件夹', async ({ page 
   ))).toBe(true);
 });
 
+test('桌面统计和概率模拟导出失败后恢复且不产生页面异常', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (reason) => pageErrors.push(reason.message));
+  await openDesktopWheel(page);
+  await importDrawCandidates(page, ['甲', '乙']);
+  await page.getByRole('button', { name: '关闭重来机制' }).click();
+  await page.locator('#duration').fill('1');
+  await page.getByRole('button', { name: '开启奢华转盘' }).click();
+  await expect(page.locator('.wheel-status')).toContainText('等待开始', { timeout: 4_000 });
+  await page.getByRole('button', { name: '统计 1' }).click();
+
+  const statsPanel = page.locator('.candidate-board');
+  const excelButton = statsPanel.locator('[data-export="stats-excel"]');
+  const jsonButton = statsPanel.locator('[data-export="stats-json"]');
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_binary_file = ['当前统计 Excel 写入失败'];
+  });
+  await excelButton.click();
+  await expect(excelButton).toHaveText('导出中…');
+  await expect(excelButton).toBeDisabled();
+  await expect(jsonButton).toBeDisabled();
+  await expect(statsPanel.getByRole('alert')).toContainText('当前统计 Excel 写入失败', { timeout: 30_000 });
+  await expect(excelButton).toHaveText('Excel');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_text_file = ['当前统计 JSON 写入失败'];
+  });
+  await jsonButton.click();
+  await expect(statsPanel.getByRole('alert')).toContainText('当前统计 JSON 写入失败');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+
+  await page.locator('.accordion-toggle').filter({ hasText: '批量实验室' }).click();
+  const batchPanel = page.locator('.batch-content');
+  await batchPanel.getByRole('button', { name: '运行选中模拟' }).click();
+  const batchExport = batchPanel.locator('[data-export="batch-json"]');
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_text_file = ['概率模拟 JSON 写入失败'];
+  });
+  await batchExport.click();
+  await expect(batchPanel.getByRole('alert')).toContainText('概率模拟 JSON 写入失败');
+  await expect(batchExport).toHaveText('导出模拟记录');
+  await expect(batchExport).toBeEnabled();
+  expect(pageErrors).toEqual([]);
+});
+
 test('开启自动保存后关闭窗口会等当前旋转结束并归档', async ({ page }) => {
   await openDesktopWheel(page);
   await expect.poll(() => page.evaluate(() => (

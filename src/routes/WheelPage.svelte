@@ -179,6 +179,9 @@
   let currentDrawId = createId('draw');
   let batchResult: BatchSimulation | null = null;
   let batchRunAt: number | null = null;
+  let wheelExporting: 'stats-excel' | 'stats-json' | 'batch-json' | null = null;
+  let statsExportError = '';
+  let batchExportError = '';
   let hydrated = false;
   let timer: number | undefined;
   let continuousTimer: number | undefined;
@@ -575,6 +578,8 @@
     records = [];
     batchResult = null;
     batchRunAt = null;
+    statsExportError = '';
+    batchExportError = '';
     rouletteHits = {};
     rouletteFinished = false;
     rouletteRound = 1;
@@ -1437,6 +1442,7 @@
 
   function runBatch(simulationMode: DrawMode) {
     if (isSpinning) return;
+    batchExportError = '';
     if (enabledPrizes.length < 2) {
       result = {
         eyebrow: '无法开始',
@@ -1613,41 +1619,66 @@
   }
 
   async function exportCurrentStatsExcel() {
-    if (validCompleted === 0) return;
+    if (validCompleted === 0 || wheelExporting) return;
+    wheelExporting = 'stats-excel';
+    statsExportError = '';
     const rows: (string | number)[][] = [
       ['候选项', '权重', '中奖次数', '中奖金额'],
       ...currentStats.map((stat) => [stat.name, stat.weight, stat.count, stat.rewardTotal]),
     ];
-    await downloadExcel('转盘统计', rows);
+    try {
+      await downloadExcel('转盘统计', rows);
+    } catch (reason) {
+      statsExportError = exportErrorMessage(reason, '无法导出当前统计 Excel');
+    } finally {
+      wheelExporting = null;
+    }
   }
 
-  function exportCurrentStatsJson() {
-    if (validCompleted === 0) return;
+  async function exportCurrentStatsJson() {
+    if (validCompleted === 0 || wheelExporting) return;
+    wheelExporting = 'stats-json';
+    statsExportError = '';
     const statistics = currentStats.map(({ name, weight, count, rewardTotal }) => ({
       name,
       weight,
       count,
       rewardTotal,
     }));
-    downloadFormattedJson('转盘统计', statistics);
+    try {
+      await downloadFormattedJson('转盘统计', statistics);
+    } catch (reason) {
+      statsExportError = exportErrorMessage(reason, '无法导出当前统计 JSON');
+    } finally {
+      wheelExporting = null;
+    }
   }
 
-  function exportBatchExperiment() {
-    if (!batchResult) return;
-    downloadFormattedJson('转盘概率模拟', {
-      exportedAt: new Date().toISOString(),
-      kind: 'batch-simulation',
-      prizes,
-      retryEnabled,
-      retryWeight,
-      simulation: batchResult,
-    });
+  async function exportBatchExperiment() {
+    if (!batchResult || wheelExporting) return;
+    wheelExporting = 'batch-json';
+    batchExportError = '';
+    try {
+      await downloadFormattedJson('转盘概率模拟', {
+        exportedAt: new Date().toISOString(),
+        kind: 'batch-simulation',
+        prizes,
+        retryEnabled,
+        retryWeight,
+        simulation: batchResult,
+      });
+    } catch (reason) {
+      batchExportError = exportErrorMessage(reason, '无法导出概率模拟 JSON');
+    } finally {
+      wheelExporting = null;
+    }
   }
 
   function clearBatchExperiment() {
     batchResult = null;
     batchRunAt = null;
     batchTab = 'stats';
+    batchExportError = '';
   }
 
   function scrollOpenPanel(direction: -1 | 1) {
@@ -2420,12 +2451,13 @@
             </div>
 
             <div class="side-stats-actions">
-              <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsExcel}>Excel</UiButton>
-              <UiButton size="sm" disabled={validCompleted === 0} on:click={exportCurrentStatsJson}>JSON</UiButton>
+              <UiButton size="sm" data-export="stats-excel" disabled={validCompleted === 0 || wheelExporting !== null} on:click={exportCurrentStatsExcel}>{wheelExporting === 'stats-excel' ? '导出中…' : 'Excel'}</UiButton>
+              <UiButton size="sm" data-export="stats-json" disabled={validCompleted === 0 || wheelExporting !== null} on:click={exportCurrentStatsJson}>{wheelExporting === 'stats-json' ? '导出中…' : 'JSON'}</UiButton>
               {#if desktopRuntime}
                 <UiButton size="sm" title="在资源管理器中打开下载目录" on:click={openDrawDownloadFolder}>打开下载</UiButton>
               {/if}
             </div>
+            {#if statsExportError}<div class="common-error" role="alert">{statsExportError}</div>{/if}
           {/if}
         </aside>
       </div>
@@ -2525,9 +2557,10 @@
           </div>
         {/if}
 
+        {#if batchExportError}<div class="common-error" role="alert">{batchExportError}</div>{/if}
         <div class="history-actions">
-          <UiButton size="sm" on:click={exportBatchExperiment}>导出模拟记录</UiButton>
-          <UiButton size="sm" tone="danger" on:click={clearBatchExperiment}>清空实验结果</UiButton>
+          <UiButton size="sm" data-export="batch-json" disabled={wheelExporting !== null} on:click={exportBatchExperiment}>{wheelExporting === 'batch-json' ? '导出中…' : '导出模拟记录'}</UiButton>
+          <UiButton size="sm" tone="danger" disabled={wheelExporting === 'batch-json'} on:click={clearBatchExperiment}>清空实验结果</UiButton>
         </div>
       {/if}
       </div>
