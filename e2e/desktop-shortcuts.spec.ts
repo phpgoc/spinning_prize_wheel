@@ -162,6 +162,26 @@ test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page 
   await expect(page.locator('.ui-history-empty')).toHaveCSS('color', 'rgb(108, 91, 78)');
 });
 
+test('日期范围输入框有足够大的手写区和日历点击区，并随字号放大', async ({ page }) => {
+  await openDesktopLineup(page);
+  await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
+  const dateRange = page.locator('.ui-date-range');
+  const normalInput = dateRange.locator('input').first();
+  const normalControl = normalInput.locator('xpath=..');
+  const normalInputBox = await normalInput.boundingBox();
+  const normalControlBox = await normalControl.boundingBox();
+  expect(normalInputBox!.height).toBeGreaterThanOrEqual(30);
+  expect(normalControlBox!.height).toBeGreaterThanOrEqual(40);
+
+  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await page.reload();
+  await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
+  const largeInputBox = await page.locator('.ui-date-range input').first().boundingBox();
+  const largeControlBox = await page.locator('.ui-date-range input').first().locator('xpath=..').boundingBox();
+  expect(largeInputBox!.height / normalInputBox!.height).toBeGreaterThan(1.35);
+  expect(largeControlBox!.height / normalControlBox!.height).toBeGreaterThan(1.35);
+});
+
 test('桌面对战按排名预览紧跟竖排名单顺序且大字号控件整行展开', async ({ page }) => {
   const rankedUsers = Array.from({ length: 8 }, (_, index) => ({
     id: index + 1,
@@ -828,6 +848,35 @@ test('单败左右晋级，上下衔接且对战快捷键不被比分框占用',
   expect(after - before).toBeLessThanOrEqual(60);
 });
 
+test('确认比分后立即按 S 仍会聚焦下一个单败输入框', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `选手${index + 1}`));
+  await page.getByRole('radio', { name: '单败', exact: true }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+
+  await page.evaluate(() => {
+    const internals = (window as any).__TAURI_INTERNALS__;
+    const original = internals.invoke;
+    internals.invoke = async (command: string, args: Record<string, unknown>) => {
+      const result = await original(command, args);
+      if (command === 'update_battle_tmp_result') await new Promise((resolve) => setTimeout(resolve, 300));
+      return result;
+    };
+  });
+  const match = page.locator('[data-battle-stage="single"][data-battle-level="1"][data-battle-status="ready"]').first();
+  const score = match.locator('input').first();
+  await score.fill('4');
+  await score.press('Enter');
+  // 确认请求尚未返回时所有比分框会暂时禁用，S 仍应记录待聚焦目标。
+  await page.keyboard.press('s');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations.filter((entry: any) => entry.cmd === 'update_battle_tmp_result').length
+  ))).toBe(1);
+  const focused = page.locator('.single-battle-bracket input:focus');
+  await expect(focused).toHaveCount(1);
+  await expect(focused.locator('xpath=ancestor::article[1]')).toHaveAttribute('data-battle-level', '1');
+});
+
 test('同组不对战1对2固定八人并按单败左右晋级', async ({ page }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, Array.from({ length: 8 }, (_, index) => `组员${index + 1}`));
@@ -864,11 +913,11 @@ test('桌面对战悬念揭晓支持逐格显示晋级选手', async ({ page }) 
   await enterDesktopBattleScore(firstMatch, 4, 1);
 
   const finalMatch = page.locator('.single-bracket-final .battle-match');
-  await expect(finalMatch.getByRole('button', { name: `揭晓 ${firstName}` })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
-  await finalMatch.getByRole('button', { name: `揭晓 ${firstName}` }).click();
+  // 悬念只影响首轮；首轮完成后，第二轮晋级者应立即显示。
   await expect(finalMatch.getByRole('button', { name: `揭晓 ${firstName}` })).toHaveCount(0);
   await expect(finalMatch.locator('.battle-side strong').filter({ hasText: firstName })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
+  await expect(page.locator('[data-battle-level="2"] .battle-reveal-slot')).toHaveCount(0);
 });
 
 test('桌面恢复双败时从重赛行还原双总决赛开关', async ({ page, context }) => {

@@ -67,10 +67,16 @@
 
   label > div {
     display: grid;
+    min-height: calc(42px * var(--app-component-scale, 1));
     min-width: 0;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: calc(6px * var(--app-component-scale, 1));
+    padding: 0 calc(8px * var(--app-component-scale, 1));
+    border: 1px solid color-mix(in srgb, var(--color-app-text) 14%, transparent);
+    border-radius: calc(8px * var(--app-component-scale, 1));
+    background: color-mix(in srgb, var(--color-app-surface) 82%, white);
+    box-shadow: inset 0 1px rgb(255 255 255 / 58%);
   }
 
   b {
@@ -87,20 +93,24 @@
   input {
     width: 100%;
     min-width: 0;
-    padding: calc(3px * var(--app-component-scale, 1)) 0;
+    height: calc(34px * var(--app-component-scale, 1));
+    min-height: calc(30px * var(--app-component-scale, 1));
+    padding: calc(5px * var(--app-component-scale, 1)) 0;
     border: 0;
     outline: 0;
     background: transparent;
     color: var(--color-app-text);
     font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Consolas, monospace);
-    font-size: calc(11px * var(--font-scale, 1));
+    font-size: calc(13px * var(--font-scale, 1));
     font-weight: 750;
     color-scheme: light;
   }
 
   input::-webkit-calendar-picker-indicator {
-    margin: 0;
+    width: calc(18px * var(--app-component-scale, 1));
+    height: calc(18px * var(--app-component-scale, 1));
+    margin: 0 calc(2px * var(--app-component-scale, 1));
     cursor: pointer;
-    opacity: 0.58;
+    opacity: 0.68;
   }
 </style>

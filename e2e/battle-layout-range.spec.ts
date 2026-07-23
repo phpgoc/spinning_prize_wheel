@@ -91,6 +91,33 @@ test('对战比分数字输入隐藏原生微调并支持 Alt 上下调整', asy
   await expect(score).toHaveCSS('appearance', 'textfield');
 });
 
+test('同一轮比赛之间的行间距大于同场两名选手之间的间距', async ({ page }) => {
+  for (const format of ['单败', '双败'] as const) {
+    await drawBattle(page, format, 8);
+    const round = page.locator(format === '单败'
+      ? '.single-bracket-side.left .battle-round'
+      : '.double-winner-section .battle-round').first();
+    const geometry = await round.evaluate((element) => {
+      const matches = [...element.querySelectorAll<HTMLElement>('.battle-match')]
+        .map((match) => match.getBoundingClientRect())
+        .sort((left, right) => left.top - right.top);
+      const sides = [...element.querySelectorAll<HTMLElement>('.battle-match:first-child .battle-side')]
+        .map((side) => side.getBoundingClientRect());
+      return {
+        matchGap: matches[1].top - matches[0].bottom,
+        sideGap: sides[1].top - sides[0].bottom,
+      };
+    });
+    expect(geometry.matchGap).toBeGreaterThan(geometry.sideGap);
+    if (format === '单败') {
+      await page.evaluate(() => {
+        (window as any).__E2E_TAURI_STATE__.battleTmpState = null;
+        sessionStorage.removeItem('__E2E_TAURI_BATTLE_TMP__');
+      });
+    }
+  }
+});
+
 test('对战导出显示忙碌状态并在失败后恢复按钮', async ({ page }) => {
   await drawBattle(page, '单败', 4);
   await page.evaluate(() => {

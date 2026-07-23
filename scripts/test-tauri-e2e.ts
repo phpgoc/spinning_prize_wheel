@@ -12,15 +12,26 @@ const generatedCaimiConfig = join(tauriDirectory, 'tauri.e2e-caimi.conf.json');
 const version = await readProjectVersion();
 const commandArguments = process.argv.slice(2).filter((argument) => argument !== '--');
 const fixedBattleMode = commandArguments.includes('--fixed');
+const headedBattleMode = commandArguments.includes('--headed');
+const battleOnlyMode = fixedBattleMode || headedBattleMode;
 const requestedBattleCount = commandArguments.find((argument) => argument === 'all' || /^\d+$/u.test(argument));
+const requestedBattleFormat = commandArguments.find((argument) => (
+  ['single', 'double', '单败', '双败'].includes(argument)
+));
 
-if (fixedBattleMode && requestedBattleCount && requestedBattleCount !== 'all') {
+if (battleOnlyMode && requestedBattleCount && requestedBattleCount !== 'all') {
   const count = Number(requestedBattleCount);
   if (!Number.isInteger(count) || count < 8 || count > 33) {
     throw new Error(`前 N 固定 E2E 的人数必须在 8 到 33 之间，收到 ${requestedBattleCount}`);
   }
 }
-if (!fixedBattleMode && requestedBattleCount) {
+if (headedBattleMode && (requestedBattleCount === undefined || requestedBattleFormat === undefined)) {
+  throw new Error('慢速 headed 对战测试需要两个参数：人数 8-33，以及赛制 single/单败 或 double/双败');
+}
+if (headedBattleMode && requestedBattleCount === 'all') {
+  throw new Error('慢速 headed 对战测试的人数必须是 8 到 33 的单个数字');
+}
+if (!battleOnlyMode && (requestedBattleCount || requestedBattleFormat)) {
   throw new Error('人数参数只适用于 bun run test:e2e:tauri:fixed -- <8-33|all>');
 }
 
@@ -49,13 +60,13 @@ await Promise.all([
 
 try {
   const buildEnvironment = { CARGO_TARGET_DIR: e2eTargetDirectory };
-  if (!fixedBattleMode) {
+  if (!battleOnlyMode) {
     await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedCaimiConfig], buildEnvironment);
   }
   await run(['bun', 'x', 'tauri', 'build', '--debug', '--no-bundle', '--config', generatedStandardConfig], buildEnvironment);
 
   const playwrightArguments = ['bun', 'x', 'playwright', 'test', '--config', 'playwright.tauri.config.ts'];
-  if (fixedBattleMode) {
+  if (battleOnlyMode) {
     // 真实桌面窗口本身保持可见；--headed 让命令语义和人工观察模式一致。
     playwrightArguments.push('--headed', '--grep', '慢速检查前 N 固定签位');
   }
@@ -64,7 +75,10 @@ try {
     {
       TAURI_E2E_STANDARD_APP: join(debugDirectory, '转盘.exe'),
       TAURI_E2E_CAIMI_APP: join(debugDirectory, '转盘-猜蜜版.exe'),
-      ...(fixedBattleMode ? { TAURI_BATTLE_COUNT: requestedBattleCount ?? 'all' } : {}),
+      ...(battleOnlyMode ? {
+        TAURI_BATTLE_COUNT: requestedBattleCount ?? 'all',
+        ...(requestedBattleFormat ? { TAURI_BATTLE_FORMAT: requestedBattleFormat } : {}),
+      } : {}),
     },
   );
 } finally {

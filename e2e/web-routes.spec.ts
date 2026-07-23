@@ -415,12 +415,10 @@ test('对战支持悬念揭晓并可逐格显示', async ({ page }) => {
   await firstInputs.nth(1).press('Enter');
 
   const finalMatch = page.locator('.single-bracket-final .battle-match');
-  await expect(finalMatch.locator('.battle-reveal-slot')).toHaveCount(1);
-  await expect(finalMatch).toContainText(firstName);
-  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
-  await finalMatch.getByRole('button', { name: `揭晓 ${firstName}` }).click();
   await expect(finalMatch.locator('.battle-reveal-slot')).toHaveCount(0);
-  await expect(finalMatch.locator('.battle-side strong').first()).toContainText(firstName);
+  await expect(finalMatch.locator('.battle-side strong').filter({ hasText: firstName })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '显示全部' })).toBeVisible();
+  await expect(page.locator('[data-battle-level="2"] .battle-reveal-slot')).toHaveCount(0);
 });
 
 test('对战选手名默认字号加倍', async ({ page }) => {

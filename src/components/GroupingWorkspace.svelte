@@ -80,6 +80,7 @@
   type BattleColors = Record<BattleColorName, string>;
   type BattleColorPresetName = 'classic' | 'ocean' | 'sunset';
   type BattleColorPresetSelection = BattleColorPresetName | 'custom';
+  type BattleScoreGroup = 'single' | 'winner' | 'loser';
   type DesktopPanel = 'ranking' | 'history';
   type LineupHistoryDeletion =
     | { kind: 'one'; history: SavedLineup }
@@ -192,6 +193,7 @@
   let lineupResultElement: HTMLElement | null = null;
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
   let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
+  let pendingBattleScoreGroup: BattleScoreGroup | null = null;
   let slowRevealEnabled = true;
   let revealedLineupCells = new Set<string>();
   let allLineupCellsRevealed = false;
@@ -282,11 +284,14 @@
     const snapshot = battleTmpSnapshot;
     return new Set(snapshot.matches.flatMap((match) => (
       (['up', 'down'] as const).flatMap((side) => {
+        // 悬念揭晓只遮住抽签产生的首轮签位，晋级到第二轮及败者组后立即显示。
+        const initialDrawSlot = match.level === 1
+          && (match.stage === 'single' || match.stage === 'winner');
+        if (!initialDrawSlot) return [];
         const participantId = match[side];
         if (participantId === null || revealedBattleSlots.has(battleSlotKey(match, side))) return [];
         const participant = snapshot.participants.find((item) => item.id === participantId);
-        const fixedFirstRound = match.level === 1
-          && participant !== undefined
+        const fixedFirstRound = participant !== undefined
           && participant.seed <= snapshot.fixedSeedCount;
         return fixedFirstRound ? [] : [battleSlotKey(match, side)];
       })
@@ -677,6 +682,7 @@
           doubleGrandFinal: battleDoubleGrandFinal,
         });
       lastConfirmedBattleScore = null;
+      pendingBattleScoreGroup = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
       battleTmpAvailable = true;
       resetBattleReveal(true);
@@ -2012,6 +2018,11 @@
     const battleFocusActive = battlePage
       && target instanceof Node
       && Boolean(lineupResultElement?.contains(target));
+    const battleMagicFocusActive = battleFocusActive || (
+      battlePage
+      && lastConfirmedBattleScore !== null
+      && (target === document.body || target === lineupResultElement)
+    );
     const key = event.key.toLowerCase();
     if (
       battlePage
@@ -2054,7 +2065,7 @@
       return;
     }
     if (
-      battleFocusActive
+      battleMagicFocusActive
       && !event.ctrlKey
       && !event.metaKey
       && !event.altKey
@@ -2067,7 +2078,7 @@
       return;
     }
     if (
-      battleFocusActive
+      battleMagicFocusActive
       && !event.ctrlKey
       && !event.metaKey
       && !event.altKey
@@ -2080,7 +2091,7 @@
       return;
     }
     if (
-      battleFocusActive
+      battleMagicFocusActive
       && !event.ctrlKey
       && !event.metaKey
       && !event.altKey
@@ -2368,7 +2379,7 @@
     });
   }
 
-  function focusBattleScoreGroup(group: 'single' | 'winner' | 'loser') {
+  function focusBattleScoreGroup(group: BattleScoreGroup) {
     if (!lineupResultElement) return;
     const selector = group === 'single'
       ? '.single-battle-bracket .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)'
@@ -2392,8 +2403,21 @@
         || left.index - right.index
       ));
     const target = orderedInputs[0]?.input;
+    if (!target && battleSyncStatus === 'saving') {
+      pendingBattleScoreGroup = group;
+      return;
+    }
+    pendingBattleScoreGroup = null;
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }
+
+  async function focusPendingBattleScoreGroup() {
+    const group = pendingBattleScoreGroup;
+    if (!group) return;
+    pendingBattleScoreGroup = null;
+    await tick();
+    focusBattleScoreGroup(group);
   }
 
   function handleBattleMatchKeydown(event: KeyboardEvent) {
@@ -2671,6 +2695,7 @@
       battleTmpAvailable = false;
       resetBattleReveal();
       lastConfirmedBattleScore = null;
+      pendingBattleScoreGroup = null;
       battleSyncStatus = 'idle';
       error = '';
       if (clearBattleSetup) {
@@ -2787,6 +2812,8 @@
         battleSyncStatus = 'error';
         error = syncError;
       }
+    } finally {
+      await focusPendingBattleScoreGroup();
     }
   }
 
