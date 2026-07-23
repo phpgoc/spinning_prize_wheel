@@ -100,10 +100,8 @@
     <span>{label.replace('颜色', '')}</span>
     <small>{value}</small>
   </button>
-  <label class="native-color-input" title="打开系统取色器">
-    <span class="color-well" style={`--color-value: ${value};`}></span>
-    <input bind:this={input} type="color" aria-label={label} {value} on:input />
-  </label>
+  <!-- 保留一个不可见的原生输入作为事件桥接，界面只显示一个圆盘入口。 -->
+  <input bind:this={input} class="palette-value-input" type="color" aria-label={label} {value} on:input />
 
   {#if open}
     <div id={panelId} class="palette-popover" role="dialog" aria-label={`${label.replace('颜色', '')}色盘`}>
@@ -139,7 +137,5 @@
   .palette-popover { position: absolute; z-index: 120; top: calc(100% + 7px); right: 0; display: grid; min-width: 150px; justify-items: center; padding: 10px; border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 24%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, black); box-shadow: 0 12px 30px rgb(0 0 0 / 42%); }
   .iro-picker { width: 132px; min-height: 132px; }
   :global(.IroColorPicker) { margin: 0 auto; }
-  .native-color-input { position: relative; display: grid; width: calc(30px * var(--app-component-scale, 1)); min-width: calc(30px * var(--app-component-scale, 1)); border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 18%, transparent); border-radius: 8px; cursor: pointer; place-items: center; }
-  .color-well { display: block; width: 16px; height: 16px; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; background: var(--color-value); box-shadow: inset 0 0 0 2px rgb(0 0 0 / 18%); }
-  .native-color-input input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+  .palette-value-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
 </style>

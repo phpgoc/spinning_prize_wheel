@@ -4,7 +4,7 @@
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/phpgoc/spinning_prize_wheel/releases) 下载最新的 `转盘-版本号-setup.exe`。
+前往 [GitHub Releases](https://github.com/phpgoc/spinning_prize_wheel/releases) 下载最新的 `wheel-版本号-setup.exe`。
 
 一个安装包会同时安装：
 

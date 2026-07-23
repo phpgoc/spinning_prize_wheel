@@ -9,6 +9,8 @@ node_modules/
 .svelte-kit/
 build/
 dist/
+/wheel-*-web.zip
+/wheel-*-setup.exe
 /转盘-*-web.zip
 /转盘-*-setup.exe
 .vite/

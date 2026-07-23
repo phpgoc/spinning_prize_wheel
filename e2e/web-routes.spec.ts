@@ -126,6 +126,7 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   const presets = page.getByRole('group', { name: '配色预设' });
   await expect(page.getByLabel(/颜色$/u)).toHaveCount(4);
   await expect(page.locator('.ui-color-palette')).toHaveCount(4);
+  await expect(page.locator('.native-color-input')).toHaveCount(0);
   const paletteTriggers = page.getByRole('button', { name: /展开.*色盘/u });
   await expect(paletteTriggers).toHaveCount(4);
   await expect(paletteTriggers.first()).toHaveAttribute('aria-expanded', 'false');
@@ -133,6 +134,17 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await expect(page.locator('.color-swatches')).toHaveCount(0);
   await expect(presets.getByRole('button')).toHaveCount(3);
   await expect(presets.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
+  const savePalette = page.getByRole('button', { name: '保存配色' });
+  const loadPalette = page.getByRole('button', { name: '加载配色' });
+  await expect(savePalette).toBeEnabled();
+  await expect(loadPalette).toBeDisabled();
+  const [customPaletteBox, paletteActionsBox] = await Promise.all([
+    page.locator('.battle-color-custom').boundingBox(),
+    page.getByRole('group', { name: '配色存档' }).boundingBox(),
+  ]);
+  expect(customPaletteBox).not.toBeNull();
+  expect(paletteActionsBox).not.toBeNull();
+  expect(paletteActionsBox!.x).toBeGreaterThanOrEqual(customPaletteBox!.x + customPaletteBox!.width);
 
   const toolbarBox = await page.locator('.battle-result-toolbar').boundingBox();
   const colorBox = await page.locator('.battle-color-controls').boundingBox();
@@ -156,6 +168,18 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
     match: '#414868',
     preset: 'ocean',
   });
+  await savePalette.click();
+  await expect(loadPalette).toBeEnabled();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-color-snapshot-v1:standard') ?? '{}'))).toEqual({
+    background: '#1a1b26',
+    text: '#c0caf5',
+    participant: '#7dcfff',
+    match: '#414868',
+  });
+  await presets.getByRole('button', { name: 'Gruvbox' }).click();
+  await loadPalette.click();
+  await expect(page.getByLabel('背景框颜色')).toHaveValue('#1a1b26');
+  await expect(presets.getByRole('button', { name: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true');
 
   await paletteTriggers.first().click();
   await expect(paletteTriggers.first()).toHaveAttribute('aria-expanded', 'true');
@@ -191,6 +215,7 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await page.keyboard.press('f');
   await expect(battleResult).not.toHaveClass(/battle-fullscreen/u);
   await page.reload();
+  await expect(loadPalette).toBeEnabled();
   await expect(page.getByLabel('背景框颜色')).toHaveValue('#123456');
   await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#fedcba');
   await expect(page.getByLabel('选手文字颜色')).toHaveValue('#abcdef');
@@ -736,6 +761,10 @@ test('桌面对战可以修改赛果、传播下游并导出 JSON 和 Excel', as
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('checkbox', { name: '悬念揭晓' }).uncheck();
   await page.getByRole('button', { name: /^抽签/ }).click();
+
+  for (const name of ['保存历史', 'Excel', 'JSON', '打开下载']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCSS('min-height', '38px');
+  }
 
   const firstRoundMatches = page.locator('.single-bracket-side .battle-match');
   const finalMatch = page.locator('.single-bracket-final .battle-match');

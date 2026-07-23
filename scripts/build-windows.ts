@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { readProjectVersion, webBundleDirectory } from './project-version';
+import { readProjectVersion, releaseArtifactName, webBundleDirectory } from './project-version';
 
 const workspace = resolve(import.meta.dir, '..');
 const tauriDirectory = join(workspace, 'src-tauri');
@@ -91,7 +91,8 @@ async function renameInstaller() {
   if (installers.length !== 1) {
     throw new Error(`NSIS 目录中应当只有一个安装包，实际为 ${installers.length} 个`);
   }
-  const targetName = `转盘-${version}-setup.exe`;
+  // 安装包是上传到 Release 的外层文件，必须保持 ASCII；包内 EXE 仍使用中文产品名。
+  const targetName = releaseArtifactName(version, 'setup');
   const targetPath = join(installerDirectory, targetName);
   if (installers[0].name !== targetName) {
     await rename(join(installerDirectory, installers[0].name), targetPath);

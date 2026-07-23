@@ -9,7 +9,7 @@
     "build": "bun run scripts/build-web.ts standard",
     "build:windows": "bun run scripts/build-windows.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "bun test src",
+    "test": "bun test src scripts",
     "test:e2e": "bun run test:e2e:web && bun run test:e2e:tauri",
     "test:e2e:web": "npx playwright test --config playwright.config.ts",
     "test:e2e:tauri": "bun run scripts/test-tauri-e2e.ts",

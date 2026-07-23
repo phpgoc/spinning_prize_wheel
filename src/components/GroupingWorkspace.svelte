@@ -221,6 +221,7 @@
   let battleColorLoadedVariant: AppVariant | null = null;
   let battleColorPreset: BattleColorPresetSelection = 'classic';
   let battleColors: BattleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
+  let battleColorSnapshotAvailable = false;
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -363,6 +364,25 @@
     return `battle-colors-v1:${variant}`;
   }
 
+  function battleColorSnapshotStorageKey(): string {
+    return `battle-color-snapshot-v1:${variant}`;
+  }
+
+  function readBattleColorSnapshot(): BattleColors | null {
+    try {
+      const stored = localStorage.getItem(battleColorSnapshotStorageKey());
+      if (stored === null) return null;
+      const value = JSON.parse(stored) as Partial<BattleColors>;
+      const colorNames: BattleColorName[] = ['background', 'text', 'participant', 'match'];
+      if (!colorNames.every((name) => typeof value[name] === 'string' && /^#[0-9a-f]{6}$/iu.test(value[name]!))) {
+        return null;
+      }
+      return Object.fromEntries(colorNames.map((name) => [name, value[name]])) as BattleColors;
+    } catch {
+      return null;
+    }
+  }
+
   function loadBattleColors() {
     battleColorLoadedVariant = variant;
     battleColorPreset = 'classic';
@@ -386,6 +406,7 @@
     } catch {
       // 本地颜色损坏时继续使用默认值，不影响对战操作。
     }
+    battleColorSnapshotAvailable = readBattleColorSnapshot() !== null;
   }
 
   function matchingBattleColorPreset(colors: BattleColors): BattleColorPresetName | null {
@@ -415,6 +436,26 @@
     const value = (event.currentTarget as HTMLInputElement).value;
     battleColors = { ...battleColors, [name]: value };
     battleColorPreset = matchingBattleColorPreset(battleColors) ?? 'custom';
+    saveBattleColors();
+  }
+
+  function saveBattleColorSnapshot() {
+    try {
+      localStorage.setItem(battleColorSnapshotStorageKey(), JSON.stringify(battleColors));
+      battleColorSnapshotAvailable = true;
+    } catch {
+      battleColorSnapshotAvailable = false;
+    }
+  }
+
+  function loadBattleColorSnapshot() {
+    const saved = readBattleColorSnapshot();
+    if (!saved) {
+      battleColorSnapshotAvailable = false;
+      return;
+    }
+    battleColors = saved;
+    battleColorPreset = matchingBattleColorPreset(saved) ?? 'custom';
     saveBattleColors();
   }
 
@@ -3197,6 +3238,10 @@
                 <UiColorPalette label="选手文字颜色" value={battleColors.participant} on:input={(event) => updateBattleColor('participant', event)} />
                 <UiColorPalette label="对战框颜色" value={battleColors.match} on:input={(event) => updateBattleColor('match', event)} />
               </div>
+              <div class="battle-color-actions" role="group" aria-label="配色存档">
+                <UiButton size="sm" on:click={saveBattleColorSnapshot}>保存配色</UiButton>
+                <UiButton size="sm" disabled={!battleColorSnapshotAvailable} on:click={loadBattleColorSnapshot}>加载配色</UiButton>
+              </div>
             </fieldset>
           </div>
           <div class="result-heading">
@@ -3208,12 +3253,12 @@
             {:else if battleTmpSnapshot}
               <div class="result-output-actions">
                 {#if hiddenBattleSlotCount > 0}
-                  <UiButton size="sm" tone="accent" on:click={revealAllBattleSlots}>显示全部</UiButton>
+                  <UiButton size="md" tone="accent" on:click={revealAllBattleSlots}>显示全部</UiButton>
                 {/if}
-                <UiButton size="sm" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
-                <UiButton size="sm" on:click={exportBattleTmpExcel}>Excel</UiButton>
-                <UiButton size="sm" on:click={exportBattleTmpJson}>JSON</UiButton>
-                <UiButton size="sm" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                <UiButton size="md" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
+                <UiButton size="md" on:click={exportBattleTmpExcel}>Excel</UiButton>
+                <UiButton size="md" on:click={exportBattleTmpJson}>JSON</UiButton>
+                <UiButton size="md" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
               </div>
             {/if}
           </div>
@@ -3850,7 +3895,7 @@
     padding: 0;
     border: 0;
     align-items: center;
-    grid-template-columns: max-content max-content;
+    grid-template-columns: max-content max-content max-content;
     gap: 8px 15px;
   }
 
@@ -3895,6 +3940,8 @@
     align-items: center;
     gap: 5px;
   }
+
+  .battle-color-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
 
   .lineup-center {
     display: grid;

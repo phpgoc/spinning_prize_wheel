@@ -130,7 +130,7 @@ bun run build
 假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
 
 ```text
-转盘-0.1.0-web.zip
+wheel-0.1.0-web.zip
 ```
 
 构建过程仍会保留 `dist\转盘-0.1.0` 目录用于检查。ZIP 根目录中的 `index.html` 已经内联全部资源，包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。解压后可直接双击使用，也可部署到网站根目录或任意子目录。
@@ -154,7 +154,7 @@ bun run build:windows
 第一次完整构建耗时较长。假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
 
 ```text
-转盘-0.1.0-setup.exe
+wheel-0.1.0-setup.exe
 ```
 
 Tauri 的原始产物仍会保留在 `src-tauri\target\release`。正式分发根目录中的 `setup.exe` 即可，它会把普通版、猜蜜版、`使用说明.md` 和卸载程序安装到同一目录，并创建两个启动入口。项目不生成 MSI。
@@ -203,6 +203,6 @@ Excel 使用纯 JavaScript 的 `exceljs` 生成标准 XLSX。网页版在浏览�
 
 关闭正在运行的 `转盘.exe`、`转盘-猜蜜版.exe` 和旧安装包，再重新执行构建命令。
 
-### 中文文件名会不会受 GBK 影响
+### 包名为什么不用中文
 
-不会。源码和文档使用 UTF-8，Rust、Tauri 和 NSIS 调用 Windows Unicode 接口，中文 EXE 与安装包名称不依赖系统 GBK 代码页。应使用 PowerShell 和 Bun 执行本文命令，不要改用旧式批处理脚本拼接中文路径。
+上传 GitHub Release 的网页 ZIP 和 Windows 安装包使用 `wheel-版本号-…` 的 ASCII 名称，避免发布平台或脚本拒绝中文文件名。安装包内部的 `转盘.exe` 和 `转盘-猜蜜版.exe` 仍保留中文产品名。源码和文档使用 UTF-8，构建时应使用 PowerShell 和 Bun，不要改用旧式批处理脚本拼接路径。

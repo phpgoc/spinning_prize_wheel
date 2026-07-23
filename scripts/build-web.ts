@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { readProjectVersion, webBundleDirectory, type BuildVariant } from './project-version';
+import { readProjectVersion, releaseArtifactName, webBundleDirectory, type BuildVariant } from './project-version';
 
 const workspace = resolve(import.meta.dir, '..');
 const variant: BuildVariant = Bun.argv[2] === 'caimi' ? 'caimi' : 'standard';
@@ -12,7 +12,7 @@ await run(arguments_);
 
 console.log(`Web 产物：${outDir}`);
 if (variant === 'standard') {
-  const archiveName = `转盘-${version}-web.zip`;
+  const archiveName = releaseArtifactName(version, 'web');
   await createWebArchive(
     resolve(workspace, outDir),
     resolve(workspace, archiveName),
