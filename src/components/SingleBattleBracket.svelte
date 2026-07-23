@@ -115,10 +115,24 @@
 </div>
 
 <style>
-  .single-battle-bracket { --battle-round-width: calc(235px * var(--battle-layout-scale, 1)); position: relative; display: grid; min-width: 0; grid-template-columns: max-content var(--battle-round-width) max-content; gap: calc(16px * var(--battle-layout-scale, 1)); align-items: center; margin-top: 18px; overflow: auto; isolation: isolate; transition: opacity 180ms ease; }
+  .single-battle-bracket {
+    --battle-round-width: calc(235px * var(--battle-layout-scale, 1));
+    --battle-match-row-gap: calc(18px * var(--battle-layout-scale, 1));
+    --battle-round-column-gap: calc(40px * var(--battle-layout-scale, 1));
+    position: relative;
+    display: grid;
+    min-width: 0;
+    grid-template-columns: max-content var(--battle-round-width) max-content;
+    gap: var(--battle-round-column-gap);
+    align-items: center;
+    margin-top: 18px;
+    overflow: auto;
+    isolation: isolate;
+    transition: opacity 180ms ease;
+  }
   .single-bracket-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
   .single-bracket-connectors path { fill: none; stroke: color-mix(in srgb, var(--accent) 42%, transparent); stroke-width: calc(2px * var(--battle-layout-scale, 1)); stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .single-bracket-side { position: relative; z-index: 1; display: flex; align-items: stretch; gap: 13px; }
+  .single-bracket-side { position: relative; z-index: 1; display: flex; align-items: stretch; gap: var(--battle-round-column-gap); }
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
   .single-bracket-side .battle-round { display: flex; flex-direction: column; justify-content: center; }
@@ -126,7 +140,7 @@
   .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
   .battle-round { flex: 0 0 var(--battle-round-width); }
   .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
-  .battle-round > div { display: grid; gap: calc(10px * var(--battle-layout-scale, 1)); margin-top: 9px; }
+  .battle-round > div { display: grid; gap: var(--battle-match-row-gap); margin-top: 9px; }
   .single-bracket-side.left .battle-round:first-child > div,
-  .single-bracket-side.right .battle-round:last-child > div { gap: calc(16px * var(--battle-layout-scale, 1)); }
+  .single-bracket-side.right .battle-round:last-child > div { gap: var(--battle-match-row-gap); }
 </style>

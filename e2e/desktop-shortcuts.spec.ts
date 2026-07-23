@@ -513,7 +513,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
   await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
@@ -646,7 +646,7 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
   await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
 
   await page.getByRole('button', { name: /对战历史/u }).click();
@@ -707,7 +707,7 @@ test('单败左右晋级，上下衔接且对战快捷键不被比分框占用',
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
   await page.getByRole('radio', { name: '双败' }).check();
   await page.getByRole('button', { name: /^抽签/u }).click();
 

@@ -5,7 +5,7 @@ async function clearDesktopBattle(page: Page) {
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
   await expect(page.locator('.battle-config textarea')).toBeEnabled();
   await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(1);
 }
@@ -415,7 +415,13 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
     const rects = [...element.querySelectorAll<HTMLElement>('.battle-match')].map((match) => match.getBoundingClientRect());
     return rects[1].top - rects[0].bottom;
   });
+  const normalColumnGap = await page.locator('.single-bracket-side.left').evaluate((element) => {
+    const rounds = [...element.querySelectorAll<HTMLElement>(':scope > .battle-round')].map((round) => round.getBoundingClientRect());
+    return rounds[1].left - rounds[0].right;
+  });
   expect(normalCard).not.toBeNull();
+  expect(normalGap).toBeGreaterThanOrEqual(18);
+  expect(normalColumnGap).toBeGreaterThanOrEqual(normalGap * 2);
 
   await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
   await page.reload();
@@ -426,8 +432,14 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
     const rects = [...element.querySelectorAll<HTMLElement>('.battle-match')].map((match) => match.getBoundingClientRect());
     return rects[1].top - rects[0].bottom;
   });
+  const largeColumnGap = await page.locator('.single-bracket-side.left').evaluate((element) => {
+    const rounds = [...element.querySelectorAll<HTMLElement>(':scope > .battle-round')].map((round) => round.getBoundingClientRect());
+    return rounds[1].left - rounds[0].right;
+  });
   expect(largeCard!.width).toBeGreaterThan(normalCard!.width * 1.4);
   expect(largeGap).toBeGreaterThan(normalGap * 1.4);
+  expect(largeColumnGap).toBeGreaterThan(normalColumnGap * 1.4);
+  expect(largeColumnGap).toBeGreaterThanOrEqual(largeGap * 2);
 });
 
 test('窄屏最大字号时单败右侧不覆盖，比分仍朝签表中心', async ({ page }) => {
@@ -476,7 +488,7 @@ test('悬念揭晓不会改变对战框高度，双败比分统一靠右', async
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
   await page.getByRole('radio', { name: '双败' }).check();
   await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.double-battle-bracket .battle-side.score-left')).toHaveCount(0);
@@ -657,6 +669,15 @@ test('16 人双败逐列向分界线收拢', async ({ page }) => {
   const loserRounds = page.locator('.double-loser-section .battle-round');
   await expect(winnerRounds).toHaveCount(4);
   await expect(loserRounds).toHaveCount(6);
+  const doubleGaps = await page.locator('.double-winner-section .battle-bracket').evaluate((element) => {
+    const firstRoundMatches = element.querySelector<HTMLElement>('.battle-round > div');
+    return {
+      column: Number.parseFloat(getComputedStyle(element).columnGap),
+      row: firstRoundMatches ? Number.parseFloat(getComputedStyle(firstRoundMatches).rowGap) : 0,
+    };
+  });
+  expect(doubleGaps.row).toBeGreaterThanOrEqual(18);
+  expect(doubleGaps.column).toBeGreaterThanOrEqual(doubleGaps.row * 2);
   const winnerEdges = await battleRoundMatchEdges(winnerRounds);
   const loserEdges = await battleRoundMatchEdges(loserRounds);
   expect(Math.max(...winnerEdges.map((edge) => edge.lastBottom)) - Math.min(...winnerEdges.map((edge) => edge.lastBottom))).toBeLessThan(2);
