@@ -8,6 +8,9 @@ export interface BattleRoundGroup {
   id: string;
   label: string;
   stage: BattleTmpMatch['stage'];
+  level: number;
+  /** 当前轮次相对第一轮的字号和卡片增长倍率。 */
+  growth: number;
   matches: BattleTmpMatch[];
 }
 
@@ -21,6 +24,16 @@ export interface BattleBracketLayout {
     right: BattleRoundGroup[];
     final: BattleTmpMatch | null;
   };
+}
+
+/**
+ * 计算轮次视觉增长：胜者组/单败每轮增加 10%，败者组每两轮增加 10%。
+ * 该值由查看、编辑和导出布局共同使用，避免三个实现各自猜测尺寸。
+ */
+export function battleRoundGrowth(stage: BattleTmpMatch['stage'], level: number): number {
+  const safeLevel = Number.isSafeInteger(level) && level > 0 ? level : 1;
+  const growthStep = stage === 'loser' ? Math.floor((safeLevel - 1) / 2) : safeLevel - 1;
+  return 1.1 ** growthStep;
 }
 
 export function createBattleBracketLayout(snapshot: BattleTmpSnapshot): BattleBracketLayout {
@@ -38,7 +51,14 @@ function groupBattleTmpMatches(snapshot: BattleTmpSnapshot): BattleRoundGroup[] 
   const groups = new Map<string, BattleRoundGroup>();
   for (const match of snapshot.matches) {
     const id = `${match.stage}-${match.level}`;
-    const group = groups.get(id) ?? { id, label: '', stage: match.stage, matches: [] };
+    const group = groups.get(id) ?? {
+      id,
+      label: '',
+      stage: match.stage,
+      level: match.level,
+      growth: battleRoundGrowth(match.stage, match.level),
+      matches: [],
+    };
     group.matches.push(match);
     groups.set(id, group);
   }

@@ -1,5 +1,1 @@
-<script lang="ts">
-  import App from '../../../App.svelte';
-</script>
-
-<App />
+<!-- 转盘由持久化应用壳按需加载，以便切换页面时保留本局状态。 -->

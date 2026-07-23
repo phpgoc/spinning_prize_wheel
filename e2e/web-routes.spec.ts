@@ -13,11 +13,23 @@ async function clearDesktopBattle(page: Page) {
 test('默认站点图标可在页面挂载前直接加载', async ({ page, request }) => {
   const response = await request.get('/favicon.ico');
   expect(response.status()).toBe(200);
-  expect(response.headers()['content-type']).toContain('image/svg+xml');
+  expect(['image/svg+xml', 'image/svg+xml; charset=utf-8', 'image/x-icon']).toContain(response.headers()['content-type']);
   expect(await response.text()).toContain('<svg');
 
   await page.goto('/wheel');
-  await expect(page.locator('link[rel="icon"][href="/favicon.ico"]')).toHaveCount(1);
+  const favicon = page.locator('link[rel="icon"][data-app-favicon]');
+  await expect(favicon).toHaveCount(1);
+  await expect(favicon).toHaveAttribute('href', /\/favicon\.ico$/u);
+});
+
+test('根地址规范到转盘路由后再使用客户端导航', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/wheel$/u);
+  await expect(page.locator('.wheel-page-host .workspace')).toBeVisible();
+
+  await page.goto('/caimi');
+  await expect(page).toHaveURL(/\/caimi\/wheel$/u);
+  await expect(page.locator('.app-shell')).toHaveClass(/caimi-variant/u);
 });
 
 test('网页版各个正式地址均可直接打开', async ({ page }) => {
@@ -56,8 +68,12 @@ test('桌面端 Alt 左右按转盘、分组、对战顺序循环切换', async 
   await installTauriMock(page);
   await page.goto('/wheel');
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.locator('.app-shell').evaluate((element) => element.setAttribute('data-e2e-shell', 'persistent'));
+  await page.locator('.wheel-page-host .workspace').evaluate((element) => element.setAttribute('data-e2e-wheel', 'persistent'));
   await page.keyboard.press('Alt+ArrowRight');
   await expect(page).toHaveURL(/\/grouping$/u);
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-e2e-shell', 'persistent');
+  await expect(page.locator('[data-e2e-wheel="persistent"]')).toHaveCount(1);
   await page.keyboard.press('Alt+ArrowRight');
   await expect(page).toHaveURL(/\/battle$/u);
   await page.keyboard.press('Alt+ArrowRight');
@@ -68,6 +84,7 @@ test('桌面端 Alt 左右按转盘、分组、对战顺序循环切换', async 
   await expect(page).toHaveURL(/\/grouping$/u);
   await page.keyboard.press('Alt+ArrowLeft');
   await expect(page).toHaveURL(/\/wheel$/u);
+  await expect(page.locator('[data-e2e-wheel="persistent"]')).toBeVisible();
 });
 
 test('网页版对战页只提示使用桌面版', async ({ page }) => {
@@ -86,6 +103,18 @@ test('网页版不显示无法使用的打开下载按钮', async ({ page }) => 
   await page.locator('.names-field textarea').press('Alt+Enter');
   await page.getByRole('button', { name: '开始分组' }).click();
   await expect(page.getByRole('button', { name: '打开下载' })).toHaveCount(0);
+});
+
+test('分组和对战直达时不预加载转盘页面模块', async ({ page }) => {
+  await page.goto('/grouping');
+  await expect(page.locator('.lineup-page')).toBeVisible();
+  const groupingResources = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
+  expect(groupingResources.some((name) => name.includes('/src/routes/WheelPage.svelte'))).toBe(false);
+
+  await page.goto('/battle');
+  await expect(page.getByText('对战仅支持桌面版')).toBeVisible();
+  const battleResources = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
+  expect(battleResources.some((name) => name.includes('/src/routes/WheelPage.svelte'))).toBe(false);
 });
 
 test.describe('桌面版对战显示与配置', () => {
@@ -399,8 +428,10 @@ test('对战选手名默认字号加倍', async ({ page }) => {
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
   await page.getByRole('radio', { name: '单败' }).check();
+  const suspense = page.getByRole('checkbox', { name: '悬念揭晓' });
+  if (await suspense.isChecked()) await suspense.uncheck();
   await page.getByRole('button', { name: /^抽签/ }).click();
-  await expect(page.locator('.battle-match strong').first()).toHaveCSS('font-size', '24px');
+  await expect(page.locator('.single-bracket-side .battle-match strong').first()).toHaveCSS('font-size', '24px');
 });
 
 test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => {

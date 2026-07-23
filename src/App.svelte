@@ -3,15 +3,11 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import caimiIconUrl from './assets/caimi-icon.png?url';
-  import defaultIconUrl from '../src-tauri/icons/app-icon.svg?url';
   import AppHeader from './components/AppHeader.svelte';
-  import BattlePage from './routes/BattlePage.svelte';
   import CaimiBanner from './components/CaimiBanner.svelte';
-  import WheelPage from './routes/WheelPage.svelte';
   import ExportNotice from './components/ExportNotice.svelte';
-  import GroupingWorkspace from './components/GroupingWorkspace.svelte';
+  import type WheelPage from './routes/WheelPage.svelte';
   import {
-    BUILD_VARIANT,
     variantFromPath,
     variantRoute,
     type AppPage,
@@ -25,13 +21,20 @@
   } from './lib/ui-settings';
   import type { DrawMode } from './lib/types';
 
+  export let pathname = typeof window === 'undefined' ? '/' : window.location.pathname;
+
+  type WheelPageComponent = (typeof import('./routes/WheelPage.svelte'))['default'];
+
   const STORAGE_KEY = 'wheel-settings-v1';
   const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
 
-  let page: AppPage = 'wheel';
-  let variant: AppVariant = BUILD_VARIANT;
+  let page: AppPage = pageFromPath(pathname);
+  let variant: AppVariant = variantFromPath(pathname);
   let desktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   let wheelPage: WheelPage | null = null;
+  let WheelPageComponent: WheelPageComponent | null = null;
+  let wheelPageLoad: Promise<void> | null = null;
+  let wheelPageLoadError = '';
   let drawMode: DrawMode = 'selected';
   let wheelSpinning = false;
   let continuousRunning = false;
@@ -39,17 +42,33 @@
   let uiTheme: UiTheme = initialUiTheme();
   let removeCloseRequestedListener: (() => void) | null = null;
   let appUnmounted = false;
+  let appMounted = false;
   let closingWindow = false;
+  let persistedFontScale = fontScale;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
+
+  $: page = pageFromPath(pathname);
+  $: variant = variantFromPath(pathname);
+  // SSR 只输出轻量应用壳；转盘及其画布逻辑留到浏览器按需加载。
+  $: if (typeof window !== 'undefined' && page === 'wheel') void loadWheelPage();
+  $: if (typeof document !== 'undefined') updateFavicon(variant);
+  // 字号只由应用壳持久化；各页面通过绑定和 CSS 变量消费同一份状态。
+  $: if (appMounted && fontScale !== persistedFontScale) {
+    persistedFontScale = fontScale;
+    saveFontScale();
+  }
 
   onMount(() => {
     appUnmounted = false;
-    syncRoute();
-    window.addEventListener('popstate', syncRoute);
+    appMounted = true;
+    if (pathname === '/' || pathname === '/caimi') {
+      void goto(variantRoute(variant, 'wheel'), { replaceState: true });
+    }
+    updateFavicon(variant);
     if (desktopRuntime) void registerCloseRequestedListener();
     return () => {
       appUnmounted = true;
-      window.removeEventListener('popstate', syncRoute);
+      appMounted = false;
       removeCloseRequestedListener?.();
       removeCloseRequestedListener = null;
     };
@@ -109,19 +128,37 @@
     return pathname.endsWith('/grouping') ? 'grouping' : 'wheel';
   }
 
-  function syncRoute() {
-    page = pageFromPath(window.location.pathname);
-    variant = variantFromPath(window.location.pathname);
+  function loadWheelPage(): Promise<void> {
+    if (WheelPageComponent || wheelPageLoad) return wheelPageLoad ?? Promise.resolve();
+    wheelPageLoadError = '';
+    wheelPageLoad = import('./routes/WheelPage.svelte')
+      .then((module) => {
+        if (!appUnmounted) WheelPageComponent = module.default;
+      })
+      .catch((reason) => {
+        wheelPageLoadError = reason instanceof Error ? reason.message : '无法加载转盘页面';
+      })
+      .finally(() => {
+        wheelPageLoad = null;
+      });
+    return wheelPageLoad;
+  }
+
+  function updateFavicon(nextVariant: AppVariant) {
+    const link = document.querySelector<HTMLLinkElement>('link[data-app-favicon]');
+    if (!link) return;
+    link.type = nextVariant === 'caimi' ? 'image/png' : 'image/svg+xml';
+    link.href = nextVariant === 'caimi' ? caimiIconUrl : '/favicon.ico';
   }
 
   function navigatePage(nextPage: AppPage) {
     if (nextPage === page || (nextPage !== 'wheel' && (wheelSpinning || continuousRunning))) return;
-    void goto(variantRoute(variant, nextPage)).then(syncRoute);
+    void goto(variantRoute(variant, nextPage));
   }
 
   function navigateVariant(nextVariant: AppVariant) {
     if (desktopRuntime || nextVariant === variant) return;
-    void goto(variantRoute(nextVariant, page)).then(syncRoute);
+    void goto(variantRoute(nextVariant, page));
   }
 
   function changeDrawMode(mode: DrawMode) {
@@ -150,7 +187,6 @@
 
     event.preventDefault();
     fontScale = normalizeFontScale(fontScale + (event.key === 'ArrowUp' ? 0.1 : -0.1));
-    saveFontScale();
   }
 
   function handleGlobalPageShortcut(event: KeyboardEvent) {
@@ -179,11 +215,6 @@
 
 <svelte:head>
   <title>{variant === 'caimi' ? '猜蜜版 · ' : ''}{page === 'wheel' ? '转盘' : page === 'grouping' ? '分组' : '对战'}{page === 'wheel' ? '' : ' · 转盘'}</title>
-  <link
-    rel="icon"
-    type={variant === 'caimi' ? 'image/png' : 'image/svg+xml'}
-    href={variant === 'caimi' ? caimiIconUrl : defaultIconUrl}
-  />
 </svelte:head>
 
 <div
@@ -211,24 +242,40 @@
   {/if}
 
   <div class:page-hidden={page !== 'wheel'} class="wheel-page-host" aria-hidden={page !== 'wheel'}>
-    <WheelPage
-      bind:this={wheelPage}
-      bind:mode={drawMode}
-      bind:isSpinning={wheelSpinning}
-      bind:continuousRunning
-      bind:fontScale
-      bind:uiTheme
-      active={page === 'wheel'}
-      {desktopRuntime}
-      {variant}
-    />
+    {#if WheelPageComponent}
+      <svelte:component
+        this={WheelPageComponent}
+        bind:this={wheelPage}
+        bind:mode={drawMode}
+        bind:isSpinning={wheelSpinning}
+        bind:continuousRunning
+        bind:fontScale
+        bind:uiTheme
+        active={page === 'wheel'}
+        {desktopRuntime}
+        {variant}
+      />
+    {:else if page === 'wheel'}
+      <main class="app-route-loading app-page-frame" aria-live="polite">
+        <strong>{wheelPageLoadError ? '转盘加载失败' : '正在加载转盘…'}</strong>
+        {#if wheelPageLoadError}<p>{wheelPageLoadError}</p>{/if}
+      </main>
+    {/if}
   </div>
 
-  {#if page === 'grouping'}
-    <GroupingWorkspace {desktopRuntime} {variant} />
-  {/if}
-
-  {#if page === 'battle'}
-    <BattlePage {desktopRuntime} {variant} />
+  {#if page !== 'wheel'}
+    <slot />
   {/if}
 </div>
+
+<style>
+  .app-route-loading {
+    display: grid;
+    min-height: 60vh;
+    align-content: center;
+    justify-items: center;
+    gap: 8px;
+    color: var(--color-app-muted);
+  }
+  .app-route-loading strong { color: var(--color-app-text); }
+</style>

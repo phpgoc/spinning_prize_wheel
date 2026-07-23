@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Prize } from '../lib/types';
+  import UiNumberInput from './ui/UiNumberInput.svelte';
 
   export let prizes: Prize[];
   export let disabled = false;
@@ -19,11 +20,13 @@
   }
 
   function textValue(event: Event): string {
-    return (event.currentTarget as HTMLInputElement).value;
+    const source = (event as CustomEvent<{ sourceEvent?: Event }>).detail?.sourceEvent;
+    return ((source?.target ?? event.currentTarget) as HTMLInputElement).value;
   }
 
   function numberValue(event: Event): number {
-    return Number((event.currentTarget as HTMLInputElement).value);
+    const source = (event as CustomEvent<{ sourceEvent?: Event }>).detail?.sourceEvent;
+    return Number(((source?.target ?? event.currentTarget) as HTMLInputElement).value);
   }
 </script>
 
@@ -64,11 +67,10 @@
 
       <label class="weight-control" title="权重">
         <span>×</span>
-        <input
+        <UiNumberInput
           aria-label={`${prize.name}的权重`}
-          type="number"
-          min="1"
-          step="1"
+          min={1}
+          step={1}
           value={prize.weight}
           {disabled}
           on:change={(event) =>
@@ -194,7 +196,7 @@
   }
 
   .name-input,
-  .weight-control input {
+  .weight-control :global(.ui-number-input) {
     width: 100%;
     min-width: 0;
     border: 0;
@@ -218,14 +220,14 @@
     font-size: calc(13px * var(--font-scale, 1));
   }
 
-  .weight-control input {
+  .weight-control :global(.ui-number-input) {
     appearance: textfield;
     font-family: var(--font-mono);
     font-size: calc(14px * var(--font-scale, 1));
   }
 
-  .weight-control input::-webkit-inner-spin-button,
-  .weight-control input::-webkit-outer-spin-button {
+  .weight-control :global(.ui-number-input::-webkit-inner-spin-button),
+  .weight-control :global(.ui-number-input::-webkit-outer-spin-button) {
     appearance: none;
   }
 

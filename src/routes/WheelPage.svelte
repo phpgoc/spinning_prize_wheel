@@ -46,7 +46,6 @@
     DEFAULT_FONT_SCALE,
     DEFAULT_STAY_SECONDS,
     DEFAULT_UI_THEME,
-    normalizeFontScale,
     normalizeStaySeconds,
     normalizeUiTheme,
     positiveNumberOrFallback,
@@ -266,7 +265,6 @@
         autoSaveHistory,
         continuousTarget,
         staySeconds,
-        fontScale,
         uiTheme,
       }),
     );
@@ -288,7 +286,6 @@
           continuousTarget: number;
           staySeconds: number;
           continuousIntervalSeconds: number;
-          fontScale: number;
           uiTheme: UiTheme;
         }>;
 
@@ -312,7 +309,6 @@
         // 旧版把统计栏的值直接持久化；迁移后只把它作为首次设置默认值。
         staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds);
         continuousIntervalSeconds = staySeconds;
-        fontScale = normalizeFontScale(parsed.fontScale);
         uiTheme = normalizeUiTheme(parsed.uiTheme);
       }
     } catch {

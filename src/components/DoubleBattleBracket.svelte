@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BattleTmpMatch, BattleTmpSnapshot } from '../lib/battle';
-  import type { BattleBracketLayout } from '../lib/battle-bracket-layout';
+  import { battleRoundGrowth, type BattleBracketLayout } from '../lib/battle-bracket-layout';
   import BattleMatchCard from './BattleMatchCard.svelte';
   import type { BattleBracketProps } from './battle-bracket-props';
 
@@ -47,24 +47,24 @@
 >
   <div class="double-battle-bracket">
     <div class="double-battle-groups">
-      <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each layout.winner as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
-      <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each layout.loser as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
+      <section class="double-stage-section double-winner-section"><h3>胜者组</h3><div class="battle-bracket">{#each layout.winner as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-round-growth: ${battleRoundGrowth(round.stage, round.level)};`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
+      <section class="double-stage-section double-loser-section"><h3>败者组</h3><div class="battle-bracket">{#each layout.loser as round, levelIndex (round.id)}<section class="battle-round" data-level-index={levelIndex} style={`--battle-round-growth: ${battleRoundGrowth(round.stage, round.level)};`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
     </div>
-    <section class="double-final-section"><div class="battle-bracket">{#each layout.final as round (round.id)}<section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
+    <section class="double-final-section"><div class="battle-bracket">{#each layout.final as round (round.id)}<section class="battle-round" data-level-index={round.level} style={`--battle-round-growth: ${battleRoundGrowth(round.stage, round.level)};`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match)}{/each}</div></section>{/each}</div></section>
   </div>
 </div>
 
 <style>
   .double-battle-scroll {
-    --battle-match-row-gap: calc(18px * var(--battle-layout-scale, 1));
-    --battle-round-column-gap: calc(40px * var(--battle-layout-scale, 1));
+    --battle-match-row-gap: calc(36px * var(--battle-layout-scale, 1));
+    --battle-round-column-gap: calc(108px * var(--battle-layout-scale, 1));
     margin-top: 18px;
     outline: 0;
     overflow: auto;
     scroll-behavior: smooth;
   }
   .double-battle-scroll:focus { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 34%, transparent); }
-  .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: calc(48px * var(--battle-layout-scale, 1)); row-gap: calc(38px * var(--battle-layout-scale, 1)); transition: opacity 180ms ease; }
+  .double-battle-bracket { display: grid; width: max-content; min-width: 100%; grid-template-columns: max-content max-content; grid-template-rows: max-content max-content; align-items: start; column-gap: calc(108px * var(--battle-layout-scale, 1)); row-gap: calc(72px * var(--battle-layout-scale, 1)); transition: opacity 180ms ease; }
   .double-battle-groups { display: contents; }
   .double-stage-section,
   .double-final-section { display: flex; min-width: 0; padding: 13px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 13px; background: rgba(255, 255, 255, 0.018); flex-direction: column; }
@@ -75,12 +75,12 @@
   .double-winner-section { grid-column: 1; grid-row: 1; }
   .double-loser-section { grid-column: 1; grid-row: 2; }
   .double-final-section { grid-column: 2; grid-row: 2; align-self: start; transform: translateY(-50%); }
-  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; transform: translateY(6px); }
+  .double-final-section > .battle-bracket { min-height: 180px; align-items: center; margin-top: 0; transform: translateY(-10px); }
   .double-final-section .battle-round { position: relative; justify-content: center; }
   .double-final-section .battle-round > h3 { position: absolute; bottom: calc(100% + 9px); left: 0; }
   .double-final-section .battle-round > div { margin-top: 0; }
-  .double-battle-bracket .battle-round { --battle-round-width: calc(235px * var(--battle-layout-scale, 1)); display: flex; flex: 0 0 var(--battle-round-width); flex-direction: column; }
-  .double-battle-bracket .battle-round > div { flex: 1; display: grid; gap: var(--battle-match-row-gap); margin-top: 9px; }
+  .double-battle-bracket .battle-round { --battle-round-width: calc(235px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); display: flex; flex: 0 0 var(--battle-round-width); flex-direction: column; }
+  .double-battle-bracket .battle-round > div { flex: 1; display: grid; gap: calc(var(--battle-match-row-gap) * var(--battle-round-growth, 1)); margin-top: calc(9px * var(--battle-round-growth, 1)); }
   .double-winner-section .battle-round > div { align-content: end; }
   .double-loser-section .battle-round > div { align-content: start; }
   :global(.battle-fullscreen) .double-battle-scroll { margin-top: 10px; }

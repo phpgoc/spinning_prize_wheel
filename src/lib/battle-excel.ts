@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import {
   battleRoundLabel,
   battleTmpWinnerId,
@@ -14,6 +14,8 @@ const BORDER_COLOR = 'FFABB296';
 
 /** Excel 面向人工查看，使用合并单元格绘制签表，不复刻数据库行结构。 */
 export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): Promise<Uint8Array> {
+  // 签表导出并非首屏能力，延迟加载体积较大的 ExcelJS。
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = '转盘';
   workbook.created = new Date(snapshot.updatedAt);

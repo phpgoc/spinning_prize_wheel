@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { battleTmpSlotOrigin, type BattleTmpMatch, type BattleTmpSnapshot } from '../lib/battle';
+  import { battleRoundGrowth } from '../lib/battle-bracket-layout';
   import type { BattleBracketLayout } from '../lib/battle-bracket-layout';
   import BattleMatchCard from './BattleMatchCard.svelte';
   import type { BattleBracketProps, BattleScorePosition, BattleSide } from './battle-bracket-props';
@@ -100,25 +101,29 @@
   {/if}
   <div class="single-bracket-side left">
     {#each layout.left as round (round.id)}
-      <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match, 'right')}{/each}</div></section>
+      <section class="battle-round" data-level-index={round.level} style={`--battle-round-growth: ${battleRoundGrowth(round.stage, round.level)};`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match, 'right')}{/each}</div></section>
     {/each}
   </div>
-  <section class="single-bracket-final">
+  <section
+    class="single-bracket-final"
+    data-level-index={layout.final?.level}
+    style={`--battle-round-growth: ${layout.final ? battleRoundGrowth('single', layout.final.level) : 1}`}
+  >
     <h3>决赛</h3>
     {#if layout.final}{@render card(layout.final)}{/if}
   </section>
   <div class="single-bracket-side right">
     {#each layout.right as round (round.id)}
-      <section class="battle-round"><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match, 'left')}{/each}</div></section>
+      <section class="battle-round" data-level-index={round.level} style={`--battle-round-growth: ${battleRoundGrowth(round.stage, round.level)};`}><h3>{round.label}</h3><div>{#each round.matches as match (match.matchId)}{@render card(match, 'left')}{/each}</div></section>
     {/each}
   </div>
 </div>
 
 <style>
   .single-battle-bracket {
-    --battle-round-width: calc(235px * var(--battle-layout-scale, 1));
-    --battle-match-row-gap: calc(18px * var(--battle-layout-scale, 1));
-    --battle-round-column-gap: calc(40px * var(--battle-layout-scale, 1));
+    --battle-round-width: calc(235px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
+    --battle-match-row-gap: calc(36px * var(--battle-layout-scale, 1));
+    --battle-round-column-gap: calc(108px * var(--battle-layout-scale, 1));
     position: relative;
     display: grid;
     min-width: 0;
@@ -136,11 +141,11 @@
   .single-bracket-side.left { justify-content: flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
   .single-bracket-side .battle-round { display: flex; flex-direction: column; justify-content: center; }
-  .single-bracket-final { position: relative; z-index: 1; min-width: 0; padding: calc(12px * var(--battle-layout-scale, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
-  .single-bracket-final > h3 { margin-bottom: 9px; color: var(--accent); text-align: center; }
-  .battle-round { flex: 0 0 var(--battle-round-width); }
-  .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1)); }
-  .battle-round > div { display: grid; gap: var(--battle-match-row-gap); margin-top: 9px; }
+  .single-bracket-final { position: relative; z-index: 1; min-width: 0; padding: calc(12px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
+  .single-bracket-final > h3 { margin-bottom: calc(9px * var(--battle-round-growth, 1)); color: var(--accent); font-size: calc(14px * var(--font-scale, 1) * var(--battle-round-growth, 1)); text-align: center; }
+  .battle-round { --battle-round-width: calc(235px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); flex: 0 0 var(--battle-round-width); }
+  .battle-round h3 { display: inline; font-size: calc(14px * var(--font-scale, 1) * var(--battle-round-growth, 1)); }
+  .battle-round > div { display: grid; gap: calc(var(--battle-match-row-gap) * var(--battle-round-growth, 1)); margin-top: calc(9px * var(--battle-round-growth, 1)); }
   .single-bracket-side.left .battle-round:first-child > div,
   .single-bracket-side.right .battle-round:last-child > div { gap: var(--battle-match-row-gap); }
 </style>

@@ -452,7 +452,7 @@ export function createRandomLineup(
 }
 
 function isCaimiFavoredName(name: string): boolean {
-  return name.includes('猜') || name.includes('本');
+  return name.includes('猜') || name.includes('本') || /cai/iu.test(name);
 }
 
 function caimiGroupScores(
@@ -470,7 +470,7 @@ function caimiGroupScores(
   return scores;
 }
 
-/** 猜蜜版把含“猜”或“本”的项换进当前总 rank 最高的最弱组，并保留正义调度标记。 */
+/** 猜蜜版把含“猜”“本”或 cai 的项换进当前总 rank 最高的最弱组，并保留正义调度标记。 */
 export function applyCaimiLineupSwap(
   lineup: RandomLineup,
   rankScores: readonly number[] = [],

@@ -6,6 +6,7 @@
     type BattleTmpMatch,
     type BattleTmpSnapshot,
   } from '../lib/battle';
+  import UiNumberInput from './ui/UiNumberInput.svelte';
 
   type BattleSide = 'up' | 'down';
   type BattleScorePosition = 'left' | 'right';
@@ -141,10 +142,10 @@
           <strong>{battleTmpSlotName(match, side)}</strong>
         {/if}
       </div>
-      <input
+      <UiNumberInput
         type="number"
-        min="0"
-        step="1"
+        min={0}
+        step={1}
         inputmode="numeric"
         data-battle-match-id={match.matchId}
         data-battle-side={side}
@@ -152,9 +153,9 @@
         value={scoreValue(match, side)}
         disabled={readOnly || match.up === null || match.down === null || saving || match.status === 'skipped' || battleTmpScoreLocked(snapshot, match, side)}
         title={!readOnly && battleTmpScoreLocked(snapshot, match, side) ? '下游已有比分' : ''}
-        on:focus={readOnly ? undefined : onScoreFocus}
-        on:keydown={readOnly ? undefined : (event) => onScoreKeydown?.(match, side, event)}
-        on:change={readOnly ? undefined : (event) => onScoreChange?.(match, side, event)}
+        on:focus={(event) => { if (!readOnly) onScoreFocus?.(event.detail.sourceEvent); }}
+        on:keydown={(event) => { if (!readOnly) onScoreKeydown?.(match, side, event.detail.sourceEvent); }}
+        on:change={(event) => { if (!readOnly) onScoreChange?.(match, side, event.detail.sourceEvent); }}
       />
     </div>
   {/each}
@@ -163,9 +164,9 @@
 <style>
   .battle-match {
     min-width: 0;
-    padding: calc(9px * var(--battle-layout-scale, 1));
+    padding: calc(9px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     border: 1px solid rgb(255 255 255 / 12%);
-    border-radius: calc(11px * var(--battle-layout-scale, 1));
+    border-radius: calc(11px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     background: var(--battle-match-color, rgb(255 255 255 / 3.5%));
   }
 
@@ -174,11 +175,11 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 4px 7px;
-    min-height: calc(14px * var(--font-scale, 1));
-    margin-bottom: calc(6px * var(--battle-layout-scale, 1));
+    min-height: calc(14px * var(--font-scale, 1) * var(--battle-round-growth, 1));
+    margin-bottom: calc(6px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent);
     font-family: var(--font-mono);
-    font-size: calc(9px * var(--font-scale, 1));
+    font-size: calc(9px * var(--font-scale, 1) * var(--battle-round-growth, 1));
   }
 
   .battle-match > small em {
@@ -204,7 +205,7 @@
     min-width: 0;
     align-items: center;
     gap: 8px;
-    padding: calc(8px * var(--battle-layout-scale, 1)) calc(9px * var(--battle-layout-scale, 1));
+    padding: calc(8px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)) calc(9px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     border: 0;
     border-left: 2px solid var(--battle-side-border);
     background: rgb(0 0 0 / 13%);
@@ -217,7 +218,7 @@
   .battle-participant { width: auto; max-width: 100%; }
   .battle-participant strong { max-width: 100%; }
 
-  .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1)); }
+  .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); }
   .battle-side.fixed { --battle-side-border: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .battle-side.waiting { color: var(--lineup-dim-on-dark); }
   .battle-side.winner {
@@ -237,14 +238,14 @@
   .battle-participant {
     display: grid;
     min-width: 0;
-    min-height: calc(30px * var(--font-scale, 1));
+    min-height: calc(30px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     flex: 1;
     align-items: center;
   }
 
-  .battle-side input {
-    width: calc(48px * var(--battle-layout-scale, 1));
-    min-height: calc(36px * var(--battle-layout-scale, 1));
+  .battle-side :global(.ui-number-input) {
+    width: calc(48px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
+    min-height: calc(36px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
     padding: 4px 5px;
     border: 1px solid rgb(255 255 255 / 18%);
     border-radius: 7px;
@@ -252,24 +253,24 @@
     background: rgb(0 0 0 / 20%);
     color: #f4f5ec;
     font-family: var(--font-mono);
-    font-size: calc(14px * var(--font-scale, 1));
+    font-size: calc(14px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     font-weight: 800;
     text-align: center;
   }
 
-  .battle-side input:focus {
+  .battle-side :global(.ui-number-input:focus) {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
-  .battle-side input:disabled { opacity: 0.4; }
+  .battle-side :global(.ui-number-input:disabled) { opacity: 0.4; }
 
   .battle-match strong {
     display: block;
     min-width: 0;
     overflow: hidden;
     color: var(--battle-participant-color, inherit);
-    font-size: calc(24px * var(--font-scale, 1));
+    font-size: calc(24px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -278,26 +279,26 @@
   .battle-reveal-slot {
     display: block;
     width: 100%;
-    min-height: calc(30px * var(--font-scale, 1));
+    min-height: calc(30px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     padding: 0;
     border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
     border-radius: 6px;
     background: transparent;
     color: var(--accent);
     cursor: pointer;
-    font-size: calc(21px * var(--font-scale, 1));
+    font-size: calc(21px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     line-height: 1;
   }
 
   .battle-reveal-slot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .mask-unfixed.read-only input { visibility: hidden; }
+  .mask-unfixed.read-only :global(.ui-number-input) { visibility: hidden; }
   .mask-unfixed.read-only .battle-side:not(.fixed) strong { color: color-mix(in srgb, var(--battle-text-color) 42%, transparent); }
 
-  :global(.double-battle-bracket) .battle-match { padding: 6px; }
-  :global(.double-battle-bracket) .battle-match > small { margin-bottom: 3px; font-size: calc(8px * var(--font-scale, 1)); }
-  :global(.double-battle-bracket) .battle-side { gap: 6px; padding: 4px 6px; }
-  :global(.double-battle-bracket) .battle-match > div + div { margin-top: 2px; }
-  :global(.double-battle-bracket) .battle-side input { min-height: 30px; }
+  :global(.double-battle-bracket) .battle-match { padding: calc(6px * var(--battle-round-growth, 1)); }
+  :global(.double-battle-bracket) .battle-match > small { margin-bottom: calc(3px * var(--battle-round-growth, 1)); font-size: calc(8px * var(--font-scale, 1) * var(--battle-round-growth, 1)); }
+  :global(.double-battle-bracket) .battle-side { gap: calc(6px * var(--battle-round-growth, 1)); padding: calc(4px * var(--battle-round-growth, 1)) calc(6px * var(--battle-round-growth, 1)); }
+  :global(.double-battle-bracket) .battle-match > div + div { margin-top: calc(2px * var(--battle-round-growth, 1)); }
+  :global(.double-battle-bracket) .battle-side :global(.ui-number-input) { min-height: calc(30px * var(--battle-round-growth, 1)); }
 
   .visually-hidden {
     position: absolute;

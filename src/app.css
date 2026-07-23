@@ -1,4 +1,5 @@
-@import 'tailwindcss';
+/* 仅扫描真实前端源码，避免在 Windows 挂载盘遍历依赖和历史构建产物。 */
+@import 'tailwindcss' source('./');
 
 @theme {
   --color-app-canvas: #171813;

@@ -2511,7 +2511,9 @@
   }
 
   function handleBattleScoreFocus(event: FocusEvent) {
-    const target = event.currentTarget as HTMLInputElement;
+    const target = event.target instanceof HTMLInputElement
+      ? event.target
+      : event.currentTarget as HTMLInputElement;
     battleScoreFocusValues.set(target, target.value);
   }
 
@@ -2520,7 +2522,10 @@
     side: 'up' | 'down',
     event: KeyboardEvent,
   ) {
-    const target = event.currentTarget as HTMLInputElement;
+    if (event.defaultPrevented) return;
+    const target = event.target instanceof HTMLInputElement
+      ? event.target
+      : event.currentTarget as HTMLInputElement;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -2698,7 +2703,9 @@
   }
 
   async function updateBattleScore(match: BattleTmpMatch, side: 'up' | 'down', event: Event) {
-    const target = event.currentTarget as HTMLInputElement;
+    const target = event.target instanceof HTMLInputElement
+      ? event.target
+      : event.currentTarget as HTMLInputElement;
     const score = target.value.trim() === '' ? null : Number(target.value);
     if (score !== null && (!Number.isSafeInteger(score) || score < 0)) {
       error = '对战比分必须是非负整数';
@@ -3854,8 +3861,8 @@
     --on-dark: #f6f3ea;
     --on-dark-muted: #c4c7bd;
     --app-surface-background: rgb(11 12 9 / 27%);
-    /* 字号放大时，载具按三分之一幅度扩张，避免同比例撑爆签表。 */
-    --battle-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
+    /* 签表基础间距加大；字号每增加 1 倍，间距只增加半倍（100% 到 200%）。 */
+    --battle-layout-scale: calc(0.5 + var(--font-scale, 1) * 0.5);
 
     background: var(--battle-background-color);
     color: var(--battle-text-color);

@@ -1,5 +1,1 @@
-<script lang="ts">
-  import App from '../../App.svelte';
-</script>
-
-<App />
+<!-- 猜蜜版根地址由持久化应用壳规范到 /caimi/wheel。 -->

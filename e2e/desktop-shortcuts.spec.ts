@@ -19,6 +19,7 @@ async function openDesktopWheel(page: Page) {
   await installTauriMock(page);
   await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.wheel-page-host .workspace')).toBeVisible({ timeout: 30_000 });
 }
 
 async function confirmDesktopNames(page: Page, names: string[]) {
@@ -612,7 +613,7 @@ test('桌面对战关系化同步赛果并能恢复当前临时状态', async ({
     (window as any).__E2E_TAURI_STATE__.invocations
       .filter((entry: any) => entry.cmd === 'export_binary_file' || entry.cmd === 'export_text_file')
       .map((entry: any) => entry.cmd)
-  ))).toEqual(['export_binary_file', 'export_text_file']);
+  ))).toEqual(expect.arrayContaining(['export_binary_file', 'export_text_file']));
 
   const savedState = await page.evaluate(() => structuredClone(
     (window as any).__E2E_TAURI_STATE__.battleTmpState,

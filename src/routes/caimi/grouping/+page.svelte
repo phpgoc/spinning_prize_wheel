@@ -1,5 +1,12 @@
 <script lang="ts">
-  import App from '../../../App.svelte';
+  import { onMount } from 'svelte';
+  import GroupingWorkspace from '../../../components/GroupingWorkspace.svelte';
+
+  let desktopRuntime = false;
+
+  onMount(() => {
+    desktopRuntime = '__TAURI_INTERNALS__' in window;
+  });
 </script>
 
-<App />
+<GroupingWorkspace {desktopRuntime} variant="caimi" />

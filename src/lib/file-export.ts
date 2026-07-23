@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import ExcelJS from 'exceljs';
 
 export type ExcelCell = string | number | boolean | null | undefined;
 
@@ -27,6 +26,8 @@ export async function createExcelWorkbook(
   rows: readonly (readonly ExcelCell[])[],
   sheetName = '数据',
 ): Promise<Uint8Array> {
+  // ExcelJS 约 1.3 MB，只在用户实际导出时下载，避免拖慢应用首屏。
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = '转盘';
   const worksheet = workbook.addWorksheet(normalizeSheetName(sheetName), {

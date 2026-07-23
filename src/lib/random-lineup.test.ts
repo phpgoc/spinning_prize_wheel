@@ -73,6 +73,19 @@ describe('随机排阵', () => {
     expect(result.tiers.flat().filter(Boolean)).toHaveLength(6);
   });
 
+  test('猜蜜版也识别 cai 特权字', () => {
+    const lineup = createRandomLineup(
+      ['cai本人', '同档甲', '同档乙', '第二档甲', '第二档乙', '第二档丙'],
+      3,
+      () => 0,
+    );
+    const before = lineup.tiers.flat().find((entry) => entry?.name === 'cai本人')!;
+    const result = applyCaimiLineupSwap(lineup, [1, 20, 8, 2, 20, 8]);
+    const after = result.tiers.flat().find((entry) => entry?.name === 'cai本人')!;
+    expect(after.groupIndex).not.toBe(before.groupIndex);
+    expect(after.caimiSwap?.kind).toBe('favored');
+  });
+
   test('校验组数和人数', () => {
     expect(() => createRandomLineup(['甲', '乙'], 1)).toThrow('组数至少为 2');
     expect(() => createRandomLineup(['甲', '乙'], 3)).toThrow('人数不能少于组数');

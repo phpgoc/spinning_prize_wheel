@@ -1,5 +1,12 @@
 <script lang="ts">
-  import App from '../../../App.svelte';
+  import { onMount } from 'svelte';
+  import BattlePage from '../../BattlePage.svelte';
+
+  let desktopRuntime = false;
+
+  onMount(() => {
+    desktopRuntime = '__TAURI_INTERNALS__' in window;
+  });
 </script>
 
-<App />
+<BattlePage {desktopRuntime} variant="caimi" />

@@ -17,6 +17,12 @@ describe('猜蜜版隐藏权重', () => {
     expect(prize.weight).toBe(80);
   });
 
+  test('cai 也属于特权字且不区分大小写', () => {
+    expect(caimiNameWeightMultiplier('cai')).toBe(2);
+    expect(caimiNameWeightMultiplier('CAI猜')).toBe(4);
+    expect(caimiNameWeightMultiplier('c a i')).toBe(1);
+  });
+
   test('真实加权抽取使用隐藏倍率而不是展示权重', () => {
     const visible = [
       { id: 'normal', name: '普通项', weight: 5, color: '#000', enabled: true },

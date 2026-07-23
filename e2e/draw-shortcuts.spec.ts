@@ -79,6 +79,8 @@ async function importCandidates(page: Page, names: string[]) {
 test.beforeEach(async ({ page }) => {
   await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
+  // 应用壳先挂载，转盘页面按需加载；操作快捷键前要等真实工作区出现。
+  await expect(page.locator('.wheel-page-host .workspace')).toBeVisible({ timeout: 30_000 });
 });
 
 test('发布版默认不再带示例候选', async ({ page }) => {

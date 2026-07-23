@@ -14,10 +14,102 @@ import {
   standardBracketSeedOrder,
   updateBattleTmpResult,
 } from './battle';
+import { battleRoundGrowth, createBattleBracketLayout } from './battle-bracket-layout';
 
 const names = (count: number) => Array.from({ length: count }, (_, index) => `选手${index + 1}`);
 
 describe('对战签位', () => {
+  test('轮次字号和单元格按规则递增', () => {
+    expect(battleRoundGrowth('single', 1)).toBeCloseTo(1);
+    expect(battleRoundGrowth('single', 2)).toBeCloseTo(1.1);
+    expect(battleRoundGrowth('single', 3)).toBeCloseTo(1.21);
+    expect(battleRoundGrowth('winner', 4)).toBeCloseTo(1.331);
+    expect(battleRoundGrowth('loser', 1)).toBeCloseTo(1);
+    expect(battleRoundGrowth('loser', 2)).toBeCloseTo(1);
+    expect(battleRoundGrowth('loser', 3)).toBeCloseTo(1.1);
+    expect(battleRoundGrowth('loser', 5)).toBeCloseTo(1.21);
+  });
+
+  test('查看和编辑共用同一套 8 到 33 人轮次布局元数据', () => {
+    for (let count = 8; count <= 33; count += 1) {
+      const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(count), {
+        format: 'single-elimination',
+        orderMode: 'input',
+        fixedSeedCount: 0,
+        random: () => 0.25,
+      }), 1_700_000_000_000);
+      const layout = createBattleBracketLayout(snapshot);
+      expect(layout.single.left.flatMap((round) => round.matches).length
+        + layout.single.right.flatMap((round) => round.matches).length
+        + (layout.single.final ? 1 : 0)).toBe(snapshot.matches.length);
+      for (const round of layout.groups) {
+        expect(round.growth).toBe(battleRoundGrowth(round.stage, round.level));
+      }
+    }
+  });
+
+  test('查看和编辑共用 8 到 33 人双败布局且场次编号唯一', () => {
+    for (let count = 8; count <= 33; count += 1) {
+      const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(count), {
+        format: 'double-elimination',
+        orderMode: 'input',
+        fixedSeedCount: 0,
+        random: () => 0.25,
+      }), 1_700_000_000_000);
+      const layout = createBattleBracketLayout(snapshot);
+      expect(new Set(snapshot.matches.map((match) => match.matchId)).size).toBe(snapshot.matches.length);
+      expect(layout.winner.map((round) => round.level)).toEqual(
+        Array.from({ length: Math.log2(snapshot.bracketSize) }, (_, index) => index + 1),
+      );
+      expect(layout.final.length).toBe(1);
+      expect(layout.winner.concat(layout.loser, layout.final).every((round) => (
+        round.growth === battleRoundGrowth(round.stage, round.level)
+      ))).toBe(true);
+      expect(snapshot.matches.some((match) => match.stage === 'loser')).toBe(true);
+    }
+  });
+
+  test('8 到 33 人的每个合法前 N 固定设置都把固定选手放入固定签位', () => {
+    for (let count = 8; count <= 33; count += 1) {
+      for (const fixedSeedCount of battleFixedSeedOptions(count)) {
+        const plan = createSeededBattlePlan(names(count), {
+          format: count % 2 === 0 ? 'double-elimination' : 'single-elimination',
+          orderMode: 'rank',
+          fixedSeedCount,
+          random: () => 0.25,
+        });
+        const fixedPositions = plan.positions.filter((position) => position.fixed);
+        expect(fixedPositions).toHaveLength(fixedSeedCount);
+        expect(fixedPositions.every((position) => (
+          position.participant !== null && position.participant.seed <= fixedSeedCount
+        ))).toBe(true);
+        expect(plan.positions.filter((position) => position.participant?.seed && position.participant.seed <= fixedSeedCount)
+          .every((position) => position.fixed)).toBe(true);
+      }
+    }
+  });
+
+  test('大量轮空在单败和双败中都会自动进入下一轮，不会生成双方空缺的首轮', () => {
+    for (const format of ['single-elimination', 'double-elimination'] as const) {
+      const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(9), {
+        format,
+        orderMode: 'input',
+        fixedSeedCount: 8,
+        random: () => 0.25,
+      }), 1_700_000_000_000);
+      const firstStage = format === 'double-elimination' ? 'winner' : 'single';
+      const firstRound = snapshot.matches.filter((match) => match.stage === firstStage && match.level === 1);
+      expect(firstRound.every((match) => match.up !== null || match.down !== null)).toBe(true);
+      for (const bye of firstRound.filter((match) => match.up === null || match.down === null)) {
+        const participantId = bye.up ?? bye.down;
+        expect(snapshot.matches.some((match) => (
+          match.stage === firstStage
+          && match.level === 2
+          && (match.up === participantId || match.down === participantId)
+        ))).toBe(true);
+      }
+    }
+  });
   test('轮次名称按单败签位数和双败轮次显示', () => {
     expect(battleRoundLabel('single-elimination', 'single', 1, 16)).toBe('1/16');
     expect(battleRoundLabel('single-elimination', 'single', 2, 8)).toBe('1/8');

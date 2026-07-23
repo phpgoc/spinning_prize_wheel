@@ -9,7 +9,7 @@ export default defineConfig({
   workers: 4,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
     locale: 'zh-CN',
     trace: 'retain-on-failure',
     viewport: { width: 1600, height: 1000 },
@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: 'bun run dev -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.CI !== 'true',
     timeout: 60_000,
   },
 });
