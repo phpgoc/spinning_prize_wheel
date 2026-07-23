@@ -176,6 +176,7 @@
   let historyEnd = '';
   let pendingLineupHistoryDeletion: LineupHistoryDeletion | null = null;
   let historyDeleting = false;
+  let historyExporting: { id: string; format: 'excel' | 'json' } | null = null;
   let insertIndex: number | null = null;
   let insertName = '';
   let insertError = '';
@@ -210,6 +211,8 @@
   let battleHistoryEnd = '';
   let battleHistoryFileInput: HTMLInputElement | null = null;
   let battleHistoryImporting = false;
+  let battleHistoryExporting: { id: string; format: 'excel' | 'json' } | null = null;
+  let battleHistoryError = '';
   let battleHistoryDeleteConfirmation: 0 | 1 | 2 = 0;
   let pendingBattleHistoryDeletion: BattleHistory | null = null;
   let pendingBattleLoad: PendingBattleLoad | null = null;
@@ -758,25 +761,33 @@
   }
 
   async function exportLineupHistoryJson(history: SavedLineup) {
-    error = '';
+    if (historyExporting) return;
+    historyExporting = { id: history.id, format: 'json' };
+    historyError = '';
     try {
       await downloadFormattedJson('分组结果', createLineupHistoryTransfer(history, variant));
     } catch (reason) {
-      error = messageFrom(reason, '无法导出分组历史 JSON');
+      historyError = messageFrom(reason, '无法导出分组历史 JSON');
+    } finally {
+      historyExporting = null;
     }
   }
 
   async function exportLineupHistoryExcel(history: SavedLineup) {
+    if (historyExporting) return;
     const historicalResult = historyResult(history);
     if (!historicalResult) {
       historyError = '这条历史记录内容不完整';
       return;
     }
-    error = '';
+    historyExporting = { id: history.id, format: 'excel' };
+    historyError = '';
     try {
       await downloadExcel('分组结果', lineupExcelRows(historicalResult));
     } catch (reason) {
-      error = messageFrom(reason, '无法导出分组历史 Excel');
+      historyError = messageFrom(reason, '无法导出分组历史 Excel');
+    } finally {
+      historyExporting = null;
     }
   }
 
@@ -1092,11 +1103,29 @@
   }
 
   async function exportBattleHistoryJson(history: BattleHistory) {
-    await downloadFormattedJson('对战历史', createBattleHistoryTransfer(history.snapshot));
+    if (battleHistoryExporting) return;
+    battleHistoryExporting = { id: history.id, format: 'json' };
+    battleHistoryError = '';
+    try {
+      await downloadFormattedJson('对战历史', createBattleHistoryTransfer(history.snapshot));
+    } catch (reason) {
+      battleHistoryError = messageFrom(reason, '无法导出对战历史 JSON');
+    } finally {
+      battleHistoryExporting = null;
+    }
   }
 
   async function exportBattleHistoryExcel(history: BattleHistory) {
-    await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(history.snapshot));
+    if (battleHistoryExporting) return;
+    battleHistoryExporting = { id: history.id, format: 'excel' };
+    battleHistoryError = '';
+    try {
+      await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(history.snapshot));
+    } catch (reason) {
+      battleHistoryError = messageFrom(reason, '无法导出对战历史 Excel');
+    } finally {
+      battleHistoryExporting = null;
+    }
   }
 
   function requestClearBattleHistories() {
@@ -3008,11 +3037,14 @@
                         on:select={() => viewBattleHistory(history)}
                       >
                         <UiButton size="xs" disabled={battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'history', history })}>编辑</UiButton>
-                        <UiButton size="xs" on:click={() => void exportBattleHistoryExcel(history)}>Excel</UiButton>
-                        <UiButton size="xs" on:click={() => void exportBattleHistoryJson(history)}>JSON</UiButton>
+                        <UiButton size="xs" data-export="battle-history-excel" disabled={battleHistoryExporting !== null} on:click={() => void exportBattleHistoryExcel(history)}>{battleHistoryExporting?.id === history.id && battleHistoryExporting.format === 'excel' ? '导出中…' : 'Excel'}</UiButton>
+                        <UiButton size="xs" data-export="battle-history-json" disabled={battleHistoryExporting !== null} on:click={() => void exportBattleHistoryJson(history)}>{battleHistoryExporting?.id === history.id && battleHistoryExporting.format === 'json' ? '导出中…' : 'JSON'}</UiButton>
                         <UiButton size="xs" tone="danger" aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的对战历史`} on:click={() => requestDeleteBattleHistory(history)}>删除</UiButton>
                       </UiHistoryRow>
                     {/each}
+                  <svelte:fragment slot="notice">
+                    {#if battleHistoryError}<div class="ranking-error" role="alert">{battleHistoryError}</div>{/if}
+                  </svelte:fragment>
                   <svelte:fragment slot="actions">
                     <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
                     <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
@@ -3039,8 +3071,8 @@
                       hint="查看分组 →"
                       on:select={() => viewHistory(history)}
                     >
-                      <UiButton size="xs" on:click={() => void exportLineupHistoryExcel(history)}>Excel</UiButton>
-                      <UiButton size="xs" on:click={() => void exportLineupHistoryJson(history)}>JSON</UiButton>
+                      <UiButton size="xs" data-export="lineup-history-excel" disabled={historyExporting !== null} on:click={() => void exportLineupHistoryExcel(history)}>{historyExporting?.id === history.id && historyExporting.format === 'excel' ? '导出中…' : 'Excel'}</UiButton>
+                      <UiButton size="xs" data-export="lineup-history-json" disabled={historyExporting !== null} on:click={() => void exportLineupHistoryJson(history)}>{historyExporting?.id === history.id && historyExporting.format === 'json' ? '导出中…' : 'JSON'}</UiButton>
                       <UiButton
                         size="xs"
                         tone="danger"

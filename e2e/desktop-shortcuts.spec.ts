@@ -867,6 +867,46 @@ async function enterDesktopBattleScore(match: Locator, up: number, down: number)
   await expect(inputs.nth(0)).toBeEnabled();
 }
 
+test('分组历史导出在失败后显示错误并恢复按钮', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (reason) => pageErrors.push(reason.message));
+  await installTauriMock(page, undefined, {
+    lineupHistories: [{
+      id: 'lineup-export',
+      createdAt: new Date(2026, 6, 20, 12).getTime(),
+      input: { sourceNames: ['甲', '乙'], groupCount: 2, orderMode: 'input' },
+      result: { groupNames: ['A', 'B'], tiers: [[{ name: '甲' }, { name: '乙' }]] },
+    }],
+  });
+  await page.goto('/grouping');
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.getByRole('button', { name: /分组历史/u }).click();
+
+  const historyPanel = page.locator('.history-panel');
+  const excelButton = historyPanel.locator('[data-export="lineup-history-excel"]');
+  const jsonButton = historyPanel.locator('[data-export="lineup-history-json"]');
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_binary_file = ['分组历史 Excel 写入失败'];
+  });
+  await excelButton.click();
+  await expect(excelButton).toHaveText('导出中…');
+  await expect(excelButton).toBeDisabled();
+  await expect(jsonButton).toBeDisabled();
+  await expect(historyPanel.getByRole('alert')).toContainText('分组历史 Excel 写入失败', { timeout: 30_000 });
+  await expect(excelButton).toHaveText('Excel');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_text_file = ['分组历史 JSON 写入失败'];
+  });
+  await jsonButton.click();
+  await expect(historyPanel.getByRole('alert')).toContainText('分组历史 JSON 写入失败');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+  expect(pageErrors).toEqual([]);
+});
+
 test('抽奖和分组的删除全部历史都需要二次确认', async ({ page }) => {
   const createdAt = new Date(2026, 6, 20, 12).getTime();
   const drawHistory = {

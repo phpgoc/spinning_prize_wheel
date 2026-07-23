@@ -114,6 +114,40 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   await expect(viewedMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
 });
 
+test('对战历史导出显示忙碌状态并在失败后恢复', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (reason) => pageErrors.push(reason.message));
+  await openDesktopBattle(page);
+  await createScoredBattle(page);
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await page.getByRole('button', { name: /对战历史/u }).click();
+
+  const historyCard = battleHistoryCards(page);
+  await expect(historyCard).toHaveCount(1);
+  const excelButton = historyCard.locator('[data-export="battle-history-excel"]');
+  const jsonButton = historyCard.locator('[data-export="battle-history-json"]');
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_binary_file = ['历史 Excel 写入失败'];
+  });
+  await excelButton.click();
+  await expect(excelButton).toHaveText('导出中…');
+  await expect(excelButton).toBeDisabled();
+  await expect(jsonButton).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('历史 Excel 写入失败', { timeout: 30_000 });
+  await expect(excelButton).toHaveText('Excel');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.export_text_file = ['历史 JSON 写入失败'];
+  });
+  await jsonButton.click();
+  await expect(page.getByRole('alert')).toContainText('历史 JSON 写入失败');
+  await expect(excelButton).toBeEnabled();
+  await expect(jsonButton).toBeEnabled();
+  expect(pageErrors).toEqual([]);
+});
+
 test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ page }) => {
   await openDesktopBattle(page);
   await createScoredBattle(page);
