@@ -2986,7 +2986,8 @@
 />
 
 <main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
-  <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
+  <!-- Web 端也启用了完整业务工作区，宽屏布局需要与 Tauri 保持一致。 -->
+  <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="lineup-workbench">
     {#if businessRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
@@ -4353,6 +4354,11 @@
     margin-top: calc(18px * var(--lineup-layout-scale, 1));
   }
 
+  /* 三列工作区在大字号下会压缩中间列，卡片不足一列时自动降为单列。 */
+  .lineup-workbench.desktop .preview-list {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  }
+
   .preview-tier-divider {
     display: flex;
     grid-column: 1 / -1;
@@ -5209,6 +5215,12 @@
     }
     .lineup-workbench.desktop {
       grid-template-rows: minmax(360px, 1fr) auto;
+    }
+    .lineup-workbench.desktop.web-layout {
+      /* Web 端字号放大时保留三列位置，同时不让侧栏按字号挤占中间预览区。 */
+      --lineup-layout-scale: 1;
+      grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
+      gap: clamp(14px, 1.7vw, 25px);
     }
     .lineup-workbench.desktop .lineup-center { display: contents; }
     .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
