@@ -342,16 +342,21 @@ function resolveLineupNames(db: Database, names: string[]): ResolvedLineupName[]
 function saveRankedUser(db: Database, input: RankedUserInput): RankedUser {
   const name = input.name.trim();
   if (!name) throw new Error('名称不能为空');
+  if (name.length > 80) throw new Error('名称不能超过 80 个字符');
+  const rank = normalizeRank(input.rank);
   assertUniqueAlias(db, name, input.id);
   return transaction(db, () => {
     let userId = input.id;
     if (userId === null) {
-      db.run('INSERT INTO user (name, rank) VALUES (?, ?)', [name, input.rank ?? 10_000]);
+      db.run('INSERT INTO user (name, rank) VALUES (?, ?)', [name, rank]);
       userId = Number(singleValue(db, 'SELECT last_insert_rowid()'));
       db.run('INSERT INTO alias (name, user_id) VALUES (?, ?)', [name, userId]);
     } else {
       const existing = findRankedUser(db, userId);
-      db.run('UPDATE user SET name = ? WHERE id = ?', [name, userId]);
+      const renamed = existing.name.toLocaleLowerCase('zh-CN') !== name.toLocaleLowerCase('zh-CN');
+      // 允许把本名改成自己的别名，先移除旧别名再更新本名，避免唯一键冲突。
+      if (renamed) db.run('DELETE FROM alias WHERE user_id = ? AND name = ? COLLATE NOCASE', [userId, name]);
+      db.run('UPDATE user SET name = ?, rank = ? WHERE id = ?', [name, rank, userId]);
       const canonical = existing.aliases.find(
         (alias) => alias.name.toLocaleLowerCase('zh-CN') === existing.name.toLocaleLowerCase('zh-CN'),
       );
@@ -362,8 +367,15 @@ function saveRankedUser(db: Database, input: RankedUserInput): RankedUser {
   });
 }
 
+function normalizeRank(value: number | null | undefined): number {
+  if (value === null || value === undefined) return 10_000;
+  if (!Number.isSafeInteger(value)) throw new Error('排名不合法');
+  return Math.max(1, Math.min(10_000, value));
+}
+
 function addRankedUserAlias(db: Database, userId: number, value: string): RankedUser {
   const alias = value.trim();
+  if (alias.length > 80) throw new Error('名称不能超过 80 个字符');
   findRankedUser(db, userId);
   assertUniqueAlias(db, alias);
   db.run('INSERT INTO alias (name, user_id) VALUES (?, ?)', [alias, userId]);
