@@ -14,8 +14,8 @@ test.beforeEach(async ({ page }) => {
 
 for (const format of formats) {
   for (const count of counts) {
-    test(`${format.label} ${count} 人查看、编辑、晋级和 Excel 导出`, async ({ page }) => {
-      test.setTimeout(90_000);
+    test(`${format.label} ${count} 人完整打完、快捷键焦点和最终 Excel`, async ({ page }) => {
+      test.setTimeout(180_000);
       await drawBattle(page, format.label, count);
 
       const bracket = page.locator(format.selector);
@@ -29,8 +29,23 @@ for (const format of formats) {
       expect(await bracket.locator('.battle-match').count()).toBe(snapshot.matches.length);
       expect(await bracket.locator('.battle-match:not(.read-only)').count()).toBe(snapshot.matches.length);
 
-      // 范围用例不能只看签表是否画出来：实际聚焦比分框、录入比分，并确认对战区产生胜者。
-      await enterFirstAvailableBattleScore(page, format.selector);
+      // 每种人数与赛制都要把整张表打完。单败只能用 S，双败胜者/败者组分别用 W/L，
+      // 总决赛没有魔法键时从对战卡片用方向键进入，防止焦点悄悄跑回设置区。
+      const keyboardUsage = await completeBattleThroughKeyboard(page, format.value);
+      expect(keyboardUsage.single + keyboardUsage.winner + keyboardUsage.loser).toBeGreaterThan(0);
+      if (format.value === 'single-elimination') {
+        expect(keyboardUsage.single).toBeGreaterThan(0);
+        expect(keyboardUsage.winner + keyboardUsage.loser).toBe(0);
+      } else {
+        expect(keyboardUsage.winner).toBeGreaterThan(0);
+        expect(keyboardUsage.loser).toBeGreaterThan(0);
+      }
+      const completedSnapshot = await battleSnapshot(page);
+      expect(completedSnapshot.matches.every((match: any) => (
+        match.status === 'completed' || match.status === 'skipped'
+      ))).toBe(true);
+      const championName = completedChampionName(completedSnapshot, format.value);
+      expect(championName).not.toBeNull();
 
       const firstStageByes = snapshot.matches.filter((match: any) => (
         match.stage === format.stage
@@ -59,6 +74,8 @@ for (const format of formats) {
         expect(exportedValues).toContain(name);
       }
       expect(exportedValues).toEqual(expect.arrayContaining(['4', '1']));
+      expect(exportedValues).toContain(championName);
+      expect(exportedValues.filter((value) => value.startsWith('等待'))).toEqual([]);
 
       await page.getByRole('button', { name: '保存历史' }).click();
       await page.getByRole('button', { name: /对战历史/u }).click();
@@ -70,35 +87,121 @@ for (const format of formats) {
       await expect(historyBracket.locator('.battle-match')).toHaveCount(snapshot.matches.length);
       await expect(historyBracket.locator('.battle-match.read-only')).toHaveCount(snapshot.matches.length);
       await expect(historyBracket.locator('input:not(:disabled)')).toHaveCount(0);
+      await expect(historyBracket).toContainText(championName);
       await page.getByRole('button', { name: '返回当前对战' }).click();
       await expect(page.locator(`${format.selector}:not(.read-only)`)).toBeVisible();
     });
   }
 }
 
-async function enterFirstAvailableBattleScore(page: Page, bracketSelector: string) {
-  const matchId = await page.locator(`${bracketSelector} .battle-match`).evaluateAll((matches) => (
-    matches.find((match) => (
-      match.querySelectorAll('input[type="number"]:not(:disabled)').length === 2
-    ))?.getAttribute('data-battle-match-id') ?? null
+type BattleFormat = (typeof formats)[number]['value'];
+type BattleKeyboardGroup = 'single' | 'winner' | 'loser' | 'final';
+
+async function completeBattleThroughKeyboard(page: Page, format: BattleFormat) {
+  const usage = { single: 0, winner: 0, loser: 0, final: 0 };
+  // 33 人双败有 60 余场；这个上限一旦触发说明某场没有被正确完成，不能静默成功。
+  for (let round = 0; round < 160; round += 1) {
+    const group = await nextReadyBattleGroup(page, format);
+    if (group === null) return usage;
+    const score = await focusBattleGroupWithKeyboard(page, group);
+    await enterFocusedBattleScore(page, score);
+    usage[group] += 1;
+  }
+  throw new Error('在预期场次数内没有完成整张对战表');
+}
+
+async function nextReadyBattleGroup(page: Page, format: BattleFormat): Promise<BattleKeyboardGroup | null> {
+  const groups = new Set(await page.locator('.battle-match').evaluateAll((matches) => [...new Set(matches.flatMap((match) => {
+    if (
+      match.dataset.battleStatus === 'completed'
+      || match.dataset.battleStatus === 'skipped'
+      || match.querySelectorAll('input[type="number"]:not(:disabled)').length !== 2
+    ) return [];
+    const stage = match.dataset.battleStage;
+    return stage === 'single' || stage === 'winner' || stage === 'loser' || stage === 'final' ? [stage] : [];
+  }))]));
+  if (format === 'single-elimination') return groups.has('single') ? 'single' : null;
+  // 胜者、败者组分别通过 W/L 进入；总决赛留到两组都没有可打场次时再处理。
+  if (groups.has('winner')) return 'winner';
+  if (groups.has('loser')) return 'loser';
+  return groups.has('final') ? 'final' : null;
+}
+
+async function focusBattleGroupWithKeyboard(page: Page, group: BattleKeyboardGroup) {
+  const result = page.locator('.battle-result');
+  if (group === 'final') {
+    const finalMatch = page.locator(
+      '.double-final-section .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"])',
+    ).filter({ has: page.locator('input[type="number"]:not(:disabled)') }).first();
+    await finalMatch.focus();
+    await expect(finalMatch).toBeFocused();
+    await finalMatch.press('ArrowDown');
+    const score = page.locator('.double-final-section input[type="number"]:focus');
+    await expect(score).toHaveCount(1);
+    await expect(score).toBeFocused();
+    return score;
+  }
+
+  await result.focus();
+  await expect(result).toBeFocused();
+  await page.keyboard.press(group === 'single' ? 's' : group === 'winner' ? 'w' : 'l');
+  const section = group === 'single'
+    ? '.single-battle-bracket'
+    : group === 'winner'
+      ? '.double-winner-section'
+      : '.double-loser-section';
+  const score = page.locator(`${section} .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input[type="number"]:focus`);
+  await expect(score).toHaveCount(1);
+  await expect(score).toBeFocused();
+  return score;
+}
+
+async function enterFocusedBattleScore(page: Page, focusedScore: ReturnType<Page['locator']>) {
+  const matchId = await focusedScore.evaluate((input) => (
+    input.closest<HTMLElement>('.battle-match')?.dataset.battleMatchId ?? null
   ));
   expect(matchId).not.toBeNull();
-  const match = page.locator(`${bracketSelector} .battle-match[data-battle-match-id="${matchId}"]`);
-  const scores = match.locator('input[type="number"]:not(:disabled)');
-  await expect(scores).toHaveCount(2);
-  await scores.nth(0).focus();
-  await expect(scores.nth(0)).toBeFocused();
-  await scores.nth(0).fill('4');
-  await scores.nth(0).press('Enter');
-  await expect.poll(() => match.locator('input[type="number"]').nth(0).inputValue()).toBe('4');
+  const match = page.locator(`.battle-match[data-battle-match-id="${matchId}"]`);
+  const first = match.locator('input[type="number"]:not(:disabled)').nth(0);
+  await first.focus();
+  await expect(first).toBeFocused();
+  await first.fill('4');
+  await first.press('Enter');
+  await expect.poll(async () => (await battleMatch(page, matchId!)).upResult).toBe(4);
 
-  const refreshedScores = match.locator('input[type="number"]:not(:disabled)');
-  await expect(refreshedScores).toHaveCount(2);
-  await refreshedScores.nth(1).focus();
-  await expect(refreshedScores.nth(1)).toBeFocused();
-  await refreshedScores.nth(1).fill('1');
-  await refreshedScores.nth(1).press('Enter');
+  const second = match.locator('input[type="number"]:not(:disabled)').nth(1);
+  await second.focus();
+  await expect(second).toBeFocused();
+  await second.fill('1');
+  await second.press('Enter');
+  await expect.poll(async () => (await battleMatch(page, matchId!)).status).toBe('completed');
   await expect(match.locator('.battle-side.winner')).toHaveCount(1);
+}
+
+async function battleSnapshot(page: Page): Promise<any> {
+  return page.evaluate(() => structuredClone((window as any).__E2E_TAURI_STATE__.battleTmpState));
+}
+
+async function battleMatch(page: Page, matchId: string) {
+  const snapshot = await battleSnapshot(page);
+  const match = snapshot.matches.find((candidate: any) => candidate.matchId === matchId);
+  if (!match) throw new Error(`找不到对战场次 ${matchId}`);
+  return match;
+}
+
+function completedChampionName(snapshot: any, format: BattleFormat) {
+  const completedFinal = snapshot.matches
+    .filter((match: any) => (
+      match.status === 'completed'
+      && (format === 'single-elimination' ? match.stage === 'single' : match.stage === 'final')
+    ))
+    .sort((left: any, right: any) => left.level - right.level || left.position - right.position)
+    .at(-1);
+  if (!completedFinal || completedFinal.upResult === completedFinal.downResult) return null;
+  const championId = completedFinal.upResult > completedFinal.downResult
+    ? completedFinal.up
+    : completedFinal.down;
+  return snapshot.participants.find((participant: any) => participant.id === championId)?.name ?? null;
 }
 
 async function exportBattleWorksheet(page: Page, button: ReturnType<Page['locator']>) {

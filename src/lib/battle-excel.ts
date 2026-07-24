@@ -335,6 +335,8 @@ function renderAlignedRound(
       match.upResult,
       battleTmpWinnerId(match) === match.up,
       nameById,
+      match.status,
+      match.down,
     );
     renderBattleSlot(
       worksheet,
@@ -346,6 +348,8 @@ function renderAlignedRound(
       match.downResult,
       battleTmpWinnerId(match) === match.down,
       nameById,
+      match.status,
+      match.up,
     );
   });
 }
@@ -503,6 +507,8 @@ function renderSingleRound(
       match.upResult,
       battleTmpWinnerId(match) === match.up,
       nameById,
+      match.status,
+      match.down,
     );
     renderBattleSlot(
       worksheet,
@@ -514,6 +520,8 @@ function renderSingleRound(
       match.downResult,
       battleTmpWinnerId(match) === match.down,
       nameById,
+      match.status,
+      match.up,
     );
   });
 }
@@ -547,6 +555,8 @@ function renderBattleSlot(
   score: number | null,
   winner: boolean,
   nameById: Map<number, string>,
+  status: BattleTmpMatch['status'],
+  opponentId: number | null,
 ) {
   if (endRow > startRow) {
     worksheet.mergeCells(startRow, nameColumn, endRow, nameColumn);
@@ -554,7 +564,11 @@ function renderBattleSlot(
   }
   const nameCell = worksheet.getCell(startRow, nameColumn);
   const scoreCell = worksheet.getCell(startRow, scoreColumn);
-  nameCell.value = participantId === null ? '等待上游' : nameById.get(participantId) ?? `#${participantId}`;
+  // 已经结束的空签不能再显示“等待上游”，否则完整赛果导出看上去像还没打完。
+  const resolvedEmptySlot = status === 'completed' || status === 'skipped';
+  nameCell.value = participantId === null
+    ? resolvedEmptySlot ? opponentId === null ? '空签' : '轮空' : '等待上游'
+    : nameById.get(participantId) ?? `#${participantId}`;
   scoreCell.value = score ?? '';
   for (const cell of [nameCell, scoreCell]) {
     cell.font = { bold: winner, color: { argb: participantId === null ? 'FF979C8D' : 'FF30352A' } };

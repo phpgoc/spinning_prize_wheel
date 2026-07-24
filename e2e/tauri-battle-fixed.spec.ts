@@ -25,8 +25,9 @@ const STEP_DELAY_MS = Number(process.env.TAURI_E2E_STEP_DELAY_MS ?? 2_000);
 
 for (const participantCount of participantCounts) {
   for (const format of battleFormats) {
-    test(`真实 Tauri ${participantCount} 人 ${format} 慢速检查前 N 固定签位`, async ({}, testInfo) => {
-      test.setTimeout(240_000);
+    test(`真实 Tauri ${participantCount} 人 ${format} 慢速检查前 N 固定、完整赛程和 Excel`, async ({}, testInfo) => {
+      // 每次录分和焦点切换都至少停两秒；33 人双败完整打完需要数分钟。
+      test.setTimeout(900_000);
       if (participantCount < 8 || participantCount > 33) {
         throw new Error(`人数必须在 8 到 33 之间，收到 ${participantCount}`);
       }
@@ -90,27 +91,17 @@ for (const participantCount of participantCounts) {
         await expect(page.locator(bracketSelector)).toBeVisible();
         await expect(page.locator(`${bracketSelector} .battle-match:not(.read-only)`)).not.toHaveCount(0);
 
-        const battleResult = page.locator('.battle-result');
-        await slowFocus(battleResult);
-        await slowPress(page, format === '单败' ? 's' : 'w');
-        const firstScore = page.locator(`${format === '单败' ? '.single-battle-bracket' : '.double-winner-section'} input[type="number"]:focus`);
-        await expect(firstScore).toHaveCount(1);
-        await expect(firstScore).toBeFocused();
-        await enterFocusedBattleScore(page, 4, 1);
-
-        if (format === '双败') {
-          // 首场胜者组对战后，L 必须把焦点带到刚产生的败者组对战。
-          await slowFocus(battleResult);
-          await slowPress(page, 'l');
-          const loserScore = page.locator('.double-loser-section input[type="number"]:focus');
-          await expect(loserScore).toHaveCount(1);
-          await expect(loserScore).toBeFocused();
+        const keyboardUsage = await completeTauriBattleThroughKeyboard(page, format);
+        if (format === '单败') {
+          expect(keyboardUsage.single).toBeGreaterThan(0);
+          expect(keyboardUsage.winner + keyboardUsage.loser).toBe(0);
         } else {
-          // 单败录入后 S 应继续在实际可录入的下一场对战上，而非回到设置区域。
-          await slowFocus(battleResult);
-          await slowPress(page, 's');
-          await expect(page.locator('.single-battle-bracket input[type="number"]:focus')).toHaveCount(1);
+          expect(keyboardUsage.winner).toBeGreaterThan(0);
+          expect(keyboardUsage.loser).toBeGreaterThan(0);
         }
+        await expect(page.locator(
+          '.battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input[type="number"]:not(:disabled)',
+        )).toHaveCount(0);
 
         await slowClick(page, page.locator('[data-export="battle-excel"]'));
         const worksheet = await exportedBattleWorksheet(running.downloadDirectory);
@@ -119,6 +110,7 @@ for (const participantCount of participantCounts) {
         const values = worksheetValues(worksheet).map((value) => String(value));
         for (const name of names) expect(values).toContain(name);
         expect(values).toEqual(expect.arrayContaining(['4', '1']));
+        expect(values.filter((value) => value.startsWith('等待'))).toEqual([]);
       } finally {
         await running.browser.close().catch(() => undefined);
         await stopProcess(running.process);
@@ -157,14 +149,73 @@ async function slowPress(page: Page, key: string) {
   await waitStep();
 }
 
-async function enterFocusedBattleScore(page: Page, upScore: number, downScore: number) {
-  const focused = page.locator('input[type="number"]:focus');
+type TauriBattleGroup = 'single' | 'winner' | 'loser' | 'final';
+
+async function completeTauriBattleThroughKeyboard(page: Page, format: '单败' | '双败') {
+  const usage = { single: 0, winner: 0, loser: 0, final: 0 };
+  for (let round = 0; round < 160; round += 1) {
+    const group = await nextReadyTauriBattleGroup(page, format);
+    if (group === null) return usage;
+    const score = await focusTauriBattleGroup(page, group);
+    await enterFocusedBattleScore(page, score, 4, 1);
+    usage[group] += 1;
+  }
+  throw new Error('真实 Tauri 在预期场次数内没有完成整张对战表');
+}
+
+async function nextReadyTauriBattleGroup(page: Page, format: '单败' | '双败'): Promise<TauriBattleGroup | null> {
+  const groups = new Set(await page.locator('.battle-match').evaluateAll((matches) => [...new Set(matches.flatMap((match) => {
+    if (
+      match.dataset.battleStatus === 'completed'
+      || match.dataset.battleStatus === 'skipped'
+      || match.querySelectorAll('input[type="number"]:not(:disabled)').length !== 2
+    ) return [];
+    const stage = match.dataset.battleStage;
+    return stage === 'single' || stage === 'winner' || stage === 'loser' || stage === 'final' ? [stage] : [];
+  }))]));
+  if (format === '单败') return groups.has('single') ? 'single' : null;
+  if (groups.has('winner')) return 'winner';
+  if (groups.has('loser')) return 'loser';
+  return groups.has('final') ? 'final' : null;
+}
+
+async function focusTauriBattleGroup(page: Page, group: TauriBattleGroup) {
+  if (group === 'final') {
+    const match = page.locator(
+      '.double-final-section .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"])',
+    ).filter({ has: page.locator('input[type="number"]:not(:disabled)') }).first();
+    await slowFocus(match);
+    await slowPress(page, 'ArrowDown');
+    const score = page.locator('.double-final-section input[type="number"]:focus');
+    await expect(score).toHaveCount(1);
+    await expect(score).toBeFocused();
+    return score;
+  }
+
+  await slowFocus(page.locator('.battle-result'));
+  await slowPress(page, group === 'single' ? 's' : group === 'winner' ? 'w' : 'l');
+  const section = group === 'single'
+    ? '.single-battle-bracket'
+    : group === 'winner'
+      ? '.double-winner-section'
+      : '.double-loser-section';
+  const score = page.locator(`${section} .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input[type="number"]:focus`);
+  await expect(score).toHaveCount(1);
+  await expect(score).toBeFocused();
+  return score;
+}
+
+async function enterFocusedBattleScore(
+  page: Page,
+  focused: Locator,
+  upScore: number,
+  downScore: number,
+) {
   const matchId = await focused.evaluate((input) => input.closest<HTMLElement>('.battle-match')?.dataset.battleMatchId ?? null);
   expect(matchId).not.toBeNull();
   const match = page.locator(`.battle-match[data-battle-match-id="${matchId}"]`);
   const first = match.locator('input[type="number"]:not(:disabled)').nth(0);
-  await first.focus();
-  await expect(first).toBeFocused();
+  await slowFocus(first);
   await first.fill(String(upScore));
   await waitStep();
   await first.press('Enter');
@@ -172,12 +223,12 @@ async function enterFocusedBattleScore(page: Page, upScore: number, downScore: n
 
   const second = match.locator('input[type="number"]:not(:disabled)').nth(1);
   await expect(second).toBeVisible();
-  await second.focus();
-  await expect(second).toBeFocused();
+  await slowFocus(second);
   await second.fill(String(downScore));
   await waitStep();
   await second.press('Enter');
   await waitStep();
+  await expect(match).toHaveAttribute('data-battle-status', 'completed');
   await expect(match.locator('.battle-side.winner')).toHaveCount(1);
 }
 
