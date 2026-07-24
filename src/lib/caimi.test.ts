@@ -3,6 +3,7 @@ import {
   applyCaimiSelectedWeights,
   caimiNameWeightMultiplier,
   caimiRouletteWeight,
+  isCaimiFavoredName,
 } from './caimi';
 import { buildWheelOptions, pickWeighted, simulateBatch, simulateRouletteBatch } from './draw';
 
@@ -21,6 +22,8 @@ describe('猜蜜版隐藏权重', () => {
     expect(caimiNameWeightMultiplier('cai')).toBe(2);
     expect(caimiNameWeightMultiplier('CAI猜')).toBe(4);
     expect(caimiNameWeightMultiplier('c a i')).toBe(1);
+    expect(isCaimiFavoredName('普通名称')).toBe(false);
+    expect(isCaimiFavoredName('CAI选手')).toBe(true);
   });
 
   test('真实加权抽取使用隐藏倍率而不是展示权重', () => {

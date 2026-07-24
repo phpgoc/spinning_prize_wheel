@@ -1,4 +1,5 @@
 import type { AppVariant } from './app-variant';
+import { isCaimiFavoredName } from './caimi';
 
 export type BattleFormat = 'avoid-first-pair' | 'single-elimination' | 'double-elimination';
 export type BattleOrderMode = 'rank' | 'input';
@@ -119,6 +120,7 @@ export interface SeededBattleOptions {
   orderMode: BattleOrderMode;
   fixedSeedCount: number;
   doubleGrandFinal?: boolean;
+  caimiRankScores?: readonly number[];
   random?: () => number;
 }
 
@@ -582,6 +584,9 @@ export function createSeededBattlePlan(
   remaining.forEach((participant, index) => {
     positions[openPositions[index]].participant = participant;
   });
+  if (options.fixedSeedCount > 0 && options.caimiRankScores) {
+    applyCaimiWeakOpponents(positions, options.caimiRankScores);
+  }
 
   return {
     version: 1,
@@ -593,6 +598,44 @@ export function createSeededBattlePlan(
     positions,
     rounds: createEliminationRounds(options.format, positions, options.doubleGrandFinal ?? false),
   };
+}
+
+/** 猜蜜版把固定特权项首轮相邻位置换成已有排名中最弱的普通对手；原位置继续保留随机结果。 */
+function applyCaimiWeakOpponents(
+  positions: BattlePosition[],
+  rankScores: readonly number[],
+) {
+  const favoredPositionIndexes = positions.flatMap((position) => (
+    position.fixed
+    && position.participant
+    && isCaimiFavoredName(position.participant.name)
+      ? [position.index]
+      : []
+  ));
+  const reservedOpponentIndexes = new Set<number>();
+
+  for (const favoredPositionIndex of favoredPositionIndexes) {
+    const opponentIndex = favoredPositionIndex ^ 1;
+    const opponent = positions[opponentIndex];
+    // 轮空比任何弱对手都更有利，不把真实选手主动填进空位。
+    if (!opponent?.participant) continue;
+    const weakest = positions
+      .filter((position) => (
+        position.participant
+        && !position.fixed
+        && !reservedOpponentIndexes.has(position.index)
+        && !isCaimiFavoredName(position.participant.name)
+        && Number.isFinite(rankScores[position.participant.sourceIndex])
+        && rankScores[position.participant.sourceIndex] < 10_000
+      ))
+      .sort((left, right) => (
+        rankScores[right.participant!.sourceIndex] - rankScores[left.participant!.sourceIndex]
+        || left.index - right.index
+      ))[0];
+    if (!weakest) continue;
+    [opponent.participant, weakest.participant] = [weakest.participant, opponent.participant];
+    reservedOpponentIndexes.add(opponentIndex);
+  }
 }
 
 function validateFixedSeedCount(participantCount: number, fixedSeedCount: number) {

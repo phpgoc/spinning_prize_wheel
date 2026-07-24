@@ -1,4 +1,5 @@
 import type { ResolvedLineupName, SavedLineup } from './types';
+import { isCaimiFavoredName } from './caimi';
 
 export interface LineupEntry {
   name: string;
@@ -314,6 +315,62 @@ export function orderBattleNamesByFixedRank(
   ];
 }
 
+/**
+ * 猜蜜版按排名对战时，把特权项放到固定区最弱的末端种子；其余项仍由签表正常随机。
+ * 特权项只在有有效排名且前 N 固定时参与调度，全随机不会改变名单顺序。
+ */
+export function orderCaimiBattleNamesByFixedRank(
+  names: readonly string[],
+  people: readonly ResolvedLineupName[],
+  fixedCount: number,
+): string[] {
+  const required = Math.max(0, Math.floor(Number(fixedCount) || 0));
+  const ordered = orderBattleNamesByFixedRank(names, people, required);
+  if (required === 0) return ordered;
+
+  const rankedEntries = rankedBattleLineupEntries(names, people)
+    .sort((left, right) => (
+      left.person.rank! - right.person.rank!
+      || left.person.canonicalName!.localeCompare(right.person.canonicalName!, 'zh-CN')
+      || left.index - right.index
+    ));
+  const favoredNames = rankedEntries
+    .filter((entry) => isCaimiFavoredName(entry.name))
+    .map((entry) => entry.name);
+  if (favoredNames.length === 0) return ordered;
+
+  const fixedNames = ordered.slice(0, required);
+  const fixedKeys = new Set(fixedNames.map(normalizedLineupName));
+  for (const favoredName of favoredNames) {
+    const favoredKey = normalizedLineupName(favoredName);
+    if (fixedKeys.has(favoredKey)) continue;
+    let replaceIndex = -1;
+    for (let index = fixedNames.length - 1; index >= 0; index -= 1) {
+      if (!isCaimiFavoredName(fixedNames[index])) {
+        replaceIndex = index;
+        break;
+      }
+    }
+    if (replaceIndex < 0) break;
+    fixedKeys.delete(normalizedLineupName(fixedNames[replaceIndex]));
+    fixedNames[replaceIndex] = favoredName;
+    fixedKeys.add(favoredKey);
+  }
+
+  const regularFixed = fixedNames.filter((name) => !isCaimiFavoredName(name));
+  const favoredFixed = fixedNames.filter(isCaimiFavoredName);
+  const privilegedFixed = [...regularFixed, ...favoredFixed];
+  const privilegedKeys = new Set(privilegedFixed.map(normalizedLineupName));
+  return [
+    ...privilegedFixed,
+    ...ordered.filter((name) => !privilegedKeys.has(normalizedLineupName(name))),
+  ];
+}
+
+function normalizedLineupName(name: string): string {
+  return name.toLocaleLowerCase('zh-CN');
+}
+
 function rankedBattleLineupEntries(
   names: readonly string[],
   people: readonly ResolvedLineupName[],
@@ -449,10 +506,6 @@ export function createRandomLineup(
     peopleCount: normalizedNames.length,
     groupCount: normalizedGroupCount,
   };
-}
-
-function isCaimiFavoredName(name: string): boolean {
-  return name.includes('猜') || name.includes('本') || /cai/iu.test(name);
 }
 
 function caimiGroupScores(

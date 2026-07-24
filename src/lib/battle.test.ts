@@ -15,6 +15,7 @@ import {
   updateBattleTmpResult,
 } from './battle';
 import { battleRoundGrowth, createBattleBracketLayout } from './battle-bracket-layout';
+import { orderCaimiBattleNamesByFixedRank } from './random-lineup';
 
 const names = (count: number) => Array.from({ length: count }, (_, index) => `选手${index + 1}`);
 
@@ -151,6 +152,60 @@ describe('对战签位', () => {
     expect(plan.fixedSeedCount).toBe(0);
     expect(plan.positions.every((position) => !position.fixed)).toBe(true);
     expect(plan.positions.map((position) => position.participant?.seed).sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  test('猜蜜版单败和双败把特权项放在弱区并优先匹配最低排名普通选手', () => {
+    const people = Array.from({ length: 16 }, (_, index) => ({
+      inputName: index === 0 ? '头号猜选手' : `第${index + 1}名`,
+      known: true,
+      userId: index + 1,
+      canonicalName: index === 0 ? '头号猜选手' : `第${index + 1}名`,
+      rank: index + 1,
+    }));
+    const inputNames = [...people].reverse().map((person) => person.inputName);
+    const orderedNames = orderCaimiBattleNamesByFixedRank(inputNames, people, 4);
+    const rankScores = orderedNames.map((name) => people.find((person) => person.inputName === name)!.rank);
+
+    for (const format of ['single-elimination', 'double-elimination'] as const) {
+      const plan = createSeededBattlePlan(orderedNames, {
+        format,
+        orderMode: 'rank',
+        fixedSeedCount: 4,
+        caimiRankScores: rankScores,
+        random: () => 0.25,
+      });
+      const favored = plan.positions.find((position) => position.participant?.name === '头号猜选手')!;
+      expect(favored.fixed).toBe(true);
+      expect(favored.participant?.seed).toBe(4);
+      expect(plan.positions[favored.index ^ 1].participant?.name).toBe('第16名');
+    }
+  });
+
+  test('猜蜜版轮空时不主动塞入对手，且全随机不应用弱对手调度', () => {
+    const namesWithBye = ['第1名猜选手', ...Array.from({ length: 8 }, (_, index) => `第${index + 2}名`)];
+    const rankScoresWithBye = namesWithBye.map((_, index) => index + 1);
+    const byePlan = createSeededBattlePlan(namesWithBye, {
+      format: 'single-elimination',
+      orderMode: 'rank',
+      fixedSeedCount: 8,
+      caimiRankScores: rankScoresWithBye,
+      random: () => 0,
+    });
+    const favored = byePlan.positions.find((position) => position.participant?.name === '第1名猜选手')!;
+    expect(favored.fixed).toBe(true);
+    expect(byePlan.positions[favored.index ^ 1].participant).toBeNull();
+
+    const randomNames = ['头号猜选手', ...Array.from({ length: 7 }, (_, index) => `第${index + 2}名`)];
+    const randomScores = randomNames.map((_, index) => index + 1);
+    const withoutCheat = createSeededBattlePlan(randomNames, {
+      format: 'double-elimination',
+      orderMode: 'rank',
+      fixedSeedCount: 0,
+      caimiRankScores: randomScores,
+      random: () => 0.25,
+    });
+    expect(withoutCheat.fixedSeedCount).toBe(0);
+    expect(withoutCheat.positions.every((position) => !position.fixed)).toBe(true);
   });
 
   test('执行前只显示已经固定的签位', () => {

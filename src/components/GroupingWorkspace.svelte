@@ -54,6 +54,7 @@
     lineupPreviewTierStarts,
     nextRankedUserActionIndex,
     orderBattleNamesByFixedRank,
+    orderCaimiBattleNamesByFixedRank,
     orderPartiallyResolvedLineupNames,
     rankedBattleLineupNameCount,
     rankedUserIdAtShortcut,
@@ -330,7 +331,12 @@
   $: battleRankReady = battleRankCountReady && !resolvingNames && !sourceTextDirty;
   $: battleOrderedPreviewNames = battleOrderMode === 'rank'
     && battleRankReady
-      ? orderBattleNamesByFixedRank(names, resolvedNames, battleConfiguredFixedCount)
+      ? orderBattleNamesForCurrentVariant(
+        names,
+        resolvedNames,
+        battleConfiguredFixedCount,
+        variant,
+      )
       : names;
   $: battleCanExecute = battleTmpSnapshot === null && !sourceTextDirty && (
     battleFormat === 'avoid-first-pair'
@@ -346,6 +352,12 @@
     battleOrderedPreviewNames,
     battleOrderMode === 'rank' && !battleRankReady ? 0 : battleConfiguredFixedCount,
     battleDoubleGrandFinal,
+    variant === 'caimi'
+      && battleOrderMode === 'rank'
+      && battleRankReady
+      && battleConfiguredFixedCount > 0
+      ? rankScoresForLineup(battleOrderedPreviewNames, resolvedNames)
+      : undefined,
   );
   $: if (mounted && desktopRuntime && !desktopInitialized) {
     void initializeDesktop();
@@ -557,14 +569,26 @@
     if (!battleRankReady || battleTmpSnapshot) return;
     cancelPreviewInsertion();
     try {
-      await commitSourceNames(orderBattleNamesByFixedRank(
+      await commitSourceNames(orderBattleNamesForCurrentVariant(
         names,
         resolvedNames,
         battleConfiguredFixedCount,
+        variant,
       ));
     } catch (reason) {
       error = messageFrom(reason, '排名预览失败');
     }
+  }
+
+  function orderBattleNamesForCurrentVariant(
+    currentNames: readonly string[],
+    currentPeople: readonly ResolvedLineupName[],
+    fixedCount: number,
+    currentVariant: AppVariant,
+  ): string[] {
+    return currentVariant === 'caimi' && fixedCount > 0
+      ? orderCaimiBattleNamesByFixedRank(currentNames, currentPeople, fixedCount)
+      : orderBattleNamesByFixedRank(currentNames, currentPeople, fixedCount);
   }
 
   async function sortGroupingPreviewByRank() {
@@ -585,10 +609,13 @@
     return orderPartiallyResolvedLineupNames(resolvedNames);
   }
 
-  function rankScoresForLineup(orderedNames: readonly string[]): number[] {
+  function rankScoresForLineup(
+    orderedNames: readonly string[],
+    currentPeople: readonly ResolvedLineupName[] = resolvedNames,
+  ): number[] {
     if (!desktopRuntime) return orderedNames.map((_, index) => index + 1);
     const rankByName = new Map(
-      resolvedNames.flatMap((person) => (
+      currentPeople.flatMap((person) => (
         person.rank === null
           ? []
           : [[person.inputName.toLocaleLowerCase('zh-CN'), person.rank] as const]
@@ -671,7 +698,12 @@
       const orderedNames = battleFormat === 'avoid-first-pair'
         ? names
         : battleOrderMode === 'rank'
-          ? orderBattleNamesByFixedRank(names, resolvedNames, battleConfiguredFixedCount)
+          ? orderBattleNamesForCurrentVariant(
+            names,
+            resolvedNames,
+            battleConfiguredFixedCount,
+            variant,
+          )
           : desktopRuntime ? resolvedNames.map((person) => person.inputName) : names;
       const createdPlan = battleFormat === 'avoid-first-pair'
         ? createAvoidSameGroupPlan(orderedNames)
@@ -680,6 +712,11 @@
           orderMode: battleOrderMode,
           fixedSeedCount: battleConfiguredFixedCount,
           doubleGrandFinal: battleDoubleGrandFinal,
+          caimiRankScores: variant === 'caimi'
+            && battleOrderMode === 'rank'
+            && battleConfiguredFixedCount > 0
+            ? rankScoresForLineup(orderedNames)
+            : undefined,
         });
       lastConfirmedBattleScore = null;
       pendingBattleScoreGroup = null;
@@ -2738,6 +2775,7 @@
     orderedNames: readonly string[],
     fixedSeedCount: number,
     doubleGrandFinal: boolean,
+    caimiRankScores: readonly number[] | undefined,
   ): BattleTmpSnapshot | null {
     if (
       !isBattlePage
@@ -2751,6 +2789,7 @@
         orderMode,
         fixedSeedCount,
         doubleGrandFinal,
+        caimiRankScores,
         // 预览只显示固定签位，未固定项的随机次序不会暴露。
         random: () => 0.5,
       }), 1);

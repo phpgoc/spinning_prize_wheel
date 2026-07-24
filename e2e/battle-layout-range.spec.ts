@@ -210,13 +210,13 @@ async function exportBattleWorksheet(page: Page, button: ReturnType<Page['locato
       .filter((entry: any) => entry.cmd === 'export_binary_file').length
   ));
   await button.click();
-  await expect(button).toBeDisabled();
-  await expect(button).toHaveText('导出中…');
+  // 正常导出可能在 click 返回前完成；忙碌态由下方专门的延迟失败用例覆盖。
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.invocations
       .filter((entry: any) => entry.cmd === 'export_binary_file').length
   )), { timeout: 30_000 }).toBe(exportCount + 1);
   await expect(button).toBeEnabled();
+  await expect(button).toHaveText('Excel');
   const bytes = await page.evaluate(() => structuredClone(
     (window as any).__E2E_TAURI_STATE__.invocations
       .filter((entry: any) => entry.cmd === 'export_binary_file').at(-1).args.bytes,

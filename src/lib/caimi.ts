@@ -1,5 +1,10 @@
 import type { Prize } from './types';
 
+/** 猜蜜版统一识别“猜”“本”或 cai（不区分大小写）特权标记。 */
+export function isCaimiFavoredName(name: string): boolean {
+  return name.includes('猜') || name.includes('本') || /cai/iu.test(name);
+}
+
 /** 猜蜜版里，名称每出现一个“猜”“本”或 cai（不区分大小写），选中概率再翻一倍。 */
 export function caimiNameWeightMultiplier(name: string): number {
   const markedCharacterCount = Array.from(name)

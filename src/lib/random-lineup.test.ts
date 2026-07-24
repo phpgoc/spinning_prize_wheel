@@ -11,6 +11,7 @@ import {
   lineupPreviewTierStarts,
   nextRankedUserActionIndex,
   orderBattleNamesByFixedRank,
+  orderCaimiBattleNamesByFixedRank,
   orderPartiallyResolvedLineupNames,
   orderResolvedLineupNames,
   rankedBattleLineupNameCount,
@@ -145,6 +146,54 @@ describe('随机排阵', () => {
       .toEqual(['甲别名', '乙', '丙', '丁', '陌生', '无排名']);
     expect(() => orderBattleNamesByFixedRank(names, people, 5))
       .toThrow('固定前 5 名，现 4 个排名');
+  });
+
+  test('猜蜜版按排名对战把特权第一名放到前 N 固定区的最末种子', () => {
+    const people = Array.from({ length: 16 }, (_, index): ResolvedLineupName => ({
+      inputName: index === 0 ? '头号猜选手' : `第${index + 1}名`,
+      known: true,
+      userId: index + 1,
+      canonicalName: index === 0 ? '头号猜选手' : `第${index + 1}名`,
+      rank: index + 1,
+    }));
+    const names = [...people].reverse().map((person) => person.inputName);
+
+    expect(orderCaimiBattleNamesByFixedRank(names, people, 4).slice(0, 4)).toEqual([
+      '第2名',
+      '第3名',
+      '第4名',
+      '头号猜选手',
+    ]);
+    expect(orderCaimiBattleNamesByFixedRank(names, people, 8).slice(0, 8)).toEqual([
+      '第2名',
+      '第3名',
+      '第4名',
+      '第5名',
+      '第6名',
+      '第7名',
+      '第8名',
+      '头号猜选手',
+    ]);
+  });
+
+  test('猜蜜版会提升已有排名的特权项，全随机则完全保持原名单', () => {
+    const people = Array.from({ length: 10 }, (_, index): ResolvedLineupName => ({
+      inputName: index === 9 ? 'cai第10名' : `普通第${index + 1}名`,
+      known: true,
+      userId: index + 1,
+      canonicalName: index === 9 ? 'cai第10名' : `普通第${index + 1}名`,
+      rank: index + 1,
+    }));
+    const names = [people[5], people[0], people[9], ...people.slice(1, 5), ...people.slice(6, 9)]
+      .map((person) => person.inputName);
+
+    expect(orderCaimiBattleNamesByFixedRank(names, people, 4).slice(0, 4)).toEqual([
+      '普通第1名',
+      '普通第2名',
+      '普通第3名',
+      'cai第10名',
+    ]);
+    expect(orderCaimiBattleNamesByFixedRank(names, people, 0)).toEqual(names);
   });
 
   test('同一排名项的不同别名在预览中只保留首次出现的一项', () => {

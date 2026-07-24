@@ -428,6 +428,7 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   await confirmDesktopNames(page, ['丁', '未录入', '乙', '甲']);
   await expect(page.getByRole('button', { name: '甲', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /对战历史/u })).toBeVisible();
+  await expect(page.getByRole('radio', { name: '全随机', exact: true })).toHaveCount(0);
 
   await page.getByRole('radio', { name: '单败' }).check();
   await expect(page.getByRole('radio', { name: '全随机' })).toBeChecked();
@@ -482,6 +483,69 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   expect(resultStructure).toEqual(previewStructure);
   await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
+});
+
+test('猜蜜版单败双败把特权项放到前 N 固定区末端，全随机不作弊', async ({ page }) => {
+  test.setTimeout(60_000);
+  const rankedUsers = Array.from({ length: 16 }, (_, index) => ({
+    id: index + 1,
+    name: index === 0 ? '头号猜选手' : `第${index + 1}名`,
+    rank: index + 1,
+  }));
+  await installTauriMock(page, rankedUsers);
+  await page.goto('/caimi/battle', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime.caimi-variant')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-rank-user-id]')).toHaveCount(16);
+  await confirmDesktopNames(page, [...rankedUsers].reverse().map((user) => user.name));
+  await expect(page.locator('.preview-row.unknown')).toHaveCount(0);
+
+  await page.getByRole('radio', { name: '单败', exact: true }).check();
+  await page.getByRole('radio', { name: '按排名', exact: true }).check();
+  await page.getByRole('radio', { name: '前 4 固定', exact: true }).check();
+  const preview = page.locator('.battle-preview-bracket');
+  const favoredSingle = preview.locator(
+    '[data-battle-stage="single"][data-battle-level="1"] .seed-fixed',
+  ).filter({ hasText: '头号猜选手' });
+  await expect(favoredSingle).toHaveCount(1);
+  await expect(favoredSingle.locator('xpath=ancestor::article[1]'))
+    .toHaveAttribute('data-battle-position', '3');
+
+  await page.getByRole('radio', { name: '双败', exact: true }).check();
+  const favoredWinner = preview.locator(
+    '[data-battle-stage="winner"][data-battle-level="1"] .seed-fixed',
+  ).filter({ hasText: '头号猜选手' });
+  await expect(favoredWinner).toHaveCount(1);
+  await expect(favoredWinner.locator('xpath=ancestor::article[1]'))
+    .toHaveAttribute('data-battle-position', '3');
+
+  await page.getByRole('radio', { name: '前 8 固定', exact: true }).check();
+  await expect(favoredWinner.locator('xpath=ancestor::article[1]'))
+    .toHaveAttribute('data-battle-position', '2');
+
+  await page.getByRole('radio', { name: '全随机', exact: true }).check();
+  await expect(preview.locator('.seed-fixed')).toHaveCount(0);
+
+  await page.getByRole('radio', { name: '前 4 固定', exact: true }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await expect.poll(() => page.evaluate(() => {
+    const state = (window as any).__E2E_TAURI_STATE__.battleTmpState;
+    const favored = state?.participants.find((participant: any) => participant.name === '头号猜选手');
+    const firstMatch = state?.matches.find((match: any) => (
+      match.stage === 'winner'
+      && match.level === 1
+      && (match.up === favored?.id || match.down === favored?.id)
+    ));
+    const opponentId = firstMatch?.up === favored?.id ? firstMatch?.down : firstMatch?.up;
+    return {
+      format: state?.format,
+      favoredSeed: favored?.seed,
+      favoredOpponent: state?.participants.find((participant: any) => participant.id === opponentId)?.name,
+    };
+  })).toEqual({
+    format: 'double-elimination',
+    favoredSeed: 4,
+    favoredOpponent: '第16名',
+  });
 });
 
 test('桌面对战全屏会同步切换 Tauri 窗口', async ({ page }) => {
