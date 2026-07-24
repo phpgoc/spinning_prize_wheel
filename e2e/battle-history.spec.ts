@@ -309,13 +309,15 @@ test('对战历史显示总数并按日期显示查询结果数量和二次确�
   ))).toEqual([]);
 });
 
-test('历史覆盖临时表时可在三层确认分别取消且不改变当前比分', async ({ page }) => {
+test('历史覆盖未保存临时表时可在三层确认分别取消且不改变当前比分', async ({ page }) => {
   await openDesktopBattle(page);
   await createScoredBattle(page);
+  await page.getByRole('button', { name: '保存历史' }).click();
+  const currentMatch = page.locator('.battle-round').first().locator('.battle-match').first();
+  await enterScore(currentMatch, 5, 1);
   const expectedSnapshot = await page.evaluate(() => structuredClone(
     (window as any).__E2E_TAURI_STATE__.battleTmpState,
   ));
-  await page.getByRole('button', { name: '保存历史' }).click();
   await page.getByRole('button', { name: /对战历史/u }).click();
 
   const editHistory = battleHistoryCards(page).getByRole('button', { name: '编辑' });

@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "build": {
+    "frontendDist": "../dist/转盘-0.2.0"
+  },
+  "bundle": {
+    "externalBin": [
+      "binaries/转盘-猜蜜版"
+    ],
+    "resources": {
+      "../使用说明.md": "使用说明.md"
+    }
+  }
+}

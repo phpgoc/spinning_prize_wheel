@@ -706,7 +706,7 @@ test('桌面对战第三次确认可同时清空设置和名单', async ({ page 
   ))).toBeNull();
 });
 
-test('桌面对战历史编辑按临时表状态确认并保留原记录', async ({ page }) => {
+test('桌面对战历史编辑按临时表状态直接加载已保存记录并确认未保存状态', async ({ page }) => {
   await openDesktopBattle(page);
 
   const loadCurrent = page.locator('.battle-load-current-button');
@@ -741,9 +741,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   expect(await saveCount()).toBe(generatedSaveCount);
 
   await page.getByRole('button', { name: '清空对战' }).click();
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: '保留设置和名单' }).click();
+  await expect(page.locator('.battle-load-confirm-dialog')).toHaveCount(0);
   await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
   await expect(page.locator('.battle-empty-result')).toBeVisible();
   await expect.poll(() => page.evaluate(() => (

@@ -1,0 +1,37 @@
+{
+  "productName": "转盘-猜蜜版",
+  "mainBinaryName": "转盘-猜蜜版",
+  "identifier": "com.phpgoc.wheel.caimi",
+  "build": {
+    "beforeDevCommand": "bun run dev:caimi",
+    "beforeBuildCommand": "bun run scripts/build-web.ts caimi tauri",
+    "frontendDist": "../dist/转盘-猜蜜版-0.2.0"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "转盘 · 猜蜜版",
+        "width": 1500,
+        "height": 920,
+        "minWidth": 960,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons-caimi/icon.ico",
+      "icons-caimi/icon.png"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons-caimi/icon.ico"
+      }
+    }
+  },
+  "version": "0.2.0"
+}
