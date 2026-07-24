@@ -7,7 +7,8 @@ async function clearDesktopBattle(page: Page) {
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: '保留设置和名单' }).click();
   await expect(page.locator('.battle-config textarea')).toBeEnabled();
-  await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(1);
+  await expect(page.locator('.single-battle-bracket, .double-battle-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
 }
 
 test('默认站点图标可在页面挂载前直接加载', async ({ page, request }) => {

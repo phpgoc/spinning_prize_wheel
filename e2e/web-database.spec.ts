@@ -1,4 +1,7 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import initSqlJs from 'sql.js';
+import { createBattleTmpSnapshot, createSeededBattlePlan } from '../src/lib/battle';
 
 test.beforeEach(async ({ context }) => {
   await context.clearCookies();
@@ -9,6 +12,72 @@ async function openRankingPanel(page: import('@playwright/test').Page) {
   const toggle = section.locator('.desktop-accordion-toggle');
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   await expect(section.locator('.rank-person-form')).toBeVisible();
+}
+
+async function createDesktopDatabaseBackup(): Promise<Buffer> {
+  const SQL = await initSqlJs({ locateFile: (file) => `node_modules/sql.js/dist/${file}` });
+  const database = new SQL.Database();
+  const snapshot = createBattleTmpSnapshot('standard', createSeededBattlePlan(
+    ['桌面甲', '桌面乙', '桌面丙', '桌面丁'],
+    { format: 'single-elimination', orderMode: 'input', fixedSeedCount: 0, random: () => 0.5 },
+  ), Date.now());
+  database.run(`
+    CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER);
+    INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1), (2, 1), (3, 1), (4, 1);
+    CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, rank INTEGER NOT NULL);
+    CREATE TABLE alias (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE lineup_history (
+      id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, input_json TEXT NOT NULL,
+      result_json TEXT NOT NULL, variant TEXT NOT NULL
+    );
+    INSERT INTO user (id, name, rank) VALUES (1, '桌面排名', 1);
+    INSERT INTO alias (id, name, user_id) VALUES (1, '桌面排名', 1), (2, '桌面别名', 1);
+    CREATE TABLE battle_tmp (
+      id INTEGER PRIMARY KEY, variant TEXT NOT NULL, rules_version INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL, format TEXT NOT NULL, order_mode TEXT NOT NULL,
+      participant_count INTEGER NOT NULL, bracket_size INTEGER NOT NULL, fixed_seed_count INTEGER NOT NULL
+    );
+    CREATE TABLE battle_tmp_participant (
+      state_id INTEGER NOT NULL, participant_id INTEGER NOT NULL, name TEXT NOT NULL,
+      source_index INTEGER NOT NULL, seed INTEGER NOT NULL, group_index INTEGER, group_rank INTEGER
+    );
+    CREATE TABLE battle_tmp_match (
+      state_id INTEGER NOT NULL, match_id TEXT NOT NULL, stage TEXT NOT NULL,
+      level INTEGER NOT NULL, position INTEGER NOT NULL, up INTEGER, down INTEGER,
+      up_result INTEGER, down_result INTEGER, status TEXT NOT NULL
+    );
+  `);
+  database.run(
+    `INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
+      VALUES ('desktop-lineup', 1700000000000, ?, ?, 'standard')`,
+    [JSON.stringify({ sourceNames: ['桌面甲'] }), JSON.stringify({ groups: [] })],
+  );
+  database.run(
+    `INSERT INTO battle_tmp
+      (id, variant, rules_version, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [snapshot.variant, snapshot.rulesVersion, snapshot.updatedAt, snapshot.format, snapshot.orderMode,
+      snapshot.participantCount, snapshot.bracketSize, snapshot.fixedSeedCount],
+  );
+  for (const participant of snapshot.participants) {
+    database.run(
+      `INSERT INTO battle_tmp_participant
+        (state_id, participant_id, name, source_index, seed, group_index, group_rank)
+        VALUES (1, ?, ?, ?, ?, ?, ?)`,
+      [participant.id, participant.name, participant.sourceIndex, participant.seed,
+        participant.groupIndex, participant.groupRank],
+    );
+  }
+  for (const match of snapshot.matches) {
+    database.run(
+      `INSERT INTO battle_tmp_match
+        (state_id, match_id, stage, level, position, up, down, up_result, down_result, status)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [match.matchId, match.stage, match.level, match.position, match.up, match.down,
+        match.upResult, match.downResult, match.status],
+    );
+  }
+  return Buffer.from(database.export());
 }
 
 test('Web SQLite 跨刷新保存并恢复对战临时状态', async ({ page }) => {
@@ -25,6 +94,29 @@ test('Web SQLite 跨刷新保存并恢复对战临时状态', async ({ page }) =
   await expect(page.locator('.battle-match')).toHaveCount(3);
   await expect(page.locator('.battle-config textarea')).toHaveValue(names.join('\n'));
   await expect(page.locator('.battle-config textarea')).toBeDisabled();
+});
+
+test('Web SQLite 清空对战后删除临时状态并保持结果区为空', async ({ page }) => {
+  await page.goto('/battle');
+  const textarea = page.locator('.battle-config textarea');
+  await textarea.fill('甲\n乙\n丙\n丁');
+  await textarea.press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await expect(page.locator('.battle-match')).toHaveCount(3);
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '保留设置和名单' }).click();
+  await expect(textarea).toHaveValue('甲\n乙\n丙\n丁');
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.battle-load-current-button')).toBeDisabled();
+  await expect(page.locator('.battle-load-current-button')).toHaveCSS('visibility', 'hidden');
 });
 
 test('Web SQLite 保存排名和分组历史并可在刷新后读取', async ({ page }) => {
@@ -70,4 +162,50 @@ test('Web SQLite 会迁移旧版常用候选存储', async ({ page }) => {
   await page.goto('/wheel');
   await page.locator('.common-panel .accordion-toggle').click();
   await expect(page.getByRole('group', { name: '常用候选：旧名单' })).toBeVisible();
+});
+
+test('Web SQLite 备份可以导入并恢复排名', async ({ page, browser }) => {
+  await page.goto('/grouping');
+  await openRankingPanel(page);
+  await page.locator('.rank-person-form input').fill('可恢复项');
+  await page.locator('.rank-person-form').getByRole('button', { name: '保存' }).click();
+  await expect(page.locator('.ranked-user-list').getByText('可恢复项', { exact: true })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出 SQLite' }).click();
+  const backup = await downloadPromise;
+  const backupPath = await backup.path();
+  expect(backupPath).not.toBeNull();
+  const backupBytes = await readFile(backupPath!);
+
+  const restoredPage = await browser.newPage();
+  await restoredPage.goto('/grouping');
+  await openRankingPanel(restoredPage);
+  await expect(restoredPage.locator('.ranked-user-list').getByText('可恢复项', { exact: true })).toHaveCount(0);
+  await restoredPage.locator('input[type="file"][accept*=".sqlite"]').setInputFiles({
+    name: '转盘备份.sqlite3',
+    mimeType: 'application/vnd.sqlite3',
+    buffer: backupBytes,
+  });
+  await expect(restoredPage.getByRole('alertdialog', { name: '导入 SQLite 数据库？' })).toBeVisible();
+  await restoredPage.getByRole('button', { name: '替换并刷新' }).click();
+  await expect(restoredPage.locator('.ranked-user-list').getByText('可恢复项', { exact: true })).toBeVisible();
+  await restoredPage.close();
+});
+
+test('Web SQLite 可以导入桌面版关系化数据库', async ({ page }) => {
+  const desktopBackup = await createDesktopDatabaseBackup();
+  await page.goto('/battle');
+  await openRankingPanel(page);
+  await page.locator('input[type="file"][accept*=".sqlite"]').setInputFiles({
+    name: '桌面数据库.sqlite3',
+    mimeType: 'application/vnd.sqlite3',
+    buffer: desktopBackup,
+  });
+  await expect(page.getByRole('alertdialog', { name: '导入 SQLite 数据库？' })).toBeVisible();
+  await page.getByRole('button', { name: '替换并刷新' }).click();
+  await expect(page.locator('.battle-match')).toHaveCount(3);
+  await expect(page.locator('.battle-config textarea')).toHaveValue('桌面甲\n桌面乙\n桌面丙\n桌面丁');
+  await openRankingPanel(page);
+  await expect(page.locator('.ranked-user-list').getByText('桌面排名', { exact: true })).toBeVisible();
 });

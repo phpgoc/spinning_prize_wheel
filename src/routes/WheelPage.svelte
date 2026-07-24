@@ -562,6 +562,16 @@
     );
   }
 
+  /** 浏览器只能提示离开，无法像 Tauri 一样在卸载阶段等待异步归档。 */
+  export function shouldWarnBeforeUnload(): boolean {
+    return businessRuntime && shouldHandleAutoSaveClose(
+      autoSaveHistory,
+      validCompleted,
+      isSpinning,
+      drawHistorySaving,
+    );
+  }
+
   export async function prepareForWindowClose(): Promise<boolean> {
     if (!desktopRuntime) return true;
     return prepareAutoSaveClose({

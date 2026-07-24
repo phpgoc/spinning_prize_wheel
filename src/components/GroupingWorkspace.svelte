@@ -71,6 +71,7 @@
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
   import type { RankedUser, ResolvedLineupName, SavedLineup } from '../lib/types';
   import { invoke, isTauriRuntime } from '../lib/runtime';
+  import { importWebDatabase } from '../lib/web-database';
 
   export let desktopRuntime = false;
   export let businessRuntime = desktopRuntime;
@@ -187,11 +188,14 @@
   let insertError = '';
   let insertInput: HTMLInputElement | null = null;
   let rankingFileInput: HTMLInputElement | null = null;
+  let databaseFileInput: HTMLInputElement | null = null;
   let historyFileInput: HTMLInputElement | null = null;
   let pendingRankingImport: RankedUserTransfer[] | null = null;
   let rankingImporting = false;
   let historyImporting = false;
   let importErrorDialog: { title: string; detail: string } | null = null;
+  let pendingDatabaseImport: { name: string; bytes: Uint8Array } | null = null;
+  let databaseImporting = false;
   let clearLineupConfirmation: 0 | 1 | 2 | 3 = 0;
   let clearingBattleTmp = false;
   let lineupResultElement: HTMLElement | null = null;
@@ -232,6 +236,7 @@
   let battleColors: BattleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
   let battleColorSnapshotAvailable = false;
   let battleExporting: 'excel' | 'json' | null = null;
+  let clearedBattlePreviewSignature: string | null = null;
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -346,8 +351,24 @@
       ? names.length === 8
       : names.length >= 4 && (battleOrderMode === 'rank' ? battleRankReady : canGenerateByInput)
   );
+  $: battlePreviewSignature = [
+    variant,
+    namesSignature,
+    desktopRankSignature,
+    battleFormat,
+    battleOrderMode,
+    battleConfiguredFixedCount,
+    battleDoubleGrandFinal,
+  ].join('|');
+  $: if (
+    clearedBattlePreviewSignature !== null
+    && clearedBattlePreviewSignature !== battlePreviewSignature
+  ) {
+    // 清空后保留设置和名单时先保持结果区为空；用户修改配置后才重新显示只读预览。
+    clearedBattlePreviewSignature = null;
+  }
   $: battlePreviewSnapshot = createBattlePreviewSnapshot(
-    battlePage,
+    battlePage && clearedBattlePreviewSignature !== battlePreviewSignature,
     battleTmpSnapshot,
     variant,
     battleFormat,
@@ -1536,6 +1557,46 @@
     }
   }
 
+  function openDatabaseImporter() {
+    if (nativeRuntime || databaseImporting) return;
+    databaseFileInput?.click();
+  }
+
+  async function readDatabaseFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || nativeRuntime || databaseImporting) return;
+    const extension = file.name.split('.').pop()?.toLocaleLowerCase('zh-CN');
+    if (extension !== 'sqlite' && extension !== 'sqlite3') {
+      showImportError('SQLite 导入失败', '只支持 .sqlite 或 .sqlite3 文件');
+      return;
+    }
+    try {
+      pendingDatabaseImport = {
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      };
+    } catch (reason) {
+      showImportError('SQLite 导入失败', messageFrom(reason, '无法读取 SQLite 文件'));
+    }
+  }
+
+  async function confirmDatabaseImport() {
+    if (!pendingDatabaseImport || databaseImporting) return;
+    databaseImporting = true;
+    try {
+      await importWebDatabase(pendingDatabaseImport.bytes);
+      pendingDatabaseImport = null;
+      window.location.reload();
+    } catch (reason) {
+      pendingDatabaseImport = null;
+      showImportError('SQLite 导入失败', messageFrom(reason, '无法恢复 SQLite 数据库'));
+    } finally {
+      databaseImporting = false;
+    }
+  }
+
   async function openLineupDownloadFolder() {
     error = '';
     try {
@@ -2178,6 +2239,17 @@
       return;
     }
 
+    if (pendingDatabaseImport) {
+      if (event.key === 'Escape' || key === 'n') {
+        event.preventDefault();
+        pendingDatabaseImport = null;
+      } else if (event.key === 'Enter' || key === 'y') {
+        event.preventDefault();
+        void confirmDatabaseImport();
+      }
+      return;
+    }
+
     if (pendingBattleLoad) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
@@ -2743,6 +2815,7 @@
       clearLineupConfirmation = 0;
       battleTmpSnapshot = null;
       battleTmpAvailable = false;
+      clearedBattlePreviewSignature = clearBattleSetup ? null : battlePreviewSignature;
       resetBattleReveal();
       lastConfirmedBattleScore = null;
       pendingBattleScoreGroup = null;
@@ -2929,6 +3002,7 @@
                 {/if}
               {/if}
               <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
+              <input bind:this={databaseFileInput} class="lineup-file-input" type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" on:change={readDatabaseFile} />
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <UiButton size="xs" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</UiButton>
@@ -2936,6 +3010,7 @@
                     <UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>
                   {:else}
                     <UiButton size="xs" on:click={openLineupDatabaseFolder}>导出 SQLite</UiButton>
+                    <UiButton size="xs" disabled={databaseImporting} on:click={openDatabaseImporter}>导入 SQLite</UiButton>
                   {/if}
                   <UiButton
                     size="xs"
@@ -3686,6 +3761,21 @@
     cancelDisabled={rankingImporting}
     on:cancel={() => (pendingRankingImport = null)}
     on:confirm={confirmRankingImport}
+  />
+{/if}
+
+{#if pendingDatabaseImport}
+  <UiConfirmDialog
+    titleId="database-import-title"
+    detailId="database-import-detail"
+    icon="⇄"
+    title="导入 SQLite 数据库？"
+    detail={`当前浏览器数据库会被 ${pendingDatabaseImport.name} 完全替换，页面将自动刷新。`}
+    confirmLabel={databaseImporting ? '导入中…' : '替换并刷新'}
+    confirmDisabled={databaseImporting}
+    cancelDisabled={databaseImporting}
+    on:cancel={() => (pendingDatabaseImport = null)}
+    on:confirm={confirmDatabaseImport}
   />
 {/if}
 

@@ -44,6 +44,7 @@
   let fontScale = initialFontScale();
   let uiTheme: UiTheme = initialUiTheme();
   let removeCloseRequestedListener: (() => void) | null = null;
+  let removeBeforeUnloadListener: (() => void) | null = null;
   let appUnmounted = false;
   let appMounted = false;
   let closingWindow = false;
@@ -69,13 +70,26 @@
     }
     updateFavicon(variant);
     if (tauriRuntime) void registerCloseRequestedListener();
+    else registerBrowserBeforeUnloadListener();
     return () => {
       appUnmounted = true;
       appMounted = false;
       removeCloseRequestedListener?.();
       removeCloseRequestedListener = null;
+      removeBeforeUnloadListener?.();
+      removeBeforeUnloadListener = null;
     };
   });
+
+  function registerBrowserBeforeUnloadListener() {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!wheelPage?.shouldWarnBeforeUnload()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    removeBeforeUnloadListener = () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }
 
   async function registerCloseRequestedListener() {
     try {

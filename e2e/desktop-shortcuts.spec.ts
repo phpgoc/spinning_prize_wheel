@@ -618,8 +618,8 @@ test('桌面对战经过三次确认后可删除临时表并保留设置名单',
   await page.getByRole('button', { name: '保留设置和名单' }).click();
 
   await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
-  await expect(page.locator('.battle-preview-bracket input:not(:disabled)')).toHaveCount(0);
+  await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
@@ -648,7 +648,8 @@ test('桌面对战第三次确认按 Escape 也会清空对战区', async ({ pag
 
   await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
   await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
+  await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -668,6 +669,8 @@ test('桌面对战第三次确认可同时清空设置和名单', async ({ page 
 
   await expect(page.locator('.names-field textarea')).toHaveValue('');
   await expect(page.locator('.preview-row')).toHaveCount(0);
+  await expect(page.locator('.battle-match')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
   await expect(page.getByRole('radio', { name: '同组不对战1对2' })).toBeChecked();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
@@ -712,7 +715,8 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: '保留设置和名单' }).click();
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
+  await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
@@ -846,7 +850,8 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: '保留设置和名单' }).click();
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
+  await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
 
   await page.getByRole('button', { name: /对战历史/u }).click();
   await page.locator('.history-panel .ui-history-summary').first().click();
@@ -861,7 +866,8 @@ test('对战历史使用只读签表并保留比分', async ({ page }) => {
 
   await page.getByRole('button', { name: '返回当前对战' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
-  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
+  await expect(page.locator('.battle-preview-bracket')).toHaveCount(0);
+  await expect(page.locator('.battle-empty-result')).toBeVisible();
 });
 
 test('单败左右晋级，上下衔接且对战快捷键不被比分框占用', async ({ page }) => {

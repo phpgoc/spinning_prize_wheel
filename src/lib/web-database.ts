@@ -59,6 +59,40 @@ export async function exportWebDatabase(): Promise<Uint8Array> {
   return database.export();
 }
 
+/** 导入网页版或桌面版导出的 SQLite 文件，并替换浏览器中的本地数据库。 */
+export async function importWebDatabase(bytes: Uint8Array): Promise<void> {
+  if (bytes.byteLength === 0) throw new Error('SQLite 文件为空');
+  const SQL = await loadSqlJs();
+  const previousPromise = databasePromise;
+  if (previousPromise) await previousPromise;
+  try {
+    await mutationQueue;
+  } catch {
+    // 之前的写入失败不应阻止用户用备份恢复数据库。
+  }
+  mutationQueue = Promise.resolve();
+
+  const imported = new SQL.Database(bytes);
+  try {
+    if (!hasKnownDatabaseTable(imported)) {
+      throw new Error('不是转盘 SQLite 数据库');
+    }
+    const desktopBattleSnapshot = normalizeImportedSchema(imported);
+    migrateDatabase(imported, SQL);
+    if (desktopBattleSnapshot) {
+      saveBattleTmpState(imported, desktopBattleSnapshot);
+    }
+    validateImportedDatabase(imported);
+    await persistDatabase(imported);
+    const previous = previousPromise ? await previousPromise : null;
+    previous?.close();
+    databasePromise = Promise.resolve(imported);
+  } catch (reason) {
+    imported.close();
+    throw reason;
+  }
+}
+
 function isMutation(command: string): boolean {
   return !command.startsWith('list_')
     && !command.startsWith('load_')
@@ -290,6 +324,181 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
+}
+
+function hasKnownDatabaseTable(db: Database): boolean {
+  const result = db.exec(
+    `SELECT name FROM sqlite_master
+     WHERE type = 'table' AND name IN ('schema_migrations', 'draw_history', 'user', 'lineup_history', 'battle_tmp')`,
+  )[0];
+  return Boolean(result?.values.length);
+}
+
+/** 将 Rust 版关系化表转换成浏览器版快照表，保持桌面备份可恢复。 */
+function normalizeImportedSchema(db: Database): BattleTmpSnapshot | null {
+  normalizeImportedDrawHistory(db);
+  normalizeImportedLineupHistory(db);
+  return normalizeImportedBattleState(db);
+}
+
+function normalizeImportedDrawHistory(db: Database) {
+  const columns = tableColumns(db, 'draw_history');
+  if (!columns.has('payload_json') || !columns.has('variant')) return;
+  const rows = db.exec(
+    'SELECT id, created_at, variant, payload_json FROM draw_history ORDER BY created_at DESC',
+  )[0]?.values ?? [];
+  replaceTable(db, 'draw_history', `
+    CREATE TABLE draw_history (
+      id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      variant TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY (id, variant)
+    );
+    CREATE INDEX draw_history_variant_created_at
+      ON draw_history(variant, created_at DESC);
+  `, () => {
+    for (const [id, createdAt, variant, payload] of rows) {
+      db.run(
+        'INSERT OR REPLACE INTO draw_history (id, created_at, variant, payload_json) VALUES (?, ?, ?, ?)',
+        [id, createdAt, variant, payload],
+      );
+    }
+  });
+}
+
+function normalizeImportedLineupHistory(db: Database) {
+  const columns = tableColumns(db, 'lineup_history');
+  if (!columns.has('input_json') || !columns.has('result_json')) return;
+  const rows = db.exec(
+    'SELECT id, created_at, variant, input_json, result_json FROM lineup_history ORDER BY created_at DESC',
+  )[0]?.values ?? [];
+  replaceTable(db, 'lineup_history', `
+    CREATE TABLE lineup_history (
+      id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      variant TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY (id, variant)
+    );
+    CREATE INDEX lineup_history_variant_created_at
+      ON lineup_history(variant, created_at DESC);
+  `, () => {
+    for (const [id, createdAt, variant, inputJson, resultJson] of rows) {
+      let input: unknown;
+      let result: unknown;
+      try {
+        input = JSON.parse(String(inputJson));
+        result = JSON.parse(String(resultJson));
+      } catch {
+        throw new Error('分组历史内容损坏，无法导入');
+      }
+      db.run(
+        'INSERT OR REPLACE INTO lineup_history (id, created_at, variant, payload_json) VALUES (?, ?, ?, ?)',
+        [id, createdAt, variant, JSON.stringify({ id, createdAt, input, result })],
+      );
+    }
+  });
+}
+
+function normalizeImportedBattleState(db: Database): BattleTmpSnapshot | null {
+  const columns = tableColumns(db, 'battle_tmp');
+  if (!columns.has('rules_version') || columns.has('payload_json')) return null;
+  const metadata = db.exec(
+    `SELECT variant, rules_version, updated_at, format, order_mode,
+            participant_count, bracket_size, fixed_seed_count
+     FROM battle_tmp WHERE id = 1`,
+  )[0]?.values[0];
+  let snapshot: BattleTmpSnapshot | null = null;
+  if (metadata) {
+    const participants = db.exec(
+      `SELECT participant_id, name, source_index, seed, group_index, group_rank
+       FROM battle_tmp_participant WHERE state_id = 1 ORDER BY participant_id`,
+    )[0]?.values.map(([id, name, sourceIndex, seed, groupIndex, groupRank]) => ({
+      id: Number(id),
+      name: String(name),
+      sourceIndex: Number(sourceIndex),
+      seed: Number(seed),
+      groupIndex: groupIndex === null ? null : Number(groupIndex),
+      groupRank: groupRank === null ? null : Number(groupRank),
+    })) ?? [];
+    const matches = db.exec(
+      `SELECT match_id, stage, level, position, up, down, up_result, down_result, status
+       FROM battle_tmp_match WHERE state_id = 1
+       ORDER BY CASE stage
+         WHEN 'pairing' THEN 0 WHEN 'single' THEN 1 WHEN 'winner' THEN 2
+         WHEN 'loser' THEN 3 ELSE 4 END, level, position`,
+    )[0]?.values.map(([matchId, stage, level, position, up, down, upResult, downResult, status]) => ({
+      matchId: String(matchId),
+      stage: String(stage),
+      level: Number(level),
+      position: Number(position),
+      up: up === null ? null : Number(up),
+      down: down === null ? null : Number(down),
+      upResult: upResult === null ? null : Number(upResult),
+      downResult: downResult === null ? null : Number(downResult),
+      status: String(status),
+    })) ?? [];
+    snapshot = parseBattleTmpSnapshot({
+      version: 1,
+      rulesVersion: Number(metadata[1]),
+      kind: 'battle-tmp',
+      variant: String(metadata[0]),
+      updatedAt: Number(metadata[2]),
+      format: String(metadata[3]),
+      orderMode: String(metadata[4]),
+      participantCount: Number(metadata[5]),
+      bracketSize: Number(metadata[6]),
+      fixedSeedCount: Number(metadata[7]),
+      participants,
+      matches,
+    }, String(metadata[0]) as AppVariant);
+  }
+  db.run('PRAGMA foreign_keys = OFF');
+  db.run('DROP TABLE IF EXISTS battle_tmp_match; DROP TABLE IF EXISTS battle_tmp_participant; DROP TABLE battle_tmp;');
+  db.run('PRAGMA foreign_keys = ON');
+  return snapshot;
+}
+
+function tableColumns(db: Database, table: string): Set<string> {
+  const result = db.exec(`PRAGMA table_info(${table})`)[0];
+  return new Set(result?.values.map((row) => String(row[1])) ?? []);
+}
+
+function replaceTable(db: Database, table: string, schema: string, fill: () => void) {
+  db.run('PRAGMA foreign_keys = OFF');
+  db.run(`DROP TABLE IF EXISTS ${table};`);
+  db.run(schema);
+  fill();
+  db.run('PRAGMA foreign_keys = ON');
+}
+
+/** 替换浏览器数据库前检查表结构和 JSON 内容，避免损坏文件覆盖现有数据。 */
+function validateImportedDatabase(db: Database) {
+  const requiredColumns: Record<string, readonly string[]> = {
+    schema_migrations: ['version', 'applied_at'],
+    common_selection: ['id', 'created_at', 'payload_json'],
+    draw_history: ['id', 'created_at', 'variant', 'payload_json'],
+    user: ['id', 'name', 'rank'],
+    alias: ['id', 'name', 'user_id'],
+    lineup_history: ['id', 'created_at', 'variant', 'payload_json'],
+    battle_tmp: ['variant', 'updated_at', 'payload_json'],
+  };
+  for (const [table, columns] of Object.entries(requiredColumns)) {
+    const actual = tableColumns(db, table);
+    if (columns.some((column) => !actual.has(column))) {
+      throw new Error(`SQLite 数据库表 ${table} 结构不兼容`);
+    }
+  }
+  if (String(singleValue(db, 'PRAGMA integrity_check')) !== 'ok') {
+    throw new Error('SQLite 数据库完整性检查失败');
+  }
+  queryJsonRows<CommonSelection>(db, 'SELECT payload_json FROM common_selection');
+  queryJsonRows<SavedDraw>(db, 'SELECT payload_json FROM draw_history');
+  queryJsonRows<SavedLineup>(db, 'SELECT payload_json FROM lineup_history');
+  listRankedUsers(db);
+  loadBattleTmpState(db, 'standard');
+  loadBattleTmpState(db, 'caimi');
 }
 
 /** 把旧 Web 版的常用候选一次性搬入 SQLite，迁移完成后不再读取旧键。 */
