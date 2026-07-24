@@ -114,7 +114,7 @@ bun run tauri:dev:caimi
 项目根目录的 `version` 文件是构建产物版本号的唯一来源。文件中只写一行，例如：
 
 ```text
-0.1.0
+0.2.0
 ```
 
 支持 `1.2.3` 或 `1.2.3-beta.1` 这类版本号。修改并保存后，后续网页目录和 Windows 安装包都会使用这个版本号。
@@ -127,13 +127,13 @@ bun run tauri:dev:caimi
 bun run build
 ```
 
-假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
+假设 `version` 是 `0.2.0`，可直接上传到 Release 的产物为：
 
 ```text
-wheel-0.1.0-web.zip
+wheel-0.2.0-web.zip
 ```
 
-构建过程仍会保留 `dist\转盘-0.1.0` 目录用于检查。ZIP 根目录中的 `index.html` 已经内联全部资源，包含普通抽奖、普通分组、猜蜜抽奖和猜蜜分组四个地址。解压后可直接双击使用，也可部署到网站根目录或任意子目录。
+构建过程仍会保留 `dist\转盘-0.2.0` 目录用于检查。ZIP 根目录中的 `index.html` 已经内联全部资源，包含普通版和猜蜜版的抽奖、分组、对战六个地址。解压后可直接双击 `index.html` 使用；若浏览器限制 `file://` 的本地存储或脚本，可双击 `启动网页版.bat`，也可部署到网站根目录或任意子目录。
 
 不需要再手动压缩 `dist`。
 
@@ -151,10 +151,10 @@ bun run build:windows
 2. 构建普通版网页和 `转盘.exe`。
 3. 把两个 EXE 和 `使用说明.md` 打进同一个 NSIS 安装包。
 
-第一次完整构建耗时较长。假设 `version` 是 `0.1.0`，可直接上传到 Release 的产物为：
+第一次完整构建耗时较长。假设 `version` 是 `0.2.0`，可直接上传到 Release 的产物为：
 
 ```text
-wheel-0.1.0-setup.exe
+wheel-0.2.0-setup.exe
 ```
 
 Tauri 的原始产物仍会保留在 `src-tauri\target\release`。正式分发根目录中的 `setup.exe` 即可，它会把普通版、猜蜜版、`使用说明.md` 和卸载程序安装到同一目录，并创建两个启动入口。项目不生成 MSI。
@@ -173,7 +173,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 `test:e2e:web` 会启动本地网页并测试六个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
-Web 版的业务数据库由 `sql.js` 在浏览器内存中运行，写入时导出为 SQLite 二进制并保存到 IndexedDB（数据库名 `spinning-prize-wheel`）。因此不需要服务器或 SQLite 服务进程。发布 ZIP 可以直接双击其中的 `index.html` 尝试运行；由于浏览器对 `file://` 的 IndexedDB 策略不同，正式使用建议通过任意静态文件服务器提供文件。清理全部 Web 数据可在开发者工具 Console 执行：
+Web 版的业务数据库由 `sql.js` 在浏览器内存中运行，写入时导出为 SQLite 二进制并保存到 IndexedDB（数据库名 `spinning-prize-wheel`）。因此不需要业务服务器或 SQLite 服务进程。发布 ZIP 解压后可直接双击 `index.html`；如果浏览器限制 `file://` 的本地存储或脚本，可双击 `启动网页版.bat`，它会在本机启动只提供静态文件的临时服务。也可以通过任意静态文件服务器提供文件。清理全部 Web 数据可在开发者工具 Console 执行：
 
 ```js
 indexedDB.deleteDatabase('spinning-prize-wheel')
