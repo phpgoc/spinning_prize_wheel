@@ -4092,6 +4092,17 @@
     overflow-wrap: anywhere;
     white-space: normal;
   }
+  .battle-preview-settings .battle-generate-button {
+    border: 1px solid color-mix(in srgb, var(--accent-strong) 68%, white);
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, var(--accent-strong)));
+    box-shadow: 0 7px 18px rgb(var(--app-accent-rgb, 231 255 114) / 0.22);
+    color: var(--accent-ink);
+  }
+  .battle-preview-settings .battle-generate-button:hover:not(:disabled) {
+    border-color: var(--accent);
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
   .battle-preview-settings .battle-load-current-button {
     border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2);
     background: rgb(var(--app-accent-rgb, 231 255 114) / 0.07);
@@ -4102,7 +4113,10 @@
     border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.48);
     background: rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
   }
-  .battle-preview-settings .battle-generate-button i { font-size: calc(15px * var(--font-scale, 1)); }
+  .battle-preview-settings .battle-generate-button i {
+    color: var(--accent-ink);
+    font-size: calc(15px * var(--font-scale, 1));
+  }
 
   .lineup-error,
   .outdated-notice {

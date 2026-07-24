@@ -128,8 +128,8 @@ test.beforeEach(async ({ page }) => {
 test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({ page }) => {
   const battleBackgrounds = new Set<string>();
   for (const theme of [
-    { id: 'mist', accent: '139 199 229', surface: 'rgb(232, 238, 242)' },
-    { id: 'sand', accent: '235 182 104', surface: 'rgb(241, 233, 223)' },
+    { id: 'mist', accent: '139 199 229', accentInk: 'rgb(40, 85, 109)', surface: 'rgb(232, 238, 242)' },
+    { id: 'sand', accent: '235 182 104', accentInk: 'rgb(102, 69, 30)', surface: 'rgb(241, 233, 223)' },
   ]) {
     await page.goto('/wheel');
     await page.evaluate((uiTheme) => {
@@ -160,6 +160,10 @@ test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({
     expect(battleStyle.background).toBe(battleStyle.selectedBackground);
     battleBackgrounds.add(battleStyle.background);
     await expect(page.locator('.lineup-config')).toHaveCSS('background-color', theme.surface);
+    const drawButton = page.locator('.battle-generate-button');
+    const drawButtonBackground = await drawButton.evaluate((element) => getComputedStyle(element).backgroundImage);
+    expect(drawButtonBackground).toContain(`rgb(${theme.accent.replaceAll(' ', ', ')})`);
+    await expect(drawButton).toHaveCSS('color', theme.accentInk);
   }
   expect(battleBackgrounds.size).toBe(1);
 });
