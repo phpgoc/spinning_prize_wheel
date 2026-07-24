@@ -45,3 +45,12 @@ test('Web SQLite 保存排名和分组历史并可在刷新后读取', async ({ 
   await page.getByRole('button', { name: '分组历史' }).click();
   await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
 });
+
+test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
+  await page.goto('/grouping');
+  await openRankingPanel(page);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出 SQLite' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^转盘数据库-\d{4}-\d{2}-\d{2}\.sqlite3$/u);
+});

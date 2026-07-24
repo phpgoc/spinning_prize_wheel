@@ -2932,7 +2932,11 @@
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <UiButton size="xs" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</UiButton>
-                  {#if nativeRuntime}<UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>{/if}
+                  {#if nativeRuntime}
+                    <UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  {:else}
+                    <UiButton size="xs" on:click={openLineupDatabaseFolder}>导出 SQLite</UiButton>
+                  {/if}
                   <UiButton
                     size="xs"
                     title={rankedUsers.length > 0 ? '全部删除后才可导入' : '导入排名 JSON'}
