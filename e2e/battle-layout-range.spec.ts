@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import ExcelJS from 'exceljs';
 import { installTauriMock } from './helpers/tauri-mock';
 
 const counts = Array.from({ length: 26 }, (_, index) => index + 8);
@@ -13,7 +14,7 @@ test.beforeEach(async ({ page }) => {
 
 for (const format of formats) {
   for (const count of counts) {
-    test(`${format.label} ${count} 人查看、编辑和导出布局`, async ({ page }) => {
+    test(`${format.label} ${count} 人查看、编辑、晋级和 Excel 导出`, async ({ page }) => {
       test.setTimeout(90_000);
       await drawBattle(page, format.label, count);
 
@@ -27,6 +28,9 @@ for (const format of formats) {
         .toBe(snapshot.matches.length);
       expect(await bracket.locator('.battle-match').count()).toBe(snapshot.matches.length);
       expect(await bracket.locator('.battle-match:not(.read-only)').count()).toBe(snapshot.matches.length);
+
+      // 范围用例不能只看签表是否画出来：实际聚焦比分框、录入比分，并确认对战区产生胜者。
+      await enterFirstAvailableBattleScore(page, format.selector);
 
       const firstStageByes = snapshot.matches.filter((match: any) => (
         match.stage === format.stage
@@ -46,19 +50,15 @@ for (const format of formats) {
         }
       }
 
-      const exportCount = await page.evaluate(() => (
-        (window as any).__E2E_TAURI_STATE__.invocations
-          .filter((entry: any) => entry.cmd === 'export_binary_file').length
-      ));
       const excelButton = page.locator('[data-export="battle-excel"]');
-      await excelButton.click();
-      await expect(excelButton).toBeDisabled();
-      await expect(excelButton).toHaveText('导出中…');
-      await expect.poll(() => page.evaluate(() => (
-        (window as any).__E2E_TAURI_STATE__.invocations
-          .filter((entry: any) => entry.cmd === 'export_binary_file').length
-      )), { timeout: 30_000 }).toBe(exportCount + 1);
-      await expect(excelButton).toBeEnabled();
+      const worksheet = await exportBattleWorksheet(page, excelButton);
+      expect(worksheet.name).toBe('对战签表');
+      expect(worksheet.getCell('A1').value).toBe(`${format.label}对战签表`);
+      const exportedValues = worksheetValues(worksheet).map((value) => String(value));
+      for (const name of Array.from({ length: count }, (_, index) => `选手${index + 1}`)) {
+        expect(exportedValues).toContain(name);
+      }
+      expect(exportedValues).toEqual(expect.arrayContaining(['4', '1']));
 
       await page.getByRole('button', { name: '保存历史' }).click();
       await page.getByRole('button', { name: /对战历史/u }).click();
@@ -74,6 +74,59 @@ for (const format of formats) {
       await expect(page.locator(`${format.selector}:not(.read-only)`)).toBeVisible();
     });
   }
+}
+
+async function enterFirstAvailableBattleScore(page: Page, bracketSelector: string) {
+  const matchId = await page.locator(`${bracketSelector} .battle-match`).evaluateAll((matches) => (
+    matches.find((match) => (
+      match.querySelectorAll('input[type="number"]:not(:disabled)').length === 2
+    ))?.getAttribute('data-battle-match-id') ?? null
+  ));
+  expect(matchId).not.toBeNull();
+  const match = page.locator(`${bracketSelector} .battle-match[data-battle-match-id="${matchId}"]`);
+  const scores = match.locator('input[type="number"]:not(:disabled)');
+  await expect(scores).toHaveCount(2);
+  await scores.nth(0).focus();
+  await expect(scores.nth(0)).toBeFocused();
+  await scores.nth(0).fill('4');
+  await scores.nth(0).press('Enter');
+  await expect.poll(() => match.locator('input[type="number"]').nth(0).inputValue()).toBe('4');
+
+  const refreshedScores = match.locator('input[type="number"]:not(:disabled)');
+  await expect(refreshedScores).toHaveCount(2);
+  await refreshedScores.nth(1).focus();
+  await expect(refreshedScores.nth(1)).toBeFocused();
+  await refreshedScores.nth(1).fill('1');
+  await refreshedScores.nth(1).press('Enter');
+  await expect(match.locator('.battle-side.winner')).toHaveCount(1);
+}
+
+async function exportBattleWorksheet(page: Page, button: ReturnType<Page['locator']>) {
+  const exportCount = await page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file').length
+  ));
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveText('导出中…');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file').length
+  )), { timeout: 30_000 }).toBe(exportCount + 1);
+  await expect(button).toBeEnabled();
+  const bytes = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.invocations
+      .filter((entry: any) => entry.cmd === 'export_binary_file').at(-1).args.bytes,
+  ));
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(bytes) as never);
+  return workbook.getWorksheet('对战签表')!;
+}
+
+function worksheetValues(worksheet: ExcelJS.Worksheet) {
+  const values: unknown[] = [];
+  worksheet.eachRow((row) => row.eachCell((cell) => values.push(cell.value)));
+  return values;
 }
 
 test('对战比分数字输入隐藏原生微调并支持 Alt 上下调整', async ({ page }) => {

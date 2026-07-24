@@ -7,6 +7,7 @@ import { chromium } from '@playwright/test';
 export async function launchTauri(path: string, dataDirectory: string) {
   const port = await availablePort();
   const endpoint = `http://127.0.0.1:${port}`;
+  const downloadDirectory = join(dataDirectory, 'downloads');
   const browserArguments = [
     process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
     `--remote-debugging-port=${port}`,
@@ -17,6 +18,7 @@ export async function launchTauri(path: string, dataDirectory: string) {
       ...globalThis.process.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: browserArguments,
       WHEEL_TEST_DATA_DIR: dataDirectory,
+      WHEEL_TEST_DOWNLOAD_DIR: downloadDirectory,
     },
     stdio: 'ignore',
     windowsHide: true,
@@ -35,7 +37,7 @@ export async function launchTauri(path: string, dataDirectory: string) {
     throw new Error('Tauri 没有创建 WebView2 上下文');
   }
   const page = context.pages()[0] ?? await context.waitForEvent('page');
-  return { endpoint, process: appProcess, browser, page };
+  return { endpoint, process: appProcess, browser, page, downloadDirectory };
 }
 
 async function availablePort(): Promise<number> {

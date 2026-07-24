@@ -1,4 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import ExcelJS from 'exceljs';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { launchTauri, stopProcess } from './helpers/tauri-app';
 
 const requestedCount = process.env.TAURI_BATTLE_COUNT?.trim().toLocaleLowerCase('en-US');
@@ -80,6 +83,42 @@ for (const participantCount of participantCounts) {
           await slowCheck(page, page.getByRole('radio', { name: `前 ${fixedCount} 固定`, exact: true }));
           await assertFixedPreview(page, names, fixedCount, participantCount);
         }
+
+        // headed 用例必须进入实际对战编辑区，而不是只停在固定签位的只读查看。
+        await slowClick(page, page.getByRole('button', { name: /^抽签/u }));
+        const bracketSelector = format === '单败' ? '.single-battle-bracket' : '.double-battle-bracket';
+        await expect(page.locator(bracketSelector)).toBeVisible();
+        await expect(page.locator(`${bracketSelector} .battle-match:not(.read-only)`)).not.toHaveCount(0);
+
+        const battleResult = page.locator('.battle-result');
+        await slowFocus(battleResult);
+        await slowPress(page, format === '单败' ? 's' : 'w');
+        const firstScore = page.locator(`${format === '单败' ? '.single-battle-bracket' : '.double-winner-section'} input[type="number"]:focus`);
+        await expect(firstScore).toHaveCount(1);
+        await expect(firstScore).toBeFocused();
+        await enterFocusedBattleScore(page, 4, 1);
+
+        if (format === '双败') {
+          // 首场胜者组对战后，L 必须把焦点带到刚产生的败者组对战。
+          await slowFocus(battleResult);
+          await slowPress(page, 'l');
+          const loserScore = page.locator('.double-loser-section input[type="number"]:focus');
+          await expect(loserScore).toHaveCount(1);
+          await expect(loserScore).toBeFocused();
+        } else {
+          // 单败录入后 S 应继续在实际可录入的下一场对战上，而非回到设置区域。
+          await slowFocus(battleResult);
+          await slowPress(page, 's');
+          await expect(page.locator('.single-battle-bracket input[type="number"]:focus')).toHaveCount(1);
+        }
+
+        await slowClick(page, page.locator('[data-export="battle-excel"]'));
+        const worksheet = await exportedBattleWorksheet(running.downloadDirectory);
+        expect(worksheet.name).toBe('对战签表');
+        expect(worksheet.getCell('A1').value).toBe(`${format}对战签表`);
+        const values = worksheetValues(worksheet).map((value) => String(value));
+        for (const name of names) expect(values).toContain(name);
+        expect(values).toEqual(expect.arrayContaining(['4', '1']));
       } finally {
         await running.browser.close().catch(() => undefined);
         await stopProcess(running.process);
@@ -105,6 +144,65 @@ async function slowCheck(page: Page, locator: Locator) {
   await locator.check();
   await expect(locator).toBeChecked();
   await waitStep();
+}
+
+async function slowFocus(locator: Locator) {
+  await locator.focus();
+  await expect(locator).toBeFocused();
+  await waitStep();
+}
+
+async function slowPress(page: Page, key: string) {
+  await page.keyboard.press(key);
+  await waitStep();
+}
+
+async function enterFocusedBattleScore(page: Page, upScore: number, downScore: number) {
+  const focused = page.locator('input[type="number"]:focus');
+  const matchId = await focused.evaluate((input) => input.closest<HTMLElement>('.battle-match')?.dataset.battleMatchId ?? null);
+  expect(matchId).not.toBeNull();
+  const match = page.locator(`.battle-match[data-battle-match-id="${matchId}"]`);
+  const first = match.locator('input[type="number"]:not(:disabled)').nth(0);
+  await first.focus();
+  await expect(first).toBeFocused();
+  await first.fill(String(upScore));
+  await waitStep();
+  await first.press('Enter');
+  await waitStep();
+
+  const second = match.locator('input[type="number"]:not(:disabled)').nth(1);
+  await expect(second).toBeVisible();
+  await second.focus();
+  await expect(second).toBeFocused();
+  await second.fill(String(downScore));
+  await waitStep();
+  await second.press('Enter');
+  await waitStep();
+  await expect(match.locator('.battle-side.winner')).toHaveCount(1);
+}
+
+async function exportedBattleWorksheet(downloadDirectory: string) {
+  await expect.poll(async () => {
+    try {
+      return (await readdir(downloadDirectory)).filter((file) => file.endsWith('.xlsx'));
+    } catch {
+      return [];
+    }
+  }, { timeout: 30_000 }).not.toHaveLength(0);
+  const files = (await readdir(downloadDirectory)).filter((file) => file.endsWith('.xlsx')).sort();
+  const file = files.at(-1);
+  if (!file) throw new Error('未找到真实 Tauri 导出的 Excel 文件');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(join(downloadDirectory, file)) as never);
+  const worksheet = workbook.getWorksheet('对战签表');
+  if (!worksheet) throw new Error('真实 Tauri 导出的 Excel 缺少“对战签表”工作表');
+  return worksheet;
+}
+
+function worksheetValues(worksheet: ExcelJS.Worksheet) {
+  const values: unknown[] = [];
+  worksheet.eachRow((row) => row.eachCell((cell) => values.push(cell.value)));
+  return values;
 }
 
 async function assertFixedPreview(

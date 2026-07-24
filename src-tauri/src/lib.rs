@@ -296,10 +296,7 @@ fn open_database_folder(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn open_download_folder(app: AppHandle) -> Result<(), String> {
-    let directory = app
-        .path()
-        .download_dir()
-        .map_err(|error| format!("无法定位下载目录：{error}"))?;
+    let directory = export_directory(&app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建下载目录：{error}"))?;
 
     #[cfg(target_os = "windows")]
@@ -362,10 +359,7 @@ fn write_export_file(
     content: &[u8],
 ) -> Result<String, String> {
     let prefix = sanitize_export_prefix(prefix);
-    let directory = app
-        .path()
-        .download_dir()
-        .map_err(|error| format!("无法定位下载目录：{error}"))?;
+    let directory = export_directory(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建下载目录：{error}"))?;
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     let base_name = format!(
@@ -378,6 +372,20 @@ fn write_export_file(
     let path = available_export_path(&directory, &base_name, extension);
     fs::write(&path, content).map_err(|error| format!("无法写入导出文件：{error}"))?;
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Debug 自动化测试可把下载文件放进每次测试独立的目录，正式版始终使用系统下载目录。
+fn export_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    #[cfg(debug_assertions)]
+    if let Some(directory) =
+        std::env::var_os("WHEEL_TEST_DOWNLOAD_DIR").filter(|value| !value.is_empty())
+    {
+        return Ok(PathBuf::from(directory));
+    }
+
+    app.path()
+        .download_dir()
+        .map_err(|error| format!("无法定位下载目录：{error}"))
 }
 
 fn sanitize_export_prefix(prefix: &str) -> String {
