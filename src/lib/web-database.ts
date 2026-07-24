@@ -210,16 +210,25 @@ async function createDatabase(): Promise<Database> {
   ]);
   const db = saved ? new SQL.Database(saved) : new SQL.Database();
   migrateDatabase(db, SQL);
-  if (!saved) await persistDatabase(db);
+  const migratedLegacyStorage = migrateLegacyBrowserStorage(db);
+  if (!saved || migratedLegacyStorage) await persistDatabase(db);
   return db;
 }
 
 async function loadSqlJs(): Promise<SqlJsStatic> {
   const browserWindow = window as Window & {
-    initSqlJs?: (config?: { locateFile?: (file: string) => string }) => Promise<SqlJsStatic>;
+    initSqlJs?: (config?: {
+      locateFile?: (file: string) => string;
+      wasmBinary?: Uint8Array;
+    }) => Promise<SqlJsStatic>;
   };
-  if (!browserWindow.initSqlJs) {
-    await new Promise<void>((resolve, reject) => {
+  const wasmBinaryPromise = fetch(wasmUrl).then(async (response) => {
+    if (!response.ok) throw new Error(`无法加载浏览器 SQLite WASM：${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  });
+  const scriptPromise = browserWindow.initSqlJs
+    ? Promise.resolve()
+    : new Promise<void>((resolve, reject) => {
       const script = document.createElement('script');
       script.src = sqlJsUrl;
       script.async = true;
@@ -227,9 +236,9 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
       script.onerror = () => reject(new Error('无法加载浏览器 SQLite 运行库'));
       document.head.append(script);
     });
-  }
+  const [, wasmBinary] = await Promise.all([scriptPromise, wasmBinaryPromise]);
   if (!browserWindow.initSqlJs) throw new Error('浏览器 SQLite 运行库初始化失败');
-  return browserWindow.initSqlJs({ locateFile: () => wasmUrl });
+  return browserWindow.initSqlJs({ locateFile: () => wasmUrl, wasmBinary });
 }
 
 function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
@@ -281,6 +290,61 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
+}
+
+/** 把旧 Web 版的常用候选一次性搬入 SQLite，迁移完成后不再读取旧键。 */
+function migrateLegacyBrowserStorage(db: Database): boolean {
+  const migrated = Number(singleValue(
+    db,
+    'SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 2)',
+  ));
+  if (migrated) return false;
+
+  transaction(db, () => {
+    const storageKeys = [
+      'wheel-common-selections-v1',
+      ['for', 'tuna-wheel-common-selections-v1'].join(''),
+    ];
+    for (const key of storageKeys) {
+      let raw: string | null = null;
+      try {
+        raw = localStorage.getItem(key);
+      } catch {
+        // 禁用浏览器存储时跳过旧数据迁移，不影响 SQLite 初始化。
+      }
+      if (!raw) continue;
+      let selections: unknown;
+      try {
+        selections = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(selections)) continue;
+      for (const value of selections) {
+        if (!isLegacyCommonSelection(value)) continue;
+        db.run(
+          `INSERT OR IGNORE INTO common_selection (id, created_at, payload_json)
+           VALUES (?, ?, ?)`,
+          [value.id, value.createdAt, JSON.stringify(value)],
+        );
+      }
+    }
+    db.run(
+      `INSERT INTO schema_migrations (version, applied_at)
+       VALUES (2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
+    );
+  });
+  return true;
+}
+
+function isLegacyCommonSelection(value: unknown): value is CommonSelection {
+  if (!value || typeof value !== 'object') return false;
+  const selection = value as Partial<CommonSelection>;
+  return selection.version === 1
+    && typeof selection.id === 'string'
+    && typeof selection.name === 'string'
+    && Number.isSafeInteger(selection.createdAt)
+    && Array.isArray(selection.prizes);
 }
 
 function listRankedUsers(db: Database): RankedUser[] {

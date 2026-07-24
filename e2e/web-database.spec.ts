@@ -6,7 +6,9 @@ test.beforeEach(async ({ context }) => {
 
 async function openRankingPanel(page: import('@playwright/test').Page) {
   const section = page.locator('.desktop-accordion').filter({ hasText: '排名' }).first();
-  await section.locator('.desktop-accordion-toggle').click();
+  const toggle = section.locator('.desktop-accordion-toggle');
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+  await expect(section.locator('.rank-person-form')).toBeVisible();
 }
 
 test('Web SQLite 跨刷新保存并恢复对战临时状态', async ({ page }) => {
@@ -53,4 +55,19 @@ test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
   await page.getByRole('button', { name: '导出 SQLite' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^转盘数据库-\d{4}-\d{2}-\d{2}\.sqlite3$/u);
+});
+
+test('Web SQLite 会迁移旧版常用候选存储', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('wheel-common-selections-v1', JSON.stringify([{
+      version: 1,
+      id: 'legacy-selection',
+      name: '旧名单',
+      createdAt: 1_700_000_000_000,
+      prizes: [{ id: 'legacy-prize', name: '甲', color: '#fff', enabled: true }],
+    }]));
+  });
+  await page.goto('/wheel');
+  await page.locator('.common-panel .accordion-toggle').click();
+  await expect(page.getByRole('group', { name: '常用候选：旧名单' })).toBeVisible();
 });
