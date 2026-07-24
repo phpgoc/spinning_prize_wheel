@@ -4,18 +4,21 @@ import { readProjectVersion, releaseArtifactName, webBundleDirectory, type Build
 
 const workspace = resolve(import.meta.dir, '..');
 const variant: BuildVariant = Bun.argv[2] === 'caimi' ? 'caimi' : 'standard';
+const buildTarget = Bun.argv[3] === 'tauri' ? 'tauri' : 'web';
 const version = await readProjectVersion();
 const outDir = webBundleDirectory(version, variant);
 const arguments_ = ['bun', 'x', 'vite', 'build'];
 if (variant === 'caimi') arguments_.push('--mode', 'caimi');
 
 await run(arguments_);
-await createFileModeBundle(resolve(workspace, outDir));
-await copyFile(resolve(import.meta.dir, 'web-launcher.bat'), resolve(workspace, outDir, '启动网页版.bat'));
-await copyFile(resolve(import.meta.dir, 'web-launcher.ps1'), resolve(workspace, outDir, 'web-launcher.ps1'));
+if (buildTarget === 'web') {
+  await createFileModeBundle(resolve(workspace, outDir));
+  await copyFile(resolve(import.meta.dir, 'web-launcher.bat'), resolve(workspace, outDir, '启动网页版.bat'));
+  await copyFile(resolve(import.meta.dir, 'web-launcher.ps1'), resolve(workspace, outDir, 'web-launcher.ps1'));
+}
 
 console.log(`Web 产物：${outDir}`);
-if (variant === 'standard') {
+if (variant === 'standard' && buildTarget === 'web') {
   const archiveName = releaseArtifactName(version, 'web');
   await createWebArchive(
     resolve(workspace, outDir),

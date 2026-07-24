@@ -4,7 +4,7 @@
   "identifier": "com.phpgoc.wheel.caimi",
   "build": {
     "beforeDevCommand": "bun run dev:caimi",
-    "beforeBuildCommand": "bun run scripts/build-web.ts caimi"
+    "beforeBuildCommand": "bun run scripts/build-web.ts caimi tauri"
   },
   "app": {
     "windows": [
