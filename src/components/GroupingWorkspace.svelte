@@ -60,7 +60,7 @@
     rankedUserIdAtShortcut,
     rankedUserDropTargetForCard,
     rankedUserKeyboardDropPoints,
-    recentLineupHistories,
+    filterLineupHistories,
     unrankedLineupNameCount,
     unresolvedLineupNameCount,
     uniqueLineupNames,
@@ -270,7 +270,7 @@
     keyboardDropPointIndex;
     keyboardRankLabel = keyboardRankDropLabel();
   }
-  $: visibleHistories = recentLineupHistories(lineupHistories, historyStart, historyEnd);
+  $: visibleHistories = filterLineupHistories(lineupHistories, historyStart, historyEnd);
   $: visibleBattleHistories = battleHistories.filter((history) => {
     const date = new Date(history.createdAt);
     const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -3247,7 +3247,9 @@
               ? battleHistoryStart || battleHistoryEnd
                 ? `查询条件下共 ${visibleBattleHistories.length} 条`
                 : `共 ${battleHistories.length} 条`
-              : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+              : historyStart || historyEnd
+                ? `查询条件下共 ${visibleHistories.length} 条`
+                : `共 ${lineupHistories.length} 条`}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}

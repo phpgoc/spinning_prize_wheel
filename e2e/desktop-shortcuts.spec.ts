@@ -182,6 +182,35 @@ test('抽奖、分组和对战历史共用同一套日期、列表与底部操�
   await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
 });
 
+test('分组历史显示总数并按日期显示查询结果数量', async ({ page }) => {
+  const lineupHistories = Array.from({ length: 7 }, (_, index) => ({
+    id: `lineup-history-${index}`,
+    createdAt: new Date(2026, 0, index + 1, 12).getTime(),
+    input: {
+      sourceNames: ['甲', '乙', '丙', '丁'],
+      groupCount: 2,
+      orderMode: 'input',
+    },
+    result: {},
+  }));
+  await installTauriMock(page, [], { lineupHistories });
+  await page.goto('/grouping', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
+
+  const historyToggle = page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' });
+  await expect(historyToggle).toContainText('共 7 条');
+  await expect(historyToggle).not.toContainText('最近 5 条');
+  await historyToggle.click();
+
+  const historyCards = page.locator('.history-panel article');
+  await expect(historyCards).toHaveCount(7);
+  const dateInputs = page.locator('.history-panel input[type="date"]');
+  await dateInputs.nth(0).fill('2026-01-03');
+  await dateInputs.nth(1).fill('2026-01-05');
+  await expect(historyCards).toHaveCount(2);
+  await expect(historyToggle).toContainText('查询条件下共 2 条');
+});
+
 test('日期范围输入框有足够大的手写区和日历点击区，并随字号放大', async ({ page }) => {
   await openDesktopLineup(page);
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();

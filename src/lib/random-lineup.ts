@@ -416,18 +416,16 @@ export function createLineupRankingSnapshot(
   return snapshot;
 }
 
-export function recentLineupHistories(
+export function filterLineupHistories(
   histories: readonly SavedLineup[],
   startDate = '',
   endDate = '',
-  limit = 5,
 ): SavedLineup[] {
   const startAt = dateBoundary(startDate) ?? Number.NEGATIVE_INFINITY;
   const endAt = dateBoundary(endDate) ?? Number.POSITIVE_INFINITY;
   return [...histories]
     .filter((history) => history.createdAt >= startAt && history.createdAt < endAt)
-    .sort((left, right) => right.createdAt - left.createdAt)
-    .slice(0, Math.max(0, Math.floor(limit)));
+    .sort((left, right) => right.createdAt - left.createdAt);
 }
 
 function dateBoundary(value: string): number | null {
