@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { launchTauri, stopProcess } from './helpers/tauri-app';
 
@@ -22,10 +22,13 @@ if (requestedFormat !== undefined && battleFormats.length === 0) {
   throw new Error(`赛制必须是 single/单败 或 double/双败，收到 ${requestedFormat}`);
 }
 const STEP_DELAY_MS = Number(process.env.TAURI_E2E_STEP_DELAY_MS ?? 2_000);
+// 发布验收时把真实导出的 Excel 留在下载目录，便于人工逐个打开核对。
+const persistentDownloadDirectory = process.env.TAURI_E2E_DOWNLOAD_DIR?.trim() || undefined;
+const testRunId = `${Date.now()}-${process.pid}`;
 
 for (const participantCount of participantCounts) {
   for (const format of battleFormats) {
-    test(`真实 Tauri ${participantCount} 人 ${format} 慢速检查前 N 固定、完整赛程和 Excel`, async ({}, testInfo) => {
+    test(`真实 Tauri ${participantCount} 人 ${format} 慢速检查前 N 固定签位、完整赛程和 Excel`, async ({}, testInfo) => {
       // 每次录分和焦点切换都至少停两秒；33 人双败完整打完需要数分钟。
       test.setTimeout(900_000);
       if (participantCount < 8 || participantCount > 33) {
@@ -40,8 +43,14 @@ for (const participantCount of participantCounts) {
         aliases: [],
       }));
       const names = rankedUsers.slice(0, participantCount).map((user) => user.name);
-      const dataDirectory = testInfo.outputPath(`data-${participantCount}`);
-      const running = await launchTauri(applicationPath, dataDirectory);
+      // Playwright 的 outputPath 在多次命令运行间可能复用，加入运行标识避免恢复上一轮临时对战。
+      const dataDirectory = testInfo.outputPath(`data-${participantCount}-${format}-${testRunId}`);
+      const testDownloadDirectory = persistentDownloadDirectory
+        ? join(persistentDownloadDirectory, `${participantCount}-${format}-${testRunId}`)
+        : undefined;
+      const running = await launchTauri(applicationPath, dataDirectory, {
+        downloadDirectory: testDownloadDirectory,
+      });
 
       try {
         const page = running.page;
@@ -240,8 +249,12 @@ async function exportedBattleWorksheet(downloadDirectory: string) {
       return [];
     }
   }, { timeout: 30_000 }).not.toHaveLength(0);
-  const files = (await readdir(downloadDirectory)).filter((file) => file.endsWith('.xlsx')).sort();
-  const file = files.at(-1);
+  const files = (await readdir(downloadDirectory)).filter((file) => file.endsWith('.xlsx'));
+  const filesWithTime = await Promise.all(files.map(async (file) => ({
+    file,
+    modifiedAt: (await stat(join(downloadDirectory, file))).mtimeMs,
+  })));
+  const file = filesWithTime.sort((left, right) => right.modifiedAt - left.modifiedAt)[0]?.file;
   if (!file) throw new Error('未找到真实 Tauri 导出的 Excel 文件');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await readFile(join(downloadDirectory, file)) as never);
@@ -264,7 +277,7 @@ async function assertFixedPreview(
 ) {
   const bracket = page.locator('.battle-preview-bracket');
   await expect(bracket).toBeVisible();
-  const fixedSlots = await bracket.locator('.battle-match .seed-fixed').evaluateAll((elements) => elements.map((element) => {
+  const fixedSlots = await bracket.locator('.battle-match[data-battle-level="1"] .seed-fixed').evaluateAll((elements) => elements.map((element) => {
     const card = element.closest<HTMLElement>('.battle-match');
     const participant = element.querySelector('strong')?.textContent?.trim() ?? '';
     const cardRect = card?.getBoundingClientRect();
@@ -298,7 +311,8 @@ async function assertFixedPreview(
   expect(fixedSlots.every((slot) => slot.cssPosition === 'static')).toBe(true);
   expect(fixedSlots.every((slot) => Math.abs(slot.width - slot.cardContentWidth) < 1)).toBe(true);
   expect(fixedSlots.every((slot) => slot.insideCard)).toBe(true);
-  await expect(bracket.locator('.seed-fixed strong')).toHaveText(fixedSlots.map((slot) => slot.participant));
+  await expect(bracket.locator('.battle-match[data-battle-level="1"] .seed-fixed strong'))
+    .toHaveText(fixedSlots.map((slot) => slot.participant));
 
   // 位置应落在标准首轮签位，而不是只把名字悬浮在结果区。
   const bracketSize = 2 ** Math.ceil(Math.log2(participantCount));

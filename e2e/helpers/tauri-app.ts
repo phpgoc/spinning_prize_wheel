@@ -4,10 +4,14 @@ import { join } from 'node:path';
 import { chromium } from '@playwright/test';
 
 /** 启动真实 Tauri 程序，并通过 WebView2 调试端口交给 Playwright 操作。 */
-export async function launchTauri(path: string, dataDirectory: string) {
+export async function launchTauri(
+  path: string,
+  dataDirectory: string,
+  options: { downloadDirectory?: string } = {},
+) {
   const port = await availablePort();
   const endpoint = `http://127.0.0.1:${port}`;
-  const downloadDirectory = join(dataDirectory, 'downloads');
+  const downloadDirectory = options.downloadDirectory ?? join(dataDirectory, 'downloads');
   const browserArguments = [
     process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
     `--remote-debugging-port=${port}`,

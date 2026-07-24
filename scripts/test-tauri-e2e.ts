@@ -18,6 +18,12 @@ const requestedBattleCount = commandArguments.find((argument) => argument === 'a
 const requestedBattleFormat = commandArguments.find((argument) => (
   ['single', 'double', '单败', '双败'].includes(argument)
 ));
+// 真实 battle 验收生成的 Excel 保留在 Windows 下载目录，供人工复核。
+const battleDownloadDirectory = join(
+  Bun.env.USERPROFILE ?? workspace,
+  'Downloads',
+  'spinning-prize-wheel-e2e',
+);
 
 if (battleOnlyMode && requestedBattleCount && requestedBattleCount !== 'all') {
   const count = Number(requestedBattleCount);
@@ -77,6 +83,7 @@ try {
       TAURI_E2E_CAIMI_APP: join(debugDirectory, '转盘-猜蜜版.exe'),
       ...(battleOnlyMode ? {
         TAURI_BATTLE_COUNT: requestedBattleCount ?? 'all',
+        TAURI_E2E_DOWNLOAD_DIR: battleDownloadDirectory,
         ...(requestedBattleFormat ? { TAURI_BATTLE_FORMAT: requestedBattleFormat } : {}),
       } : {}),
     },
