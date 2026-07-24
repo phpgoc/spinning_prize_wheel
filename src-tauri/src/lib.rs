@@ -97,6 +97,19 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE INDEX IF NOT EXISTS lineup_history_variant_created_at
          ON lineup_history(variant, created_at DESC);",
     ),
+    (
+        5,
+        "CREATE TABLE IF NOT EXISTS battle_history (
+           id TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL,
+           variant TEXT NOT NULL,
+           payload_json TEXT NOT NULL,
+           PRIMARY KEY (id, variant)
+         );
+         CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
+         ON battle_history(variant, created_at DESC);",
+    ),
 ];
 
 mod models;
@@ -474,7 +487,81 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
             .map_err(|error| format!("无法提交数据库迁移 {version}：{error}"))?;
     }
 
+    ensure_battle_history_updated_at(connection)?;
+
     Ok(())
+}
+
+/// 兼容 0.2.0 开发期曾创建的旧对战历史表；正式迁移只保证 0.1.0 到 0.2.0。
+fn ensure_battle_history_updated_at(connection: &mut Connection) -> Result<(), String> {
+    let has_table = connection
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'battle_history'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("无法检查对战历史表：{error}"))?;
+    if !has_table {
+        return Ok(());
+    }
+    let has_updated_at = connection
+        .prepare("PRAGMA table_info(battle_history)")
+        .map_err(|error| format!("无法读取对战历史表结构：{error}"))?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("无法读取对战历史表字段：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法解析对战历史表结构：{error}"))?
+        .iter()
+        .any(|column| column == "updated_at");
+    if has_updated_at {
+        return Ok(());
+    }
+
+    connection
+        .execute(
+            "ALTER TABLE battle_history ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|error| format!("无法升级对战历史更新时间字段：{error}"))?;
+    let rows = {
+        let mut statement = connection
+            .prepare("SELECT id, variant, payload_json FROM battle_history")
+            .map_err(|error| format!("无法读取旧对战历史：{error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| format!("无法读取旧对战历史：{error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法解析旧对战历史：{error}"))?;
+        rows
+    };
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("无法开始升级对战历史：{error}"))?;
+    for (id, variant, payload_json) in rows {
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)
+            .map_err(|error| format!("旧对战历史内容不合法：{error}"))?;
+        let snapshot: BattleTmpSnapshot = serde_json::from_value(
+            payload.get("snapshot").cloned().unwrap_or(payload),
+        )
+        .map_err(|error| format!("旧对战历史内容不合法：{error}"))?;
+        transaction
+            .execute(
+                "UPDATE battle_history SET updated_at = ?1 WHERE id = ?2 AND variant = ?3",
+                params![db_u64(snapshot.updated_at, "对战历史更新时间")?, id, variant],
+            )
+            .map_err(|error| format!("无法写入对战历史更新时间：{error}"))?;
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交对战历史升级：{error}"))
 }
 
 fn normalize_person_name(value: &str) -> Result<String, String> {
@@ -1426,6 +1513,185 @@ fn clear_lineup_histories(
     })
 }
 
+fn save_battle_history_in(
+    connection: &mut Connection,
+    variant: &str,
+    history: &BattleHistory,
+    mark_current: bool,
+) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    if !valid_selection_id(&history.id) {
+        return Err("对战记录编号不合法".to_string());
+    }
+    if history.snapshot.variant != variant {
+        return Err("对战记录版本不一致".to_string());
+    }
+    if history.updated_at != history.snapshot.updated_at {
+        return Err("对战记录更新时间不一致".to_string());
+    }
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("无法开始保存对战历史：{error}"))?;
+    if mark_current {
+        if let Some((updated_at, history_saved)) =
+            battle_tmp_history_status_in(&transaction, variant)?
+        {
+            if updated_at != history.snapshot.updated_at {
+                return Err("当前对战临时状态已改变，无法保存历史".to_string());
+            }
+            if history_saved {
+                return Err("同一对战状态已经保存过历史".to_string());
+            }
+        }
+    }
+    let created_at =
+        i64::try_from(history.created_at).map_err(|_| "对战记录时间不合法".to_string())?;
+    let payload_json = serde_json::to_string(&history.snapshot)
+        .map_err(|error| format!("无法序列化对战记录：{error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO battle_history (id, created_at, updated_at, variant, payload_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id, variant) DO UPDATE SET
+               created_at = excluded.created_at,
+               updated_at = excluded.updated_at,
+               payload_json = excluded.payload_json",
+            params![
+                history.id,
+                created_at,
+                db_u64(history.updated_at, "对战历史更新时间")?,
+                variant,
+                payload_json,
+            ],
+        )
+        .map_err(|error| format!("无法保存对战记录：{error}"))?;
+    if mark_current {
+        mark_battle_tmp_history_saved_in(&transaction, variant, history.snapshot.updated_at)?;
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交对战历史：{error}"))
+}
+
+#[tauri::command]
+fn save_battle_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    history: BattleHistory,
+    mark_current: Option<bool>,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        save_battle_history_in(connection, &variant, &history, mark_current.unwrap_or(false))
+    })
+}
+
+fn list_battle_histories_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Vec<BattleHistory>, String> {
+    let variant = validate_variant(variant)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, created_at, updated_at, payload_json
+             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
+        )
+        .map_err(|error| format!("无法读取对战历史：{error}"))?;
+    let rows = statement
+        .query_map(params![variant], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|error| format!("无法查询对战历史：{error}"))?;
+
+    let mut histories = Vec::new();
+    for row in rows {
+        let (id, created_at, updated_at, payload_json) =
+            row.map_err(|error| format!("无法解析对战历史：{error}"))?;
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)
+            .map_err(|error| format!("无法解析对战签表：{error}"))?;
+        let snapshot: BattleTmpSnapshot = serde_json::from_value(
+            payload.get("snapshot").cloned().unwrap_or(payload),
+        )
+        .map_err(|error| format!("无法解析对战签表：{error}"))?;
+        if snapshot.variant != variant {
+            return Err("对战历史版本不一致".to_string());
+        }
+        let updated_at = u64::try_from(updated_at)
+            .map_err(|_| "对战历史更新时间不合法".to_string())?;
+        if updated_at != snapshot.updated_at {
+            return Err("对战历史更新时间不一致".to_string());
+        }
+        histories.push(BattleHistory {
+            id,
+            created_at: u64::try_from(created_at)
+                .map_err(|_| "对战记录时间不合法".to_string())?,
+            updated_at,
+            snapshot,
+        });
+    }
+    Ok(histories)
+}
+
+#[tauri::command]
+fn list_battle_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<Vec<BattleHistory>, String> {
+    with_app_database(&app, &database, |connection| {
+        list_battle_histories_in(connection, &variant).map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
+fn delete_battle_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    id: String,
+) -> Result<(), String> {
+    let variant = validate_variant(&variant)?;
+    if !valid_selection_id(&id) {
+        return Err("对战记录编号不合法".to_string());
+    }
+    with_app_database(&app, &database, |connection| {
+        connection
+            .execute(
+                "DELETE FROM battle_history WHERE id = ?1 AND variant = ?2",
+                params![id, variant],
+            )
+            .map_err(|error| format!("无法删除对战记录：{error}"))?;
+        Ok(())
+    })
+}
+
+fn clear_battle_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    connection
+        .execute(
+            "DELETE FROM battle_history WHERE variant = ?1",
+            params![variant],
+        )
+        .map_err(|error| format!("无法清空对战历史：{error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_battle_histories(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        clear_battle_histories_in(connection, &variant)
+    })
+}
+
 // 对战临时状态的关系化存储与赛果传播集中在独立文件中。
 include!("battle_tmp.rs");
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1453,8 +1719,14 @@ pub fn run() {
             import_lineup_history,
             delete_lineup_history,
             clear_lineup_histories,
+            save_battle_history,
+            list_battle_histories,
+            delete_battle_history,
+            clear_battle_histories,
             save_battle_tmp_state,
             load_battle_tmp_state,
+            load_battle_tmp_history_status,
+            mark_battle_tmp_history_saved,
             update_battle_tmp_result,
             clear_battle_tmp_state,
             open_database_folder,
@@ -1501,9 +1773,15 @@ mod tests {
             .expect("解析迁移版本");
         expect_tables(
             &connection,
-            &["draw_history", "user", "alias", "lineup_history"],
+            &[
+                "draw_history",
+                "user",
+                "alias",
+                "lineup_history",
+                "battle_history",
+            ],
         );
-        assert_eq!(versions, vec![1, 2, 3, 4]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
     }
 
     #[test]
@@ -2146,6 +2424,63 @@ mod tests {
         assert_eq!(
             load_battle_tmp_state_in(&connection, "caimi").unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn battle_history_marks_exact_tmp_state_and_score_change_reopens_saving() {
+        let mut connection = test_database();
+        let snapshot = single_battle_tmp_test_snapshot("standard");
+        save_battle_tmp_state_in(&connection, "standard", &snapshot)
+            .expect("保存对战临时状态");
+        let history = BattleHistory {
+            id: "battle-state-1".to_string(),
+            created_at: snapshot.updated_at,
+            updated_at: snapshot.updated_at,
+            snapshot: snapshot.clone(),
+        };
+
+        save_battle_history_in(&mut connection, "standard", &history, true)
+            .expect("第一次保存对战历史");
+        assert_eq!(
+            battle_tmp_history_status_in(&connection, "standard").expect("读取保存标识"),
+            Some((snapshot.updated_at, true))
+        );
+
+        let mut duplicate = history.clone();
+        duplicate.id = "battle-state-2".to_string();
+        assert_eq!(
+            save_battle_history_in(&mut connection, "standard", &duplicate, true)
+                .expect_err("同一状态不能重复保存"),
+            "同一对战状态已经保存过历史"
+        );
+        assert_eq!(
+            list_battle_histories_in(&connection, "standard")
+                .expect("读取对战历史")
+                .len(),
+            1
+        );
+
+        let updated_at = snapshot.updated_at + 1;
+        update_battle_tmp_result_in(
+            &connection,
+            "standard",
+            "S1-M1",
+            Some(4),
+            Some(1),
+            updated_at,
+        )
+        .expect("更新比分");
+        assert_eq!(
+            battle_tmp_history_status_in(&connection, "standard").expect("读取更新后标识"),
+            Some((updated_at, false))
+        );
+
+        save_battle_tmp_state_with_history_in(&connection, "standard", &snapshot, true)
+            .expect("从历史加载临时状态");
+        assert_eq!(
+            battle_tmp_history_status_in(&connection, "standard").expect("读取历史加载标识"),
+            Some((snapshot.updated_at, true))
         );
     }
 

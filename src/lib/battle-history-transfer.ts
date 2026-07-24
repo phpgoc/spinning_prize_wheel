@@ -4,6 +4,7 @@ import { parseBattleTmpSnapshot, type BattleTmpSnapshot } from './battle';
 export interface BattleHistoryTransfer {
   kind: 'battle-history';
   version: 1;
+  updatedAt: number;
   snapshot: BattleTmpSnapshot;
 }
 
@@ -12,6 +13,7 @@ export function createBattleHistoryTransfer(snapshot: BattleTmpSnapshot): Battle
   return {
     kind: 'battle-history',
     version: 1,
+    updatedAt: snapshot.updatedAt,
     snapshot,
   };
 }
@@ -22,10 +24,20 @@ export function parseBattleHistoryTransfer(
   variant: AppVariant,
 ): BattleTmpSnapshot {
   if (value && typeof value === 'object' && !Array.isArray(value) && 'snapshot' in value) {
-    const transfer = value as { kind?: unknown; version?: unknown; snapshot?: unknown };
+    const transfer = value as {
+      kind?: unknown;
+      version?: unknown;
+      updatedAt?: unknown;
+      snapshot?: unknown;
+    };
     if (transfer.kind !== 'battle-history') throw new Error('不是对战历史 JSON');
     if (transfer.version !== 1) throw new Error('不支持的对战历史版本');
-    return parseBattleTmpSnapshot(transfer.snapshot, variant);
+    const snapshot = parseBattleTmpSnapshot(transfer.snapshot, variant);
+    if (transfer.updatedAt !== undefined
+      && (!Number.isSafeInteger(transfer.updatedAt) || transfer.updatedAt !== snapshot.updatedAt)) {
+      throw new Error('对战历史更新时间不一致');
+    }
+    return snapshot;
   }
   return parseBattleTmpSnapshot(value, variant);
 }

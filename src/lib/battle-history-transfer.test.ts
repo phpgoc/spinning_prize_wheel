@@ -26,7 +26,7 @@ describe('对战历史同步文件', () => {
     const snapshot = createSnapshot();
     const transfer = createBattleHistoryTransfer(snapshot);
 
-    expect(transfer).toEqual({ kind: 'battle-history', version: 1, snapshot });
+    expect(transfer).toEqual({ kind: 'battle-history', version: 1, updatedAt: snapshot.updatedAt, snapshot });
     expect(parseBattleHistoryTransfer(transfer, 'standard')).toEqual(snapshot);
   });
 
@@ -48,6 +48,12 @@ describe('对战历史同步文件', () => {
       version: 2,
       snapshot,
     }, 'standard')).toThrow('不支持的对战历史版本');
+    expect(() => parseBattleHistoryTransfer({
+      kind: 'battle-history',
+      version: 1,
+      updatedAt: snapshot.updatedAt + 1,
+      snapshot,
+    }, 'standard')).toThrow('对战历史更新时间不一致');
     expect(() => parseBattleHistoryTransfer(
       createBattleHistoryTransfer(createSnapshot('caimi')),
       'standard',

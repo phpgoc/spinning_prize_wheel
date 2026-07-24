@@ -101,6 +101,16 @@ pub(super) struct SavedLineup {
     pub(super) result: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// 保存到 SQLite 的对战历史快照。
+pub(super) struct BattleHistory {
+    pub(super) id: String,
+    pub(super) created_at: u64,
+    pub(super) updated_at: u64,
+    pub(super) snapshot: BattleTmpSnapshot,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 /// 前端与关系化临时表之间传输的完整对战快照。

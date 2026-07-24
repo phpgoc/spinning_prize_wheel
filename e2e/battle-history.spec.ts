@@ -54,9 +54,14 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   ));
 
   await page.getByRole('button', { name: '保存历史' }).click();
+  await expect(page.getByRole('button', { name: '历史已保存' })).toBeDisabled();
   await expect.poll(() => page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]').length
+    (window as any).__E2E_TAURI_STATE__.battleHistories.length
   ))).toBe(1);
+
+  await currentMatch.locator('input[type="number"]').nth(0).fill('5');
+  await currentMatch.locator('input[type="number"]').nth(0).press('Tab');
+  await expect(page.getByRole('button', { name: '保存历史' })).toBeEnabled();
 
   await page.getByRole('button', { name: /对战历史/u }).click();
   const historyCard = battleHistoryCards(page);
@@ -76,7 +81,12 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   });
 
   const exported = JSON.parse(exportedJson);
-  expect(exported).toEqual({ kind: 'battle-history', version: 1, snapshot: expectedSnapshot });
+  expect(exported).toEqual({
+    kind: 'battle-history',
+    version: 1,
+    updatedAt: expectedSnapshot.updatedAt,
+    snapshot: expectedSnapshot,
+  });
 
   await historyCard.getByRole('button').first().click();
   await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
@@ -89,7 +99,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   await page.locator('.history-panel').getByRole('button', { name: '加载当前' }).click();
   await expect(page.getByRole('heading', { name: '对战', exact: true })).toBeVisible();
   await expect(page.locator('.single-battle-bracket:not(.read-only)')).toBeVisible();
-  await expect(currentMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
+  await expect(currentMatch.locator('input[type="number"]').nth(0)).toHaveValue('5');
   await expect(currentMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');
 
   await historyCard.getByRole('button', { name: /删除 .* 的对战历史/u }).click();
@@ -103,7 +113,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   });
   await expect(historyCard).toHaveCount(1);
   const importedSnapshot = await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')[0]?.snapshot
+    (window as any).__E2E_TAURI_STATE__.battleHistories[0]?.snapshot
   ));
   expect(importedSnapshot).toEqual(expectedSnapshot);
 
@@ -148,49 +158,36 @@ test('对战历史导出显示忙碌状态并在失败后恢复', async ({ page 
   expect(pageErrors).toEqual([]);
 });
 
-test('对战历史本地写入失败时不会伪造保存或删除', async ({ page }) => {
+test('对战历史数据库写入失败时不会伪造保存或删除', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (reason) => pageErrors.push(reason.message));
   await openDesktopBattle(page);
   await createScoredBattle(page);
 
-  const failHistoryWrites = () => page.evaluate(() => {
-    const prototype = Storage.prototype as any;
-    prototype.__E2E_ORIGINAL_SET_ITEM__ ??= prototype.setItem;
-    prototype.setItem = function setItem(this: Storage, key: string, value: string) {
-      if (key.startsWith('battle-history-v1:')) throw new Error('模拟对战历史本地写入失败');
-      return prototype.__E2E_ORIGINAL_SET_ITEM__.call(this, key, value);
-    };
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.save_battle_history = ['模拟对战历史数据库写入失败'];
   });
-  const restoreHistoryWrites = () => page.evaluate(() => {
-    const prototype = Storage.prototype as any;
-    if (prototype.__E2E_ORIGINAL_SET_ITEM__) {
-      prototype.setItem = prototype.__E2E_ORIGINAL_SET_ITEM__;
-    }
-  });
-
-  await failHistoryWrites();
   await page.getByRole('button', { name: '保存历史' }).click();
-  await expect(page.getByRole('alert')).toContainText('模拟对战历史本地写入失败');
+  await expect(page.getByRole('alert')).toContainText('模拟对战历史数据库写入失败');
   await page.getByRole('button', { name: /对战历史/u }).click();
   const historyCards = battleHistoryCards(page);
   await expect(historyCards).toHaveCount(0);
   expect(await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
+    (window as any).__E2E_TAURI_STATE__.battleHistories
   ))).toEqual([]);
 
-  await restoreHistoryWrites();
   await page.getByRole('button', { name: '保存历史' }).click();
   await expect(historyCards).toHaveCount(1);
-  await failHistoryWrites();
+  await page.evaluate(() => {
+    (window as any).__E2E_TAURI_STATE__.commandFailures.delete_battle_history = ['模拟对战历史数据库删除失败'];
+  });
   await historyCards.getByRole('button', { name: /删除 .* 的对战历史/u }).click();
   await page.keyboard.press('Enter');
   await expect(historyCards).toHaveCount(1);
-  await expect(page.locator('.history-panel').getByRole('alert')).toContainText('模拟对战历史本地写入失败');
+  await expect(page.locator('.history-panel').getByRole('alert')).toContainText('模拟对战历史数据库删除失败');
   expect(await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]').length
+    (window as any).__E2E_TAURI_STATE__.battleHistories.length
   ))).toBe(1);
-  await restoreHistoryWrites();
   expect(pageErrors).toEqual([]);
 });
 
@@ -258,7 +255,7 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
   await importBattleHistory(page, '旧版对战状态.json', expectedSnapshot);
   await expect(historyCard).toHaveCount(1);
   const importedSnapshot = await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')[0]?.snapshot
+    (window as any).__E2E_TAURI_STATE__.battleHistories[0]?.snapshot
   ));
   expect(importedSnapshot).toEqual(expectedSnapshot);
 });
@@ -308,7 +305,7 @@ test('对战历史显示总数并按日期显示查询结果数量和二次确�
 
   await expect(historyCards).toHaveCount(0);
   expect(await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
+    (window as any).__E2E_TAURI_STATE__.battleHistories
   ))).toEqual([]);
 });
 

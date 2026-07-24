@@ -629,7 +629,7 @@ test('桌面对战经过三次确认后可删除临时表并保留设置名单',
       .filter((entry: any) => entry.cmd === 'clear_battle_tmp_state').length
   ))).toBe(1);
   expect(await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
+    (window as any).__E2E_TAURI_STATE__.battleHistories
   ))).toEqual([]);
 });
 
@@ -698,7 +698,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   const generatedSaveCount = await saveCount();
   await page.getByRole('button', { name: '保存历史' }).click();
   expect(await page.evaluate(() => (
-    JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]').length
+    (window as any).__E2E_TAURI_STATE__.battleHistories.length
   ))).toBe(1);
   const historyToggle = page
     .locator('.desktop-accordion-toggle')
@@ -721,10 +721,9 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
     (window as any).__E2E_TAURI_STATE__.battleTmpState
   ))).toBeNull();
 
-  const originalHistory = await page.evaluate(() => {
-    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
-    return structuredClone(histories[0]);
-  });
+  const originalHistory = await page.evaluate(() => structuredClone(
+    (window as any).__E2E_TAURI_STATE__.battleHistories[0],
+  ));
   expect(originalHistory.snapshot.matches[0].upResult).toBeNull();
   expect(originalHistory.snapshot.matches[0].downResult).toBeNull();
 
@@ -741,7 +740,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   const firstMatch = page.locator('.battle-round').first().locator('.battle-match').first();
   await enterDesktopBattleScore(firstMatch, 4, 1);
   expect(await page.evaluate((historyId) => {
-    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const histories = (window as any).__E2E_TAURI_STATE__.battleHistories;
     const history = histories.find((entry: any) => entry.id === historyId);
     return [history.snapshot.matches[0].upResult, history.snapshot.matches[0].downResult];
   }, originalHistory.id)).toEqual([null, null]);
@@ -763,7 +762,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
   await expect(firstMatch.locator('input[type="number"]').nth(1)).toHaveValue('');
 
   const historyResults = await page.evaluate((historyId) => {
-    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const histories = (window as any).__E2E_TAURI_STATE__.battleHistories;
     const original = histories.find((entry: any) => entry.id === historyId);
     return {
       count: histories.length,
@@ -783,7 +782,7 @@ test('桌面对战历史编辑按临时表状态确认并保留原记录', async
 
   await enterDesktopBattleScore(firstMatch, 3, 2);
   expect(await page.evaluate((historyId) => {
-    const histories = JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]');
+    const histories = (window as any).__E2E_TAURI_STATE__.battleHistories;
     const history = histories.find((entry: any) => entry.id === historyId);
     return [history.snapshot.matches[0].upResult, history.snapshot.matches[0].downResult];
   }, originalHistory.id)).toEqual([null, null]);

@@ -26,6 +26,7 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
                variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
                rules_version INTEGER NOT NULL CHECK (rules_version = 1),
                updated_at INTEGER NOT NULL CHECK (updated_at > 0),
+               history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1)),
                format TEXT NOT NULL CHECK (format IN ('avoid-first-pair', 'single-elimination', 'double-elimination')),
                order_mode TEXT NOT NULL CHECK (order_mode IN ('rank', 'input')),
                participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
@@ -60,6 +61,26 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
              );",
         )
         .map_err(|error| format!("无法创建关系化对战临时表：{error}"))
+        .and_then(|_| {
+            let has_history_saved = connection
+                .prepare("PRAGMA table_info(battle_tmp)")
+                .map_err(|error| format!("无法读取对战临时表结构：{error}"))?
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| format!("无法读取对战临时表字段：{error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("无法解析对战临时表字段：{error}"))?
+                .iter()
+                .any(|column| column == "history_saved");
+            if !has_history_saved {
+                connection
+                    .execute(
+                        "ALTER TABLE battle_tmp ADD COLUMN history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1))",
+                        [],
+                    )
+                    .map_err(|error| format!("无法升级对战临时表：{error}"))?;
+            }
+            Ok(())
+        })
 }
 
 /// 在写入数据库前完整校验前端快照，避免非法引用进入关系化表。
@@ -165,10 +186,20 @@ fn expected_battle_tmp_match_id(stage: &str, level: usize, position: usize) -> S
 }
 
 /// 使用单个事务替换当前临时签表，任一参赛者或场次写入失败都会整体回滚。
+#[cfg(test)]
 fn save_battle_tmp_state_in(
     connection: &Connection,
     variant: &str,
     state: &BattleTmpSnapshot,
+) -> Result<(), String> {
+    save_battle_tmp_state_with_history_in(connection, variant, state, false)
+}
+
+fn save_battle_tmp_state_with_history_in(
+    connection: &Connection,
+    variant: &str,
+    state: &BattleTmpSnapshot,
+    history_saved: bool,
 ) -> Result<(), String> {
     let variant = validate_variant(variant)?;
     validate_battle_tmp_snapshot(variant, state)?;
@@ -183,14 +214,15 @@ fn save_battle_tmp_state_in(
         .execute(
             "INSERT INTO battle_tmp (
                id, variant, rules_version, updated_at, format, order_mode,
-               participant_count, bracket_size, fixed_seed_count
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+               history_saved, participant_count, bracket_size, fixed_seed_count
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 variant,
                 state.rules_version,
                 db_u64(state.updated_at, "对战临时状态时间")?,
                 state.format,
                 state.order_mode,
+                i64::from(history_saved),
                 db_usize(state.participant_count, "参赛人数")?,
                 db_usize(state.bracket_size, "签位数量")?,
                 db_usize(state.fixed_seed_count, "固定人数")?,
@@ -873,7 +905,7 @@ fn update_battle_tmp_result_in(
     }
     transaction
         .execute(
-            "UPDATE battle_tmp SET updated_at = ?1 WHERE id = 1",
+            "UPDATE battle_tmp SET updated_at = ?1, history_saved = 0 WHERE id = 1",
             params![db_u64(updated_at, "对战临时状态时间")?],
         )
         .map_err(|error| format!("无法更新对战临时状态时间：{error}"))?;
@@ -882,6 +914,55 @@ fn update_battle_tmp_result_in(
         .map_err(|error| format!("无法提交对战结果：{error}"))?;
     load_battle_tmp_state_in(connection, variant)?
         .ok_or_else(|| "更新后无法读取对战临时状态".to_string())
+}
+
+fn battle_tmp_history_status_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Option<(u64, bool)>, String> {
+    let variant = validate_variant(variant)?;
+    if !battle_tmp_table_exists(connection)? {
+        return Ok(None);
+    }
+    connection
+        .query_row(
+            "SELECT updated_at, history_saved FROM battle_tmp WHERE id = 1 AND variant = ?1",
+            params![variant],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)? != 0,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| format!("无法读取对战历史保存状态：{error}"))?
+        .map(|(updated_at, history_saved)| {
+            Ok((
+                u64::try_from(updated_at).map_err(|_| "对战临时状态时间不合法".to_string())?,
+                history_saved,
+            ))
+        })
+        .transpose()
+}
+
+fn mark_battle_tmp_history_saved_in(
+    connection: &Connection,
+    variant: &str,
+    updated_at: u64,
+) -> Result<(), String> {
+    let variant = validate_variant(variant)?;
+    let changed = connection
+        .execute(
+            "UPDATE battle_tmp SET history_saved = 1
+             WHERE id = 1 AND variant = ?1 AND updated_at = ?2",
+            params![variant, db_u64(updated_at, "对战临时状态时间")?],
+        )
+        .map_err(|error| format!("无法标记对战历史保存状态：{error}"))?;
+    if changed == 0 {
+        return Err("当前对战临时状态已改变，无法标记历史".to_string());
+    }
+    Ok(())
 }
 
 fn clear_battle_tmp_state_in(connection: &Connection, variant: &str) -> Result<(), String> {
@@ -899,14 +980,49 @@ fn clear_battle_tmp_state_in(connection: &Connection, variant: &str) -> Result<(
 }
 
 #[tauri::command]
+fn load_battle_tmp_history_status(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+) -> Result<Option<serde_json::Value>, String> {
+    with_app_database(&app, &database, |connection| {
+        battle_tmp_history_status_in(connection, &variant)
+            .map(|status| status.map(|(updated_at, history_saved)| {
+                serde_json::json!({ "updatedAt": updated_at, "historySaved": history_saved })
+            }))
+            .map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
+fn mark_battle_tmp_history_saved(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    updated_at: u64,
+) -> Result<(), String> {
+    with_app_database(&app, &database, |connection| {
+        mark_battle_tmp_history_saved_in(connection, &variant, updated_at)
+            .map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
 fn save_battle_tmp_state(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
     state: BattleTmpSnapshot,
+    history_saved: Option<bool>,
 ) -> Result<(), String> {
     with_app_database(&app, &database, |connection| {
-        save_battle_tmp_state_in(connection, &variant, &state).map_err(database_file_error)
+        save_battle_tmp_state_with_history_in(
+            connection,
+            &variant,
+            &state,
+            history_saved.unwrap_or(false),
+        )
+        .map_err(database_file_error)
     })
 }
 

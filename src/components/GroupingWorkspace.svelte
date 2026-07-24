@@ -22,6 +22,7 @@
     parseBattleTmpSnapshot,
     updateBattleTmpResult,
     type BattleFormat,
+    type BattleHistory,
     type BattleOrderMode,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
@@ -90,7 +91,6 @@
   type LineupHistoryDeletion =
     | { kind: 'one'; history: SavedLineup }
     | { kind: 'all'; confirmation: 1 | 2 };
-  type BattleHistory = { id: string; createdAt: number; snapshot: BattleTmpSnapshot };
   type BattleLoadTarget =
     | { kind: 'current' }
     | { kind: 'history'; history: BattleHistory };
@@ -215,6 +215,7 @@
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleTmpAvailable = false;
+  let battleHistorySaved = false;
   let battleHistories: BattleHistory[] = [];
   let battleHistoryView: BattleHistory | null = null;
   let battleHistoryStart = '';
@@ -392,7 +393,7 @@
 
   onMount(() => {
     mounted = true;
-    if (battlePage) loadBattleHistories();
+    if (battlePage) void loadBattleHistories();
     return () => {
       if (battleFullscreen) {
         document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
@@ -540,7 +541,7 @@
 
   async function initializeDesktop() {
     desktopInitialized = true;
-    loadBattleHistories();
+    await loadBattleHistories();
     await Promise.all([
       loadRankedUsers(),
       battlePage ? loadBattleTmpState() : loadLineupHistories(),
@@ -754,6 +755,7 @@
       pendingBattleScoreGroup = null;
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
       battleTmpAvailable = true;
+      battleHistorySaved = false;
       resetBattleReveal(true);
       if (businessRuntime) {
         battleSyncStatus = 'saving';
@@ -771,6 +773,7 @@
       focusLineupResult();
     } catch (reason) {
       battleTmpSnapshot = null;
+      battleHistorySaved = false;
       error = messageFrom(reason, '无法生成对战');
     }
   }
@@ -955,6 +958,15 @@
     return value === null ? null : parseBattleTmpSnapshot(value, variant);
   }
 
+  async function loadBattleTmpHistoryStatus(): Promise<void> {
+    const status = await invoke<{ updatedAt: number; historySaved: boolean } | null>(
+      'load_battle_tmp_history_status',
+      { variant },
+    );
+    battleHistorySaved = status?.historySaved === true
+      && status.updatedAt === battleTmpSnapshot?.updatedAt;
+  }
+
   async function loadBattleTmpState(showEmptyError = false): Promise<boolean> {
     if (!businessRuntime || !battlePage) return false;
     battleSyncStatus = 'loading';
@@ -967,6 +979,7 @@
         return false;
       }
       applyBattleTmpSnapshot(state);
+      await loadBattleTmpHistoryStatus();
       battleSyncStatus = 'saved';
       error = '';
       return true;
@@ -1031,8 +1044,13 @@
         const current = await readBattleTmpState();
         battleTmpAvailable = current !== null;
         battleSyncStatus = 'saving';
-        await invoke('save_battle_tmp_state', { variant, state: snapshot });
+        await invoke('save_battle_tmp_state', {
+          variant,
+          state: snapshot,
+          historySaved: true,
+        });
         applyBattleTmpSnapshot(snapshot);
+        battleHistorySaved = true;
         battleSyncStatus = 'saved';
         error = '';
         loaded = true;
@@ -1104,65 +1122,95 @@
     focusLineupResult();
   }
 
-  function battleHistoryStorageKey(): string {
-    return `battle-history-v1:${variant}`;
-  }
-
-  function loadBattleHistories() {
-    battleHistories = [];
+  async function loadBattleHistories() {
+    if (!battlePage) return;
+    battleHistoryError = '';
     try {
-      const value = JSON.parse(localStorage.getItem(battleHistoryStorageKey()) ?? '[]') as unknown;
-      if (!Array.isArray(value)) return;
-      battleHistories = value.flatMap((entry): BattleHistory[] => {
-        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
-        const record = entry as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
-        if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) return [];
-        try {
-          return [{
-            id: record.id,
-            createdAt: Number(record.createdAt),
-            snapshot: parseBattleTmpSnapshot(record.snapshot, variant),
-          }];
-        } catch {
-          return [];
-        }
-      });
-    } catch {
+      battleHistories = await invoke<BattleHistory[]>('list_battle_histories', { variant });
+      if (battleHistories.length === 0) {
+        battleHistories = await migrateLegacyBattleHistories();
+      }
+    } catch (reason) {
       battleHistories = [];
+      battleHistoryError = messageFrom(reason, '无法读取对战历史数据库');
     }
   }
 
-  function saveBattleHistories(nextHistories: BattleHistory[]): boolean {
+  /** 将 0.2.0 之前保存在 localStorage 的历史迁移到关系化数据库。 */
+  async function migrateLegacyBattleHistories(): Promise<BattleHistory[]> {
+    let raw: string | null = null;
     try {
-      localStorage.setItem(battleHistoryStorageKey(), JSON.stringify(nextHistories));
-      battleHistoryError = '';
-      return true;
+      raw = localStorage.getItem(`battle-history-v1:${variant}`);
+    } catch {
+      return [];
+    }
+    if (!raw) return [];
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(value)) return [];
+    const legacy = value.flatMap((entry): BattleHistory[] => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+      const record = entry as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
+      if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) return [];
+      try {
+        const snapshot = parseBattleTmpSnapshot(record.snapshot, variant);
+        return [{
+          id: record.id,
+          createdAt: Number(record.createdAt),
+          updatedAt: snapshot.updatedAt,
+          snapshot,
+        }];
+      } catch {
+        return [];
+      }
+    });
+    for (const history of legacy) {
+      await invoke('save_battle_history', { variant, history });
+    }
+    try {
+      localStorage.removeItem(`battle-history-v1:${variant}`);
+    } catch {
+      // 迁移成功后无法删除旧键时不影响数据库作为唯一数据源。
+    }
+    return legacy.length > 0
+      ? await invoke<BattleHistory[]>('list_battle_histories', { variant })
+      : [];
+  }
+
+  async function archiveBattleHistory(
+    snapshot: BattleTmpSnapshot,
+    markCurrent = false,
+  ): Promise<boolean> {
+    const record: BattleHistory = {
+      id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
+      createdAt: snapshot.updatedAt,
+      updatedAt: snapshot.updatedAt,
+      snapshot: structuredClone(snapshot),
+    };
+    try {
+      await invoke('save_battle_history', {
+        variant,
+        history: record,
+        markCurrent,
+      });
+      await loadBattleHistories();
+      if (markCurrent) battleHistorySaved = true;
+      return !battleHistoryError;
     } catch (reason) {
-      battleHistoryError = messageFrom(reason, '无法写入对战历史本地存储');
+      battleHistoryError = messageFrom(reason, '无法保存对战历史数据库');
       return false;
     }
   }
 
-  function archiveBattleHistory(snapshot: BattleTmpSnapshot): boolean {
-    const record: BattleHistory = {
-      id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
-      createdAt: snapshot.updatedAt,
-      snapshot: structuredClone(snapshot),
-    };
-    const nextHistories = [
-      record,
-      ...battleHistories.filter((item) => item.snapshot.updatedAt !== snapshot.updatedAt),
-    ];
-    if (!saveBattleHistories(nextHistories)) return false;
-    battleHistories = nextHistories;
-    return true;
-  }
-
   /** 手动存档不会影响仍可继续编辑的临时签表。 */
-  function saveCurrentBattleHistory() {
-    if (!battleTmpSnapshot) return;
+  async function saveCurrentBattleHistory() {
+    if (!battleTmpSnapshot || battleHistorySaved) return;
     const previousHistoryError = battleHistoryError;
-    if (!archiveBattleHistory(battleTmpSnapshot)) error = battleHistoryError;
+    if (!await archiveBattleHistory(battleTmpSnapshot, true)) error = battleHistoryError;
     else if (error === previousHistoryError) error = '';
   }
 
@@ -1179,7 +1227,7 @@
     try {
       const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
       const snapshot = parseBattleHistoryTransfer(value, variant);
-      if (!archiveBattleHistory(snapshot)) throw new Error(battleHistoryError);
+      if (!await archiveBattleHistory(snapshot)) throw new Error(battleHistoryError);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
     } finally {
@@ -1221,24 +1269,31 @@
     pendingBattleHistoryDeletion = history;
   }
 
-  function confirmDeleteBattleHistory() {
+  async function confirmDeleteBattleHistory() {
     const history = pendingBattleHistoryDeletion;
     if (!history) return;
-    const nextHistories = battleHistories.filter((item) => item.id !== history.id);
-    if (saveBattleHistories(nextHistories)) {
-      battleHistories = nextHistories;
+    try {
+      await invoke('delete_battle_history', { variant, id: history.id });
+      await loadBattleHistories();
       if (battleHistoryView?.id === history.id) battleHistoryView = null;
+    } catch (reason) {
+      battleHistoryError = messageFrom(reason, '无法删除对战历史数据库');
     }
     pendingBattleHistoryDeletion = null;
   }
 
-  function confirmClearBattleHistories() {
+  async function confirmClearBattleHistories() {
     if (battleHistoryDeleteConfirmation === 1) {
       battleHistoryDeleteConfirmation = 2;
       return;
     }
     if (battleHistoryDeleteConfirmation !== 2) return;
-    if (saveBattleHistories([])) battleHistories = [];
+    try {
+      await invoke('clear_battle_histories', { variant });
+      await loadBattleHistories();
+    } catch (reason) {
+      battleHistoryError = messageFrom(reason, '无法清空对战历史数据库');
+    }
     battleHistoryDeleteConfirmation = 0;
   }
 
@@ -2283,7 +2338,7 @@
         battleHistoryDeleteConfirmation = 0;
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
-        confirmClearBattleHistories();
+        void confirmClearBattleHistories();
       }
       return;
     }
@@ -2294,7 +2349,7 @@
         pendingBattleHistoryDeletion = null;
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
-        confirmDeleteBattleHistory();
+        void confirmDeleteBattleHistory();
       }
       return;
     }
@@ -2815,6 +2870,7 @@
       clearLineupConfirmation = 0;
       battleTmpSnapshot = null;
       battleTmpAvailable = false;
+      battleHistorySaved = false;
       clearedBattlePreviewSignature = clearBattleSetup ? null : battlePreviewSignature;
       resetBattleReveal();
       lastConfirmedBattleScore = null;
@@ -2916,6 +2972,7 @@
     );
     const next = updateBattleTmpResult(battleTmpSnapshot, match.matchId, upResult, downResult);
     battleTmpSnapshot = next;
+    battleHistorySaved = false;
     if (!businessRuntime) return;
     battleSyncStatus = 'saving';
     try {
@@ -3505,7 +3562,7 @@
                 {#if hiddenBattleSlotCount > 0}
                   <UiButton size="md" tone="accent" on:click={revealAllBattleSlots}>显示全部</UiButton>
                 {/if}
-                <UiButton size="md" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
+                <UiButton size="md" tone="accent" disabled={battleHistorySaved} on:click={() => void saveCurrentBattleHistory()}>{battleHistorySaved ? '历史已保存' : '保存历史'}</UiButton>
                 <UiButton size="md" data-export="battle-excel" disabled={battleExporting !== null} on:click={exportBattleTmpExcel}>{battleExporting === 'excel' ? '导出中…' : 'Excel'}</UiButton>
                 <UiButton size="md" data-export="battle-json" disabled={battleExporting !== null} on:click={exportBattleTmpJson}>{battleExporting === 'json' ? '导出中…' : 'JSON'}</UiButton>
                 {#if nativeRuntime}

@@ -73,6 +73,13 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
       minute: '2-digit',
     }).format(new Date(snapshot.updatedAt)),
   ].join(' · ');
+  metadataCell.value = `updated_at：${new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(snapshot.updatedAt))} · ${metadataCell.value}`;
   metadataCell.font = { size: 10, color: { argb: 'FF59604E' } };
   metadataCell.alignment = { vertical: 'middle', horizontal: 'center' };
   worksheet.getRow(2).height = 22;

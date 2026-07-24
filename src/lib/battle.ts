@@ -91,6 +91,15 @@ export interface BattleTmpSnapshot {
   matches: BattleTmpMatch[];
 }
 
+/** 已保存的对战历史记录；签表内容与临时表共用同一份快照格式。 */
+export interface BattleHistory {
+  id: string;
+  createdAt: number;
+  /** 生成这条历史时临时签表的更新时间；与数据库 battle_history.updated_at 一致。 */
+  updatedAt: number;
+  snapshot: BattleTmpSnapshot;
+}
+
 export interface BattleTmpSlotOrigin {
   matchId: string;
   outcome: 'winner' | 'loser';

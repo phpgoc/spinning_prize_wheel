@@ -24,6 +24,7 @@ describe('对战签表 Excel', () => {
     const workbook = await loadWorkbook(await createBattleBracketWorkbook(snapshot));
     const worksheet = workbook.getWorksheet('对战签表')!;
     expect(worksheet.getCell('A1').value).toBe('单败对战签表');
+    expect(String(worksheet.getCell('A2').value)).toContain('updated_at：');
     expect(worksheet.getCell('A5').value).toBe('1/4');
     expect(worksheet.getCell('D5').value).toBe('半决赛');
     expect(worksheet.getCell('G5').value).toBe('决赛');

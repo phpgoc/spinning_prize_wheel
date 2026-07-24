@@ -1,7 +1,12 @@
 import type { Database, SqlJsStatic } from 'sql.js';
 import sqlJsUrl from 'sql.js/dist/sql-wasm.js?url';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { parseBattleTmpSnapshot, updateBattleTmpResult, type BattleTmpSnapshot } from './battle';
+import {
+  parseBattleTmpSnapshot,
+  updateBattleTmpResult,
+  type BattleHistory,
+  type BattleTmpSnapshot,
+} from './battle';
 import type { AppVariant } from './app-variant';
 import type {
   AliasRecord,
@@ -197,9 +202,33 @@ function executeCommand<T>(
     case 'clear_lineup_histories':
       db.run('DELETE FROM lineup_history WHERE variant = ?', [String(args.variant)]);
       return undefined as T;
+    case 'list_battle_histories':
+      return listBattleHistories(db, String(args.variant) as AppVariant) as T;
+    case 'save_battle_history':
+      saveBattleHistory(
+        db,
+        String(args.variant) as AppVariant,
+        args.history as BattleHistory,
+        args.markCurrent === true,
+      );
+      return undefined as T;
+    case 'delete_battle_history':
+      db.run('DELETE FROM battle_history WHERE id = ? AND variant = ?', [
+        String(args.id),
+        String(args.variant),
+      ]);
+      return undefined as T;
+    case 'clear_battle_histories':
+      db.run('DELETE FROM battle_history WHERE variant = ?', [String(args.variant)]);
+      return undefined as T;
+    case 'load_battle_tmp_history_status':
+      return loadBattleTmpHistoryStatus(db, String(args.variant) as AppVariant) as T;
+    case 'mark_battle_tmp_history_saved':
+      markBattleTmpHistorySaved(db, String(args.variant) as AppVariant, Number(args.updatedAt));
+      return undefined as T;
     case 'save_battle_tmp_state': {
       const state = parseBattleTmpSnapshot(args.state, String(args.variant) as AppVariant);
-      saveBattleTmpState(db, state);
+      saveBattleTmpState(db, state, args.historySaved === true);
       return undefined as T;
     }
     case 'load_battle_tmp_state':
@@ -319,17 +348,32 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     CREATE TABLE IF NOT EXISTS battle_tmp (
       variant TEXT PRIMARY KEY NOT NULL,
       updated_at INTEGER NOT NULL,
+      history_saved INTEGER NOT NULL DEFAULT 0,
       payload_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS battle_history (
+      id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      variant TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY (id, variant)
+    );
+    CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
+      ON battle_history(variant, created_at DESC);
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
+  if (!tableColumns(db, 'battle_tmp').has('history_saved')) {
+    db.run('ALTER TABLE battle_tmp ADD COLUMN history_saved INTEGER NOT NULL DEFAULT 0');
+  }
+  ensureBattleHistoryUpdatedAt(db);
 }
 
 function hasKnownDatabaseTable(db: Database): boolean {
   const result = db.exec(
     `SELECT name FROM sqlite_master
-     WHERE type = 'table' AND name IN ('schema_migrations', 'draw_history', 'user', 'lineup_history', 'battle_tmp')`,
+     WHERE type = 'table' AND name IN ('schema_migrations', 'draw_history', 'user', 'lineup_history', 'battle_tmp', 'battle_history')`,
   )[0];
   return Boolean(result?.values.length);
 }
@@ -338,7 +382,35 @@ function hasKnownDatabaseTable(db: Database): boolean {
 function normalizeImportedSchema(db: Database): BattleTmpSnapshot | null {
   normalizeImportedDrawHistory(db);
   normalizeImportedLineupHistory(db);
+  normalizeImportedBattleHistory(db);
   return normalizeImportedBattleState(db);
+}
+
+/** 将早期没有显式更新时间字段的对战历史转换为 0.2.0 表结构。 */
+function normalizeImportedBattleHistory(db: Database) {
+  if (!tableColumns(db, 'battle_history').size) return;
+  ensureBattleHistoryUpdatedAt(db);
+}
+
+function ensureBattleHistoryUpdatedAt(db: Database) {
+  const columns = tableColumns(db, 'battle_history');
+  if (!columns.size || columns.has('updated_at')) return;
+  db.run('ALTER TABLE battle_history ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
+  const rows = db.exec('SELECT id, variant, payload_json FROM battle_history')[0]?.values ?? [];
+  for (const [id, variant, payload] of rows) {
+    try {
+      const snapshot = parseBattleTmpSnapshot(
+        unwrapBattleHistorySnapshot(JSON.parse(String(payload))),
+        String(variant) as AppVariant,
+      );
+      db.run(
+        'UPDATE battle_history SET updated_at = ? WHERE id = ? AND variant = ?',
+        [snapshot.updatedAt, id, variant],
+      );
+    } catch {
+      // 导入校验阶段会报告损坏历史，迁移本身不应因单条坏记录中断数据库打开。
+    }
+  }
 }
 
 function normalizeImportedDrawHistory(db: Database) {
@@ -482,7 +554,8 @@ function validateImportedDatabase(db: Database) {
     user: ['id', 'name', 'rank'],
     alias: ['id', 'name', 'user_id'],
     lineup_history: ['id', 'created_at', 'variant', 'payload_json'],
-    battle_tmp: ['variant', 'updated_at', 'payload_json'],
+    battle_tmp: ['variant', 'updated_at', 'history_saved', 'payload_json'],
+    battle_history: ['id', 'created_at', 'updated_at', 'variant', 'payload_json'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const actual = tableColumns(db, table);
@@ -496,52 +569,103 @@ function validateImportedDatabase(db: Database) {
   queryJsonRows<CommonSelection>(db, 'SELECT payload_json FROM common_selection');
   queryJsonRows<SavedDraw>(db, 'SELECT payload_json FROM draw_history');
   queryJsonRows<SavedLineup>(db, 'SELECT payload_json FROM lineup_history');
+  listBattleHistories(db, 'standard');
+  listBattleHistories(db, 'caimi');
   listRankedUsers(db);
   loadBattleTmpState(db, 'standard');
   loadBattleTmpState(db, 'caimi');
 }
 
-/** 把旧 Web 版的常用候选一次性搬入 SQLite，迁移完成后不再读取旧键。 */
+/** 把旧 Web 版的常用候选和对战历史一次性搬入 SQLite，迁移完成后不再读取旧键。 */
 function migrateLegacyBrowserStorage(db: Database): boolean {
-  const migrated = Number(singleValue(
+  const commonMigrated = Number(singleValue(
     db,
     'SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 2)',
   ));
-  if (migrated) return false;
+  const battleMigrated = Number(singleValue(
+    db,
+    'SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 3)',
+  ));
+  if (commonMigrated && battleMigrated) return false;
 
   transaction(db, () => {
-    const storageKeys = [
-      'wheel-common-selections-v1',
-      ['for', 'tuna-wheel-common-selections-v1'].join(''),
-    ];
-    for (const key of storageKeys) {
-      let raw: string | null = null;
-      try {
-        raw = localStorage.getItem(key);
-      } catch {
-        // 禁用浏览器存储时跳过旧数据迁移，不影响 SQLite 初始化。
+    if (!commonMigrated) {
+      const storageKeys = [
+        'wheel-common-selections-v1',
+        ['for', 'tuna-wheel-common-selections-v1'].join(''),
+      ];
+      for (const key of storageKeys) {
+        let raw: string | null = null;
+        try {
+          raw = localStorage.getItem(key);
+        } catch {
+          // 禁用浏览器存储时跳过旧数据迁移，不影响 SQLite 初始化。
+        }
+        if (!raw) continue;
+        let selections: unknown;
+        try {
+          selections = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(selections)) continue;
+        for (const value of selections) {
+          if (!isLegacyCommonSelection(value)) continue;
+          db.run(
+            `INSERT OR IGNORE INTO common_selection (id, created_at, payload_json)
+             VALUES (?, ?, ?)`,
+            [value.id, value.createdAt, JSON.stringify(value)],
+          );
+        }
       }
-      if (!raw) continue;
-      let selections: unknown;
-      try {
-        selections = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (!Array.isArray(selections)) continue;
-      for (const value of selections) {
-        if (!isLegacyCommonSelection(value)) continue;
-        db.run(
-          `INSERT OR IGNORE INTO common_selection (id, created_at, payload_json)
-           VALUES (?, ?, ?)`,
-          [value.id, value.createdAt, JSON.stringify(value)],
-        );
-      }
+      db.run(
+        `INSERT INTO schema_migrations (version, applied_at)
+         VALUES (2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
+      );
     }
-    db.run(
-      `INSERT INTO schema_migrations (version, applied_at)
-       VALUES (2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
-    );
+    if (!battleMigrated) {
+      for (const variant of ['standard', 'caimi'] as const) {
+        let raw: string | null = null;
+        try {
+          raw = localStorage.getItem(`battle-history-v1:${variant}`);
+        } catch {
+          // 禁用浏览器存储时跳过旧对战历史迁移。
+        }
+        if (!raw) continue;
+        let histories: unknown;
+        try {
+          histories = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(histories)) continue;
+        for (const value of histories) {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+          const record = value as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
+          if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) continue;
+          try {
+            const snapshot = parseBattleTmpSnapshot(record.snapshot, variant);
+            const history: BattleHistory = {
+              id: record.id,
+              createdAt: Number(record.createdAt),
+              updatedAt: snapshot.updatedAt,
+              snapshot,
+            };
+            db.run(
+              `INSERT OR IGNORE INTO battle_history (id, created_at, updated_at, variant, payload_json)
+               VALUES (?, ?, ?, ?, ?)`,
+              [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify(snapshot)],
+            );
+          } catch {
+            // 单条旧记录损坏时跳过，不影响其余历史和数据库启动。
+          }
+        }
+      }
+      db.run(
+        `INSERT INTO schema_migrations (version, applied_at)
+         VALUES (3, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
+      );
+    }
   });
   return true;
 }
@@ -749,12 +873,87 @@ function saveLineupHistory(db: Database, variant: string, history: SavedLineup) 
   );
 }
 
-function saveBattleTmpState(db: Database, state: BattleTmpSnapshot) {
+function saveBattleHistory(
+  db: Database,
+  variant: AppVariant,
+  history: BattleHistory,
+  markCurrent: boolean,
+) {
+  transaction(db, () => {
+    const snapshot = parseBattleTmpSnapshot(history.snapshot, variant);
+    if (history.updatedAt !== snapshot.updatedAt) throw new Error('对战记录更新时间不一致');
+    if (markCurrent) {
+      const status = loadBattleTmpHistoryStatus(db, variant);
+      if (status && status.updatedAt !== snapshot.updatedAt) {
+        throw new Error('当前对战临时状态已改变，无法保存历史');
+      }
+      if (status?.historySaved) throw new Error('同一对战状态已经保存过历史');
+    }
+    db.run(
+      `INSERT OR REPLACE INTO battle_history (id, created_at, updated_at, variant, payload_json)
+       VALUES (?, ?, ?, ?, ?)`,
+      [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify(snapshot)],
+    );
+    if (markCurrent) markBattleTmpHistorySaved(db, variant, snapshot.updatedAt);
+  });
+}
+
+function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[] {
+  const rows = db.exec(
+    `SELECT id, created_at, updated_at, payload_json FROM battle_history
+     WHERE variant = ? ORDER BY created_at DESC`,
+    [variant],
+  )[0]?.values ?? [];
+  return rows.map(([id, createdAt, updatedAt, payload]) => {
+    const snapshot = parseBattleTmpSnapshot(
+      unwrapBattleHistorySnapshot(JSON.parse(String(payload))),
+      variant,
+    );
+    if (Number(updatedAt) !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
+    return {
+      id: String(id),
+      createdAt: Number(createdAt),
+      updatedAt: Number(updatedAt),
+      snapshot,
+    };
+  });
+}
+
+function unwrapBattleHistorySnapshot(value: unknown): unknown {
+  if (value && typeof value === 'object' && !Array.isArray(value) && 'snapshot' in value) {
+    return (value as { snapshot: unknown }).snapshot;
+  }
+  return value;
+}
+
+function saveBattleTmpState(db: Database, state: BattleTmpSnapshot, historySaved = false) {
   db.run(
-    `INSERT OR REPLACE INTO battle_tmp (variant, updated_at, payload_json)
-     VALUES (?, ?, ?)`,
-    [state.variant, state.updatedAt, JSON.stringify(state)],
+    `INSERT OR REPLACE INTO battle_tmp (variant, updated_at, history_saved, payload_json)
+     VALUES (?, ?, ?, ?)`,
+    [state.variant, state.updatedAt, historySaved ? 1 : 0, JSON.stringify(state)],
   );
+}
+
+function loadBattleTmpHistoryStatus(db: Database, variant: AppVariant): { updatedAt: number; historySaved: boolean } | null {
+  const result = db.exec(
+    'SELECT updated_at, history_saved FROM battle_tmp WHERE variant = ?',
+    [variant],
+  )[0]?.values[0];
+  if (!result) return null;
+  return { updatedAt: Number(result[0]), historySaved: Number(result[1]) !== 0 };
+}
+
+function markBattleTmpHistorySaved(db: Database, variant: AppVariant, updatedAt: number) {
+  db.run(
+    `UPDATE battle_tmp SET history_saved = 1
+     WHERE variant = ? AND updated_at = ?`,
+    [variant, updatedAt],
+  );
+  // sql.js 的 run 不返回影响行数；再次读取确认时间和标记，避免静默标记错误状态。
+  const status = loadBattleTmpHistoryStatus(db, variant);
+  if (!status || status.updatedAt !== updatedAt || !status.historySaved) {
+    throw new Error('当前对战临时状态已改变，无法标记历史');
+  }
 }
 
 function loadBattleTmpState(db: Database, variant: AppVariant): BattleTmpSnapshot | null {

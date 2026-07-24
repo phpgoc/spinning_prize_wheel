@@ -10,6 +10,7 @@ export interface MockRankedUserInput {
 export interface MockTauriInitialData {
   drawHistories?: unknown[];
   lineupHistories?: unknown[];
+  battleHistories?: unknown[];
   battleTmpState?: unknown;
   commandFailures?: Record<string, string[]>;
 }
@@ -58,6 +59,7 @@ export async function installTauriMock(
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
+      battleHistories: structuredClone(data.battleHistories ?? []) as unknown[],
       battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
       commandFailures: structuredClone(data.commandFailures ?? {}) as Record<string, string[]>,
       closeRequestedHandler: null as number | null,
@@ -381,8 +383,41 @@ export async function installTauriMock(
         state.lineupHistories = [];
         return null;
       }
+      if (cmd === 'list_battle_histories') return clone(state.battleHistories);
+      if (cmd === 'save_battle_history') {
+        if (args.markCurrent) {
+          if ((state as any).battleHistorySaved) throw new Error('同一对战状态已经保存过历史');
+          if (!state.battleTmpState || state.battleTmpState.updatedAt !== (args.history as any).snapshot.updatedAt) {
+            throw new Error('当前对战临时状态已改变，无法保存历史');
+          }
+          (state as any).battleHistorySaved = true;
+        }
+        state.battleHistories = [
+          clone(args.history),
+          ...state.battleHistories.filter((item: any) => item.id !== (args.history as any).id),
+        ];
+        return null;
+      }
+      if (cmd === 'delete_battle_history') {
+        state.battleHistories = state.battleHistories.filter((item: any) => item.id !== args.id);
+        return null;
+      }
+      if (cmd === 'clear_battle_histories') {
+        state.battleHistories = [];
+        return null;
+      }
+      if (cmd === 'load_battle_tmp_history_status') {
+        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) return null;
+        return { updatedAt: state.battleTmpState.updatedAt, historySaved: Boolean((state as any).battleHistorySaved) };
+      }
+      if (cmd === 'mark_battle_tmp_history_saved') {
+        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) throw new Error('当前没有可标记的对战临时状态');
+        (state as any).battleHistorySaved = state.battleTmpState.updatedAt === args.updatedAt;
+        return null;
+      }
       if (cmd === 'save_battle_tmp_state') {
         state.battleTmpState = clone(args.state);
+        (state as any).battleHistorySaved = args.historySaved === true;
         persistBattleState();
         return null;
       }
@@ -400,6 +435,7 @@ export async function installTauriMock(
         match.downResult = args.downResult;
         snapshot.updatedAt = args.updatedAt;
         state.battleTmpState = recomputeBattleTmp(snapshot);
+        (state as any).battleHistorySaved = false;
         persistBattleState();
         return clone(state.battleTmpState);
       }
