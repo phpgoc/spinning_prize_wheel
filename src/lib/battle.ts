@@ -609,7 +609,7 @@ export function createSeededBattlePlan(
   };
 }
 
-/** 猜蜜版把固定特权项首轮相邻位置换成已有排名中最弱的普通对手；原位置继续保留随机结果。 */
+/** 猜蜜版让固定特权项优先轮空，否则首轮匹配已有排名中最弱的普通对手。 */
 function applyCaimiWeakOpponents(
   positions: BattlePosition[],
   rankScores: readonly number[],
@@ -626,8 +626,21 @@ function applyCaimiWeakOpponents(
   for (const favoredPositionIndex of favoredPositionIndexes) {
     const opponentIndex = favoredPositionIndex ^ 1;
     const opponent = positions[opponentIndex];
-    // 轮空比任何弱对手都更有利，不把真实选手主动填进空位。
+    // 已经轮空时保留当前签位。
     if (!opponent?.participant) continue;
+    const bye = positions.find((position) => (
+      !position.fixed
+      && !position.participant
+      && !reservedOpponentIndexes.has(position.index)
+      && positions[position.index ^ 1]?.participant
+    ));
+    if (bye) {
+      // 把原对手移入空签位，既给特权项轮空，也不会制造双方都空缺的首轮。
+      bye.participant = opponent.participant;
+      opponent.participant = null;
+      reservedOpponentIndexes.add(opponentIndex);
+      continue;
+    }
     const weakest = positions
       .filter((position) => (
         position.participant

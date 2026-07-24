@@ -181,6 +181,65 @@ describe('对战签位', () => {
     }
   });
 
+  test('猜蜜版八人前四固定时识别三种特权名并固定进入第四种子区域', () => {
+    for (const favoredName of ['头号cai选手', '头号猜选手', '头号本选手']) {
+      const people = Array.from({ length: 8 }, (_, index) => ({
+        inputName: index === 0 ? favoredName : `第${index + 1}名`,
+        known: true,
+        userId: index + 1,
+        canonicalName: index === 0 ? favoredName : `第${index + 1}名`,
+        rank: index + 1,
+      }));
+      const inputNames = [...people].reverse().map((person) => person.inputName);
+      const orderedNames = orderCaimiBattleNamesByFixedRank(inputNames, people, 4);
+      const rankScores = orderedNames.map((name) => people.find((person) => person.inputName === name)!.rank);
+
+      for (const format of ['single-elimination', 'double-elimination'] as const) {
+        const plan = createSeededBattlePlan(orderedNames, {
+          format,
+          orderMode: 'rank',
+          fixedSeedCount: 4,
+          caimiRankScores: rankScores,
+          random: () => 0.25,
+        });
+        const favored = plan.positions.find((position) => position.participant?.name === favoredName)!;
+        expect(favored.index).toBe(2);
+        expect(favored.participant?.seed).toBe(4);
+        expect(plan.positions[favored.index ^ 1].participant?.name).toBe('第8名');
+      }
+    }
+  });
+
+  test('猜蜜版七人前二固定时在第二种子区域稳定获得首轮轮空', () => {
+    const favoredName = '头号猜选手';
+    const people = Array.from({ length: 7 }, (_, index) => ({
+      inputName: index === 0 ? favoredName : `第${index + 1}名`,
+      known: true,
+      userId: index + 1,
+      canonicalName: index === 0 ? favoredName : `第${index + 1}名`,
+      rank: index + 1,
+    }));
+    const inputNames = [...people].reverse().map((person) => person.inputName);
+    const orderedNames = orderCaimiBattleNamesByFixedRank(inputNames, people, 2);
+    const rankScores = orderedNames.map((name) => people.find((person) => person.inputName === name)!.rank);
+
+    for (const format of ['single-elimination', 'double-elimination'] as const) {
+      for (const randomValue of [0, 0.25, 0.9]) {
+        const plan = createSeededBattlePlan(orderedNames, {
+          format,
+          orderMode: 'rank',
+          fixedSeedCount: 2,
+          caimiRankScores: rankScores,
+          random: () => randomValue,
+        });
+        const favored = plan.positions.find((position) => position.participant?.name === favoredName)!;
+        expect(favored.index).toBe(4);
+        expect(favored.participant?.seed).toBe(2);
+        expect(plan.positions[favored.index ^ 1].participant).toBeNull();
+      }
+    }
+  });
+
   test('猜蜜版轮空时不主动塞入对手，且全随机不应用弱对手调度', () => {
     const namesWithBye = ['第1名猜选手', ...Array.from({ length: 8 }, (_, index) => `第${index + 2}名`)];
     const rankScoresWithBye = namesWithBye.map((_, index) => index + 1);
