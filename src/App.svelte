@@ -14,6 +14,11 @@
     type AppVariant,
   } from './lib/app-variant';
   import {
+    logicalRouteFromHtmlPath,
+    staticPageHref,
+    staticVariantHref,
+  } from './lib/file-navigation';
+  import {
     DEFAULT_UI_THEME,
     normalizeFontScale,
     normalizeUiTheme,
@@ -29,10 +34,13 @@
   const STORAGE_KEY = 'wheel-settings-v1';
   const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
 
-  let page: AppPage = pageFromPath(pathname);
-  let variant: AppVariant = variantFromPath(pathname);
+  let logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
+  let page: AppPage = pageFromPath(logicalPathname);
+  let variant: AppVariant = variantFromPath(logicalPathname);
   let tauriRuntime = isTauriRuntime();
   let desktopRuntime = tauriRuntime;
+  const staticBundleRuntime = typeof window !== 'undefined'
+    && (window.location.protocol === 'file:' || window.location.pathname.toLocaleLowerCase('en-US').endsWith('.html'));
   const businessRuntime = true;
   let wheelPage: WheelPage | null = null;
   let WheelPageComponent: WheelPageComponent | null = null;
@@ -51,8 +59,9 @@
   let persistedFontScale = fontScale;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
-  $: page = pageFromPath(pathname);
-  $: variant = variantFromPath(pathname);
+  $: logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
+  $: page = pageFromPath(logicalPathname);
+  $: variant = variantFromPath(logicalPathname);
   // SSR 只输出轻量应用壳；转盘及其画布逻辑留到浏览器按需加载。
   $: if (typeof window !== 'undefined' && page === 'wheel') void loadWheelPage();
   $: if (typeof document !== 'undefined') updateFavicon(variant);
@@ -165,16 +174,24 @@
     const link = document.querySelector<HTMLLinkElement>('link[data-app-favicon]');
     if (!link) return;
     link.type = nextVariant === 'caimi' ? 'image/png' : 'image/svg+xml';
-    link.href = nextVariant === 'caimi' ? caimiIconUrl : '/favicon.ico';
+    link.href = nextVariant === 'caimi' ? caimiIconUrl : (staticBundleRuntime ? './favicon.ico' : '/favicon.ico');
   }
 
   function navigatePage(nextPage: AppPage) {
     if (nextPage === page || (nextPage !== 'wheel' && (wheelSpinning || continuousRunning))) return;
+    if (staticBundleRuntime) {
+      location.href = staticPageHref(nextPage);
+      return;
+    }
     void goto(variantRoute(variant, nextPage));
   }
 
   function navigateVariant(nextVariant: AppVariant) {
     if (tauriRuntime || nextVariant === variant) return;
+    if (staticBundleRuntime) {
+      location.href = staticVariantHref(variant, nextVariant, page);
+      return;
+    }
     void goto(variantRoute(nextVariant, page));
   }
 
@@ -255,6 +272,7 @@
     {page}
     {variant}
     nativeRuntime={tauriRuntime}
+    {staticBundleRuntime}
     wheelBusy={wheelSpinning || continuousRunning}
     mode={drawMode}
     onNavigatePage={navigatePage}

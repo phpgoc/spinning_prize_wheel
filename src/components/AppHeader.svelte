@@ -1,10 +1,12 @@
 <script lang="ts">
   import { variantRoute, type AppPage, type AppVariant } from '../lib/app-variant';
+  import { staticPageHref } from '../lib/file-navigation';
   import type { DrawMode } from '../lib/types';
 
   export let page: AppPage;
   export let variant: AppVariant;
   export let nativeRuntime = false;
+  export let staticBundleRuntime = false;
   export let wheelBusy = false;
   export let mode: DrawMode = 'selected';
   export let onNavigatePage: (page: AppPage) => void;
@@ -13,7 +15,11 @@
 </script>
 
 <header class="topbar relative z-10">
-  <a class="brand" href={variantRoute(variant, 'wheel')} aria-label="转盘首页">
+  <a
+    class="brand"
+    href={staticBundleRuntime ? staticPageHref('wheel') : variantRoute(variant, 'wheel')}
+    aria-label="转盘首页"
+  >
     <span class="brand-mark"><i></i></span>
     <span><strong>转盘</strong></span>
   </a>
