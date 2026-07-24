@@ -271,12 +271,14 @@
     keyboardRankLabel = keyboardRankDropLabel();
   }
   $: visibleHistories = filterLineupHistories(lineupHistories, historyStart, historyEnd);
-  $: visibleBattleHistories = battleHistories.filter((history) => {
-    const date = new Date(history.createdAt);
-    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return (!battleHistoryStart || day >= battleHistoryStart)
-      && (!battleHistoryEnd || day < battleHistoryEnd);
-  });
+  $: visibleBattleHistories = battleHistories
+    .filter((history) => {
+      const date = new Date(history.createdAt);
+      const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      return (!battleHistoryStart || day >= battleHistoryStart)
+        && (!battleHistoryEnd || day < battleHistoryEnd);
+    })
+    .sort((left, right) => right.createdAt - left.createdAt || right.updatedAt - left.updatedAt);
   $: hiddenLineupCellKeys = (() => {
     if (!result || !slowRevealEnabled || allLineupCellsRevealed) {
       return new Set<string>();
@@ -996,24 +998,41 @@
       await performBattleLoad(target);
       return;
     }
+    if (battleTmpSnapshot && battleHistorySaved) {
+      await performBattleLoad(target);
+      return;
+    }
     if (battleTmpSnapshot) {
       pendingBattleLoad = { target, confirmation: 1 };
       return;
     }
     battleLoadingTarget = true;
     let current: BattleTmpSnapshot | null = null;
+    let currentHistorySaved = false;
     try {
       current = await readBattleTmpState();
       if (current) {
-        pendingBattleLoad = { target, confirmation: 1 };
-        return;
+        const status = await invoke<{ updatedAt: number; historySaved: boolean } | null>(
+          'load_battle_tmp_history_status',
+          { variant },
+        );
+        currentHistorySaved = status?.historySaved === true
+          && status.updatedAt === current.updatedAt;
       }
     } catch (reason) {
       battleSyncStatus = 'error';
-      error = messageFrom(reason, '无法确认当前对战临时表是否为空');
+      error = messageFrom(reason, '无法确认当前对战临时表状态');
       return;
     } finally {
       battleLoadingTarget = false;
+    }
+    if (current) {
+      if (currentHistorySaved) {
+        await performBattleLoad(target);
+      } else {
+        pendingBattleLoad = { target, confirmation: 1 };
+      }
+      return;
     }
     await performBattleLoad(target);
   }
@@ -2803,7 +2822,15 @@
   }
 
   function requestClearAll() {
-    if (battlePage ? battleTmpSnapshot : sourceText || confirmedSourceText) clearLineupConfirmation = 1;
+    if (!battlePage) {
+      if (sourceText || confirmedSourceText) clearLineupConfirmation = 1;
+      return;
+    }
+    if (battleTmpSnapshot && battleHistorySaved) {
+      void clearAll(false);
+      return;
+    }
+    if (battleTmpSnapshot) clearLineupConfirmation = 1;
   }
 
   function clearConfirmationTitle(step: 0 | 1 | 2 | 3): string {
