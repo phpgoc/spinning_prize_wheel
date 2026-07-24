@@ -162,6 +162,26 @@ test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page 
   await expect(page.locator('.ui-history-empty')).toHaveCSS('color', 'rgb(108, 91, 78)');
 });
 
+test('抽奖、分组和对战历史共用同一套日期、列表与底部操作组件', async ({ page }) => {
+  await openDesktopLineup(page);
+
+  await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
+  await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
+  await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+
+  await page.goto('/battle', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.locator('.desktop-accordion-toggle').filter({ hasText: '对战历史' }).click();
+  await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
+  await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+
+  await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
+  await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
+  await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
+  await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+});
+
 test('日期范围输入框有足够大的手写区和日历点击区，并随字号放大', async ({ page }) => {
   await openDesktopLineup(page);
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
@@ -611,6 +631,27 @@ test('桌面对战经过三次确认后可删除临时表并保留设置名单',
   expect(await page.evaluate(() => (
     JSON.parse(localStorage.getItem('battle-history-v1:standard') ?? '[]')
   ))).toEqual([]);
+});
+
+test('桌面对战第三次确认按 Escape 也会清空对战区', async ({ page }) => {
+  await openDesktopBattle(page);
+  await confirmDesktopNames(page, ['甲', '乙', '丙', '丁']);
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  await expect(page.locator('.battle-match')).toHaveCount(3);
+
+  await page.getByRole('button', { name: '清空对战' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: '3/3 是否同时清空设置和名单？' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await expect(page.locator('.names-field textarea')).toHaveValue('甲\n乙\n丙\n丁');
+  await expect(page.getByRole('button', { name: '清空对战' })).toHaveCount(0);
+  await expect(page.locator('.battle-preview-bracket')).toHaveAttribute('aria-label', '只读对战查看');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__E2E_TAURI_STATE__.battleTmpState
+  ))).toBeNull();
 });
 
 test('桌面对战第三次确认可同时清空设置和名单', async ({ page }) => {
@@ -1108,7 +1149,7 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await page.goto('/wheel');
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
-  const drawHistoryActions = page.locator('.sidebar-history-actions button');
+  const drawHistoryActions = page.locator('.history-content .ui-history-footer button');
   await expect(drawHistoryActions).toHaveCount(4);
   const drawHistoryActionWidths = await drawHistoryActions.evaluateAll((buttons) => (
     buttons.map((button) => button.getBoundingClientRect().width)
@@ -1173,7 +1214,7 @@ test('抽奖历史导出期间锁定单条和汇总按钮，避免重复写文�
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
   const historyPanel = page.locator('.history-content');
   const summaryJson = historyPanel.locator('[data-export="draw-history-summary-json"]');
-  const cardJson = historyPanel.locator('.draw-history-card [data-export="draw-history-json"]');
+  const cardJson = historyPanel.locator('.ui-history-row [data-export="draw-history-json"]');
   await expect(summaryJson).toBeVisible();
   await expect(cardJson).toHaveCount(1);
 

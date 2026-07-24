@@ -5,17 +5,26 @@
   export let title: string;
   export let hint = '查看 →';
   export let active = false;
+  export let selectable = true;
   export let ariaLabel: string | undefined = undefined;
 
   const dispatch = createEventDispatcher<{ select: void }>();
 </script>
 
 <article class="ui-history-row" class:active>
-  <button type="button" class="ui-history-summary" aria-label={ariaLabel} on:click={() => dispatch('select')}>
-    <span><i></i>{eyebrow}</span>
-    <strong>{title}</strong>
-    <small>{hint}</small>
-  </button>
+  {#if selectable}
+    <button type="button" class="ui-history-summary" aria-label={ariaLabel} on:click={() => dispatch('select')}>
+      <span><i></i>{eyebrow}</span>
+      <strong>{title}</strong>
+      <small>{hint}</small>
+    </button>
+  {:else}
+    <div class="ui-history-summary" aria-label={ariaLabel}>
+      <span><i></i>{eyebrow}</span>
+      <strong>{title}</strong>
+      <small>{hint}</small>
+    </div>
+  {/if}
   <div class="ui-history-actions"><slot /></div>
 </article>
 

@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import BattlePage from '../BattlePage.svelte';
+  import { isTauriRuntime } from '../../lib/runtime';
 
-  let desktopRuntime = false;
-
-  onMount(() => {
-    desktopRuntime = '__TAURI_INTERNALS__' in window;
-  });
+  const desktopRuntime = isTauriRuntime();
+  const businessRuntime = true;
 </script>
 
-<BattlePage {desktopRuntime} variant="standard" />
+<BattlePage {desktopRuntime} {businessRuntime} variant="standard" />

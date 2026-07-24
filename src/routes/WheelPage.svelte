@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, isTauriRuntime } from '../lib/runtime';
   import { onDestroy, onMount, tick } from 'svelte';
   import LuxuryWheel from '../components/LuxuryWheel.svelte';
   import MonopolyWheel from '../components/MonopolyWheel.svelte';
   import PrizeEditor from '../components/PrizeEditor.svelte';
   import UiButton from '../components/ui/UiButton.svelte';
   import UiConfirmDialog from '../components/ui/UiConfirmDialog.svelte';
-  import UiDateRange from '../components/ui/UiDateRange.svelte';
+  import UiHistoryPanel from '../components/ui/UiHistoryPanel.svelte';
+  import UiHistoryRow from '../components/ui/UiHistoryRow.svelte';
   import UiTextarea from '../components/ui/UiTextarea.svelte';
   import UiThemePicker from '../components/ui/UiThemePicker.svelte';
   import Wheel from '../components/Wheel.svelte';
@@ -70,8 +71,11 @@
   } from '../lib/types';
 
   export let desktopRuntime = false;
+  export let businessRuntime = desktopRuntime;
   export let variant: AppVariant = 'standard';
   export let active = true;
+
+  const nativeRuntime = isTauriRuntime();
 
   const STORAGE_KEY = 'wheel-settings-v1';
   const COMMON_SELECTION_STORAGE_KEY = 'wheel-common-selections-v1';
@@ -399,7 +403,7 @@
     commonSelectionLoading = true;
     commonSelectionError = '';
     try {
-      const loaded = desktopRuntime
+      const loaded = businessRuntime
         ? await invoke<unknown[]>('list_common_selections')
         : JSON.parse(
           localStorage.getItem(COMMON_SELECTION_STORAGE_KEY)
@@ -449,7 +453,7 @@
     commonSelectionSaving = true;
     commonSelectionError = '';
     try {
-      if (desktopRuntime) {
+      if (businessRuntime) {
         await invoke('save_common_selection', { selection });
       } else {
         saveCommonSelectionsToBrowser([selection, ...commonSelections]);
@@ -460,7 +464,7 @@
       result = {
         eyebrow: '常用候选已保存',
         title: selection.name,
-        detail: `${selection.prizes.length} 个候选项已保存到${desktopRuntime ? '本地文件' : '浏览器存储'}。`,
+        detail: `${selection.prizes.length} 个候选项已保存到本地数据库。`,
         tone: 'success',
       };
     } catch (error) {
@@ -490,7 +494,7 @@
     if (commonSelectionSaving) return;
     commonSelectionError = '';
     try {
-      if (desktopRuntime) {
+      if (businessRuntime) {
         await invoke('delete_common_selection', { id: selection.id });
       } else {
         saveCommonSelectionsToBrowser(commonSelections.filter((item) => item.id !== selection.id));
@@ -507,12 +511,6 @@
   async function loadDrawHistories() {
     drawHistoryLoading = true;
     drawHistoryError = '';
-    if (!desktopRuntime) {
-      drawHistories = [];
-      drawHistoryLoading = false;
-      return;
-    }
-
     try {
       const loaded = await invoke<unknown[]>('list_draw_histories', { variant });
       drawHistories = Array.isArray(loaded) ? loaded.filter(isSavedDraw) : [];
@@ -524,7 +522,7 @@
   }
 
   async function archiveCurrentDrawHistory(): Promise<boolean> {
-    if (!desktopRuntime || validCompleted === 0 || drawHistorySaving) return false;
+    if (!businessRuntime || validCompleted === 0 || drawHistorySaving) return false;
     const draw: SavedDraw = {
       version: 1,
       id: currentDrawId,
@@ -586,7 +584,7 @@
     if (isSpinning || drawHistorySaving) return;
     stopContinuousDraw();
     let archived = false;
-    if (desktopRuntime && autoSaveHistory && validCompleted > 0) {
+    if (businessRuntime && autoSaveHistory && validCompleted > 0) {
       const saved = await archiveCurrentDrawHistory();
       if (!saved) return;
       archived = true;
@@ -627,7 +625,7 @@
   }
 
   async function toggleAutoSaveHistory() {
-    if (!desktopRuntime || isSpinning || drawHistorySaving) return;
+    if (!businessRuntime || isSpinning || drawHistorySaving) return;
     const completedBeforeArchive = validCompleted;
     const change = await changeAutoSaveHistory(
       autoSaveHistory,
@@ -670,7 +668,7 @@
 
   async function confirmDrawHistoryDeletion() {
     const pending = pendingDrawHistoryDeletion;
-    if (!desktopRuntime || !pending || drawHistoryDeleting) return;
+    if (!businessRuntime || !pending || drawHistoryDeleting) return;
     if (pending.kind === 'all' && pending.confirmation === 1) {
       pendingDrawHistoryDeletion = { kind: 'all', confirmation: 2 };
       return;
@@ -683,7 +681,7 @@
   }
 
   async function deleteDrawHistory(draw: SavedDraw) {
-    if (!desktopRuntime) return;
+    if (!businessRuntime) return;
     drawHistoryError = '';
     try {
       await invoke('delete_draw_history', { id: draw.id, variant });
@@ -694,7 +692,7 @@
   }
 
   async function clearDrawHistories() {
-    if (!desktopRuntime || drawHistories.length === 0) return;
+    if (!businessRuntime || drawHistories.length === 0) return;
     drawHistoryError = '';
     try {
       await invoke('clear_draw_histories', { variant });
@@ -918,7 +916,7 @@
 
   async function togglePrizeParticipation(id: string) {
     if (drawHistorySaving || isSpinning) return;
-    const shouldArchive = desktopRuntime && autoSaveHistory && records.length > 0;
+    const shouldArchive = businessRuntime && autoSaveHistory && records.length > 0;
     if (!shouldArchive && guardCandidateChanges()) return;
     const selected = prizes.find((prize) => prize.id === id);
     if (!selected) return;
@@ -1002,7 +1000,7 @@
   }
 
   function rewardAmountIsLocked(): boolean {
-    return isRewardAmountLocked(desktopRuntime, records.length, isSpinning);
+    return isRewardAmountLocked(businessRuntime, records.length, isSpinning);
   }
 
   function showRewardAmountLocked() {
@@ -2088,7 +2086,7 @@
         {/if}
       </section>
 
-      {#if desktopRuntime}
+      {#if businessRuntime}
         <div class="section-divider"></div>
         <section class="setting-block auto-save-setting">
           <div class="setting-title-row">
@@ -2477,7 +2475,7 @@
             <div class="side-stats-actions">
               <UiButton size="sm" data-export="stats-excel" disabled={validCompleted === 0 || wheelExporting !== null} on:click={exportCurrentStatsExcel}>{wheelExporting === 'stats-excel' ? '导出中…' : 'Excel'}</UiButton>
               <UiButton size="sm" data-export="stats-json" disabled={validCompleted === 0 || wheelExporting !== null} on:click={exportCurrentStatsJson}>{wheelExporting === 'stats-json' ? '导出中…' : 'JSON'}</UiButton>
-              {#if desktopRuntime}
+              {#if nativeRuntime}
                 <UiButton size="sm" title="在资源管理器中打开下载目录" on:click={openDrawDownloadFolder}>打开下载</UiButton>
               {/if}
             </div>
@@ -2607,65 +2605,62 @@
       <div class="accordion-content history-content">
         <div class="panel-heading">
           <div><h2>历史</h2></div>
-          {#if desktopRuntime}<span class="count-badge">{filteredDrawHistories.length}</span>{/if}
+          {#if businessRuntime}
+            <span class="count-badge">{drawHistoryStart || drawHistoryEnd
+              ? `查询条件下共 ${filteredDrawHistories.length} 条`
+              : `共 ${drawHistories.length} 条`}</span>
+          {/if}
         </div>
 
-        {#if !desktopRuntime}
+        {#if !businessRuntime}
           <div class="sidebar-empty-state web-history-unavailable">
             <i>◷</i>
             <strong>网页版无法查看历史</strong>
           </div>
-        {:else if drawHistoryLoading}
-          <div class="sidebar-empty-state"><i>···</i><strong>正在读取历史</strong></div>
         {:else}
-          {#if drawHistoryError}
-            <div class="common-error">{drawHistoryError}</div>
-          {/if}
-
-          <UiDateRange bind:start={drawHistoryStart} bind:end={drawHistoryEnd} />
-
-          {#if drawHistories.length === 0}
-            <div class="sidebar-empty-state"><i>◷</i><strong>还没有保存的抽奖</strong></div>
-          {:else if filteredDrawHistories.length === 0}
-            <div class="sidebar-empty-state"><i>◷</i><strong>日期范围内没有记录</strong></div>
-          {:else}
-            <div class="draw-history-list">
+          <UiHistoryPanel
+            bind:start={drawHistoryStart}
+            bind:end={drawHistoryEnd}
+            loading={drawHistoryLoading}
+            loadingText="正在读取历史…"
+            empty={drawHistories.length === 0 || filteredDrawHistories.length === 0}
+            emptyText={drawHistories.length === 0 ? '还没有保存的抽奖' : '日期范围内没有记录'}
+          >
+            <svelte:fragment slot="notice">
+              {#if drawHistoryError}<div class="common-error" role="alert">{drawHistoryError}</div>{/if}
+            </svelte:fragment>
+            {#if drawHistories.length > 0 && filteredDrawHistories.length > 0}
               {#each visibleDrawHistories as draw (draw.id)}
                 {@const summary = drawHistorySummary(draw)}
-                <article class="draw-history-card">
-                  <div class="draw-history-heading">
-                    <strong>{formatSelectionDate(draw.createdAt)}</strong>
-                    <span>{draw.prizes.length} 项 · {summary.completed} 次</span>
-                    <button
-                      type="button"
-                      aria-label={`删除 ${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
-                      title="删除"
-                      on:click={() => requestDeleteDrawHistory(draw)}
-                    >×</button>
-                  </div>
-                  <div class="draw-history-bottom">
-                    <p title={draw.prizes.map((prize) => prize.name).join('、')}>{draw.prizes.map((prize) => prize.name).join('、') || '空名单'}</p>
-                    <div class="draw-history-export-actions">
-                      <UiButton
-                        size="xs"
-                        data-export="draw-history-excel"
-                        disabled={drawHistoryExporting !== null}
-                        on:click={() => exportDrawHistoryExcel(draw)}
-                      >{drawHistoryExporting === `draw:${draw.id}:excel` ? '导出中…' : 'Excel'}</UiButton>
-                      <UiButton
-                        size="xs"
-                        data-export="draw-history-json"
-                        disabled={drawHistoryExporting !== null}
-                        on:click={() => exportDrawHistoryJson(draw)}
-                      >{drawHistoryExporting === `draw:${draw.id}:json` ? '导出中…' : 'JSON'}</UiButton>
-                    </div>
-                  </div>
-                </article>
+                <UiHistoryRow
+                  selectable={false}
+                  eyebrow={formatSelectionDate(draw.createdAt)}
+                  title={`${draw.prizes.length} 项 · ${summary.completed} 次`}
+                  hint={draw.prizes.map((prize) => prize.name).join('、') || '空名单'}
+                  ariaLabel={`${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
+                >
+                  <UiButton
+                    size="xs"
+                    data-export="draw-history-excel"
+                    disabled={drawHistoryExporting !== null}
+                    on:click={() => exportDrawHistoryExcel(draw)}
+                  >{drawHistoryExporting === `draw:${draw.id}:excel` ? '导出中…' : 'Excel'}</UiButton>
+                  <UiButton
+                    size="xs"
+                    data-export="draw-history-json"
+                    disabled={drawHistoryExporting !== null}
+                    on:click={() => exportDrawHistoryJson(draw)}
+                  >{drawHistoryExporting === `draw:${draw.id}:json` ? '导出中…' : 'JSON'}</UiButton>
+                  <UiButton
+                    size="xs"
+                    tone="danger"
+                    aria-label={`删除 ${formatSelectionDate(draw.createdAt)} 的抽奖历史`}
+                    on:click={() => requestDeleteDrawHistory(draw)}
+                  >删除</UiButton>
+                </UiHistoryRow>
               {/each}
-            </div>
-
-          {/if}
-          <div class="history-actions sidebar-history-actions">
+            {/if}
+            <svelte:fragment slot="actions">
             <UiButton
               size="sm"
               data-export="draw-history-summary-excel"
@@ -2678,11 +2673,12 @@
               disabled={filteredDrawHistories.length === 0 || drawHistoryExporting !== null}
               on:click={exportDrawHistoriesJson}
             >{drawHistoryExporting === 'summary-json' ? '导出中…' : '汇总 JSON'}</UiButton>
-            {#if desktopRuntime}
+            {#if nativeRuntime}
               <UiButton size="sm" on:click={openDrawDownloadFolder}>打开下载</UiButton>
             {/if}
             <UiButton size="sm" tone="danger" disabled={drawHistories.length === 0} on:click={requestClearDrawHistories}>清空历史</UiButton>
-          </div>
+            </svelte:fragment>
+          </UiHistoryPanel>
         {/if}
       </div>
       {/if}
@@ -2763,7 +2759,7 @@
           <h3>分组页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>
-            {#if desktopRuntime}
+            {#if businessRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭分组历史</span><kbd>Z</kbd></div>
             {/if}
@@ -2775,7 +2771,7 @@
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦对战区</span><kbd>X</kbd></div>
             <div><span>聚焦名单</span><kbd>W</kbd></div>
-            {#if desktopRuntime}
+            {#if businessRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭对战历史</span><kbd>Z</kbd></div>
             {/if}
@@ -2793,7 +2789,7 @@
           </div>
         </section>
 
-        {#if desktopRuntime}
+        {#if businessRuntime}
           <section class="shortcut-group shortcut-ranking">
             <h3>排名</h3>
             <div class="shortcut-list sidebar-shortcut-list">

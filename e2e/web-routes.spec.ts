@@ -50,7 +50,7 @@ test('网页版各个正式地址均可直接打开', async ({ page }) => {
       route.caimi ? /caimi-variant/ : /^(?!.*caimi-variant).*$/,
     );
     await expect(page.locator('.app-shell')).not.toHaveClass(/desktop-runtime/);
-    await expect(page.locator('.page-switch').getByRole('button', { name: '对战' })).toHaveCount(0);
+    await expect(page.locator('.page-switch').getByRole('button', { name: '对战' })).toHaveCount(1);
   }
 });
 
@@ -87,10 +87,12 @@ test('桌面端 Alt 左右按转盘、分组、对战顺序循环切换', async 
   await expect(page.locator('[data-e2e-wheel="persistent"]')).toBeVisible();
 });
 
-test('网页版对战页只提示使用桌面版', async ({ page }) => {
+test('网页版对战页启用完整签表和本地数据库能力', async ({ page }) => {
   await page.goto('/battle');
-  await expect(page.getByRole('main').getByText('对战仅支持桌面版')).toBeVisible();
-  await expect(page.locator('.battle-config, .battle-result, .battle-sidebar')).toHaveCount(0);
+  await expect(page.locator('.battle-config')).toBeVisible();
+  await expect(page.locator('.battle-result')).toBeVisible();
+  await expect(page.locator('.battle-sidebar')).toBeVisible();
+  await expect(page.locator('.desktop-accordion-toggle').filter({ hasText: '排名' })).toBeVisible();
 });
 
 test('网页版不显示无法使用的打开下载按钮', async ({ page }) => {
@@ -101,7 +103,7 @@ test('网页版不显示无法使用的打开下载按钮', async ({ page }) => 
   await page.goto('/grouping');
   await page.locator('.names-field textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.names-field textarea').press('Alt+Enter');
-  await page.getByRole('button', { name: '开始分组' }).click();
+  await page.getByRole('button', { name: '按输入顺序分组' }).click();
   await expect(page.getByRole('button', { name: '打开下载' })).toHaveCount(0);
 });
 
@@ -112,7 +114,7 @@ test('分组和对战直达时不预加载转盘页面模块', async ({ page }) 
   expect(groupingResources.some((name) => name.includes('/src/routes/WheelPage.svelte'))).toBe(false);
 
   await page.goto('/battle');
-  await expect(page.getByText('对战仅支持桌面版')).toBeVisible();
+  await expect(page.locator('.battle-result')).toBeVisible();
   const battleResources = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
   expect(battleResources.some((name) => name.includes('/src/routes/WheelPage.svelte'))).toBe(false);
 });
@@ -535,7 +537,7 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   await expect(rows).toHaveCount(8);
   const previewOverflow = await preview.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(previewOverflow).toBeLessThanOrEqual(1);
-  await page.getByRole('button', { name: '开始分组' }).click();
+  await page.getByRole('button', { name: '按输入顺序分组' }).click();
   const result = page.locator('.lineup-result');
   const resultOverflow = await result.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(resultOverflow).toBeLessThanOrEqual(1);

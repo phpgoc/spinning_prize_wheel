@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import GroupingWorkspace from '../../components/GroupingWorkspace.svelte';
+  import { isTauriRuntime } from '../../lib/runtime';
 
-  let desktopRuntime = false;
-
-  onMount(() => {
-    desktopRuntime = '__TAURI_INTERNALS__' in window;
-  });
+  const desktopRuntime = isTauriRuntime();
+  const businessRuntime = true;
 </script>
 
-<GroupingWorkspace {desktopRuntime} variant="standard" />
+<GroupingWorkspace {desktopRuntime} {businessRuntime} variant="standard" />

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { onMount, tick } from 'svelte';
   import type { AppVariant } from '../lib/app-variant';
@@ -71,10 +70,14 @@
   } from '../lib/random-lineup';
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
   import type { RankedUser, ResolvedLineupName, SavedLineup } from '../lib/types';
+  import { invoke, isTauriRuntime } from '../lib/runtime';
 
   export let desktopRuntime = false;
+  export let businessRuntime = desktopRuntime;
   export let variant: AppVariant = 'standard';
   export let purpose: 'grouping' | 'battle' = 'grouping';
+
+  const nativeRuntime = isTauriRuntime();
 
   type LineupOrderMode = 'rank' | 'input';
   type BattleColorName = 'background' | 'text' | 'participant' | 'match';
@@ -234,13 +237,13 @@
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
   $: sourceTextDirty = sourceText !== confirmedSourceText;
   $: namesSignature = names.join('\u0000');
-  $: desktopRankSignature = desktopRuntime
+  $: desktopRankSignature = businessRuntime
     ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
     : 'web';
   $: inputSignature = `${groupCount}|${namesSignature}|${desktopRankSignature}`;
   $: resultOutdated = result !== null && resultSignature !== inputSignature;
   $: tierPreview = names.length > 0 ? Math.ceil(names.length / Math.max(2, Number(groupCount) || 2)) : 0;
-  $: unresolvedPreviewCount = desktopRuntime
+  $: unresolvedPreviewCount = businessRuntime
     ? unresolvedLineupNameCount(names, resolvedNames)
     : 0;
   $: previewRows = names.map((name, index) => ({
@@ -299,20 +302,20 @@
     )));
   })();
   $: hiddenBattleSlotCount = hiddenBattleSlotKeys.size;
-  $: groupingUnrankedCount = desktopRuntime
+  $: groupingUnrankedCount = businessRuntime
     ? unrankedLineupNameCount(names, resolvedNames)
     : 0;
   $: groupingUnresolvedCapacity = lineupLastTierSize(names.length, Number(groupCount));
   $: groupingUnresolvedOverflow = Math.max(0, groupingUnrankedCount - groupingUnresolvedCapacity);
   $: orderAvailability = lineupOrderAvailability(
     names.length,
-    desktopRuntime,
+    businessRuntime,
     resolvingNames,
     unresolvedPreviewCount,
   );
   $: groupingOrderAvailability = lineupOrderAvailability(
     names.length,
-    desktopRuntime,
+    businessRuntime,
     resolvingNames,
     groupingUnrankedCount,
     groupingUnresolvedCapacity,
@@ -325,7 +328,7 @@
   }
   $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
   $: battleRankedNameCount = rankedBattleLineupNameCount(names, resolvedNames);
-  $: battleRankCountReady = desktopRuntime
+  $: battleRankCountReady = businessRuntime
     && names.length >= 4
     && battleRankedNameCount >= battleConfiguredFixedCount;
   $: battleRankReady = battleRankCountReady && !resolvingNames && !sourceTextDirty;
@@ -359,7 +362,7 @@
       ? rankScoresForLineup(battleOrderedPreviewNames, resolvedNames)
       : undefined,
   );
-  $: if (mounted && desktopRuntime && !desktopInitialized) {
+  $: if (mounted && businessRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
   $: if (mounted && battlePage && battleColorLoadedVariant !== variant) {
@@ -372,10 +375,12 @@
     return () => {
       if (battleFullscreen) {
         document.body.style.overflow = bodyOverflowBeforeBattleFullscreen;
-        if (desktopRuntime) {
+        if (nativeRuntime) {
           void getCurrentWindow().setFullscreen(false).catch((reason) => {
             console.error('无法在离开对战页时退出窗口全屏', reason);
           });
+        } else if (document.fullscreenElement) {
+          void document.exitFullscreen().catch(() => undefined);
         }
       }
     };
@@ -484,7 +489,13 @@
     if (!battlePage || battleFullscreen === fullscreen || battleFullscreenChanging) return;
     battleFullscreenChanging = true;
     try {
-      if (desktopRuntime) await getCurrentWindow().setFullscreen(fullscreen);
+      if (nativeRuntime) {
+        await getCurrentWindow().setFullscreen(fullscreen);
+      } else if (fullscreen && document.fullscreenEnabled && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else if (!fullscreen && document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
       if (fullscreen) {
         bodyOverflowBeforeBattleFullscreen = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
@@ -518,7 +529,7 @@
   }
 
   async function resolveNames() {
-    if (!desktopRuntime || names.length === 0) {
+    if (!businessRuntime || names.length === 0) {
       resolutionRequest += 1;
       resolvedNames = [];
       resolvingNames = false;
@@ -602,7 +613,7 @@
   }
 
   function orderedNamesForGrouping(orderMode: LineupOrderMode): string[] {
-    if (!desktopRuntime) return names;
+    if (!businessRuntime) return names;
     if (orderMode === 'input') {
       return resolvedNames.map((person) => person.inputName);
     }
@@ -613,7 +624,7 @@
     orderedNames: readonly string[],
     currentPeople: readonly ResolvedLineupName[] = resolvedNames,
   ): number[] {
-    if (!desktopRuntime) return orderedNames.map((_, index) => index + 1);
+    if (!businessRuntime) return orderedNames.map((_, index) => index + 1);
     const rankByName = new Map(
       currentPeople.flatMap((person) => (
         person.rank === null
@@ -626,11 +637,11 @@
     ));
   }
 
-  async function generate(orderMode: LineupOrderMode = desktopRuntime ? 'rank' : 'input') {
+  async function generate(orderMode: LineupOrderMode = businessRuntime ? 'rank' : 'input') {
     error = '';
     historyStatus = 'idle';
     try {
-      if (desktopRuntime) {
+      if (businessRuntime) {
         const unresolvedCount = unrankedLineupNameCount(names, resolvedNames);
         const allowedUnresolvedCount = lineupLastTierSize(names.length, Number(groupCount));
         if (
@@ -667,7 +678,7 @@
         },
         result,
       };
-      const resolvedSignature = desktopRuntime
+      const resolvedSignature = businessRuntime
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
@@ -704,7 +715,7 @@
             battleConfiguredFixedCount,
             variant,
           )
-          : desktopRuntime ? resolvedNames.map((person) => person.inputName) : names;
+          : businessRuntime ? resolvedNames.map((person) => person.inputName) : names;
       const createdPlan = battleFormat === 'avoid-first-pair'
         ? createAvoidSameGroupPlan(orderedNames)
         : createSeededBattlePlan(orderedNames, {
@@ -723,7 +734,7 @@
       battleTmpSnapshot = createBattleTmpSnapshot(variant, createdPlan);
       battleTmpAvailable = true;
       resetBattleReveal(true);
-      if (desktopRuntime) {
+      if (businessRuntime) {
         battleSyncStatus = 'saving';
         try {
           await invoke('save_battle_tmp_state', { variant, state: battleTmpSnapshot });
@@ -757,7 +768,7 @@
 
   async function saveCurrentHistory() {
     if (
-      !desktopRuntime
+      !businessRuntime
       || !result
       || !resultHistory
       || resultOutdated
@@ -835,7 +846,7 @@
   }
 
   async function loadRankedUsers() {
-    if (!desktopRuntime) return;
+    if (!businessRuntime) return;
     rankingLoading = true;
     rankingError = '';
     try {
@@ -924,7 +935,7 @@
   }
 
   async function loadBattleTmpState(showEmptyError = false): Promise<boolean> {
-    if (!desktopRuntime || !battlePage) return false;
+    if (!businessRuntime || !battlePage) return false;
     battleSyncStatus = 'loading';
     try {
       const state = await readBattleTmpState();
@@ -988,7 +999,7 @@
   }
 
   async function performBattleLoad(target: BattleLoadTarget) {
-    if (!desktopRuntime || !battlePage || battleLoadingTarget) return;
+    if (!businessRuntime || !battlePage || battleLoadingTarget) return;
     battleLoadingTarget = true;
     try {
       let loaded = false;
@@ -1094,7 +1105,7 @@
         } catch {
           return [];
         }
-      }).slice(0, 20);
+      });
     } catch {
       battleHistories = [];
     }
@@ -1120,7 +1131,7 @@
     const nextHistories = [
       record,
       ...battleHistories.filter((item) => item.snapshot.updatedAt !== snapshot.updatedAt),
-    ].slice(0, 20);
+    ];
     if (!saveBattleHistories(nextHistories)) return false;
     battleHistories = nextHistories;
     return true;
@@ -1211,7 +1222,7 @@
   }
 
   async function loadLineupHistories() {
-    if (!desktopRuntime) return;
+    if (!businessRuntime) return;
     historyLoading = true;
     historyError = '';
     try {
@@ -1235,7 +1246,7 @@
 
   async function confirmLineupHistoryDeletion() {
     const pending = pendingLineupHistoryDeletion;
-    if (!desktopRuntime || !pending || historyDeleting) return;
+    if (!businessRuntime || !pending || historyDeleting) return;
     if (pending.kind === 'all' && pending.confirmation === 1) {
       pendingLineupHistoryDeletion = { kind: 'all', confirmation: 2 };
       return;
@@ -1280,7 +1291,7 @@
 
   async function addUnknownPerson(name: string) {
     const normalizedName = name.trim();
-    if (!desktopRuntime || !normalizedName || rankingSaving) return;
+    if (!businessRuntime || !normalizedName || rankingSaving) return;
     cancelAliasLink();
     cancelKeyboardRankMove();
     resetUserForm();
@@ -2181,7 +2192,9 @@
     if (clearLineupConfirmation) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        clearLineupConfirmation = 0;
+        // 第三次确认的取消按钮只保留设置和名单，但仍必须清空当前对战区。
+        if (battlePage && clearLineupConfirmation === 3) void cancelClearAll();
+        else clearLineupConfirmation = 0;
       } else if (key === 'n') {
         event.preventDefault();
         void cancelClearAll();
@@ -2236,7 +2249,7 @@
       return;
     }
 
-    if (desktopRuntime && clearAllRankingsConfirmation !== 0) {
+      if (businessRuntime && clearAllRankingsConfirmation !== 0) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
         cancelClearAllRankings();
@@ -2248,7 +2261,7 @@
       return;
     }
 
-    if (desktopRuntime && (pendingDeleteUser || pendingAliasClearUser)) {
+      if (businessRuntime && (pendingDeleteUser || pendingAliasClearUser)) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
         pendingDeleteUser = null;
@@ -2300,7 +2313,7 @@
       rankedUserActionIndex = -1;
       resetRankSelectionShortcut();
       clearRankDragState();
-      if (!hadLocalOperation && desktopRuntime) desktopPanel = null;
+      if (!hadLocalOperation && businessRuntime) desktopPanel = null;
       return;
     }
 
@@ -2321,7 +2334,7 @@
       return;
     }
     if (battleFocusActive) return;
-    if (!desktopRuntime) return;
+    if (!businessRuntime) return;
     if (key === 'n') {
       event.preventDefault();
       void focusRankingAdd();
@@ -2670,7 +2683,7 @@
     if (!battlePage) return '同时清空名单预览？';
     if (step === 1) return '1/3 删除当前签表和全部比分？';
     if (step === 2) {
-      return desktopRuntime ? '2/3 直接删除桌面对战临时表？' : '2/3 放弃当前页面的对战状态？';
+      return nativeRuntime ? '2/3 直接删除桌面对战临时表？' : '2/3 放弃当前页面的对战状态？';
     }
     return '3/3 是否同时清空设置和名单？';
   }
@@ -2681,7 +2694,7 @@
       return '胜者组、败者组、总决赛以及已经录入的所有比分都会一起删除。';
     }
     if (step === 2) {
-      return desktopRuntime
+      return nativeRuntime
         ? '删除后即使关闭并重新启动软件，也无法恢复这场对战。'
         : '清空后当前签表不会保留，刷新页面也无法恢复。';
     }
@@ -2691,7 +2704,7 @@
   function clearConfirmationAction(step: 0 | 1 | 2 | 3): string {
     if (!battlePage) return '确认清空';
     if (step === 1) return '删除签表和比分';
-    if (step === 2) return desktopRuntime ? '删除临时表' : '放弃当前对战';
+    if (step === 2) return nativeRuntime ? '删除临时表' : '放弃当前对战';
     return '清空设置和名单';
   }
 
@@ -2715,7 +2728,7 @@
 
   async function clearAll(clearBattleSetup = true) {
     if (battlePage) {
-      if (desktopRuntime) {
+      if (businessRuntime) {
         clearingBattleTmp = true;
         try {
           await invoke('clear_battle_tmp_state', { variant });
@@ -2830,7 +2843,7 @@
     );
     const next = updateBattleTmpResult(battleTmpSnapshot, match.matchId, upResult, downResult);
     battleTmpSnapshot = next;
-    if (!desktopRuntime) return;
+    if (!businessRuntime) return;
     battleSyncStatus = 'saving';
     try {
       const saved = await invoke<unknown>('update_battle_tmp_result', {
@@ -2901,7 +2914,7 @@
 
 <main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L' : undefined}>
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime} class="lineup-workbench">
-    {#if desktopRuntime}
+    {#if businessRuntime}
       <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
@@ -2919,7 +2932,7 @@
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <UiButton size="xs" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</UiButton>
-                  <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  {#if nativeRuntime}<UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>{/if}
                   <UiButton
                     size="xs"
                     title={rankedUsers.length > 0 ? '全部删除后才可导入' : '导入排名 JSON'}
@@ -3093,7 +3106,11 @@
             aria-expanded={desktopPanel === 'history'}
             on:click={() => toggleDesktopPanel('history')}
           >
-            <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage ? '最近 20 条' : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+            <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage
+              ? battleHistoryStart || battleHistoryEnd
+                ? `查询条件下共 ${visibleBattleHistories.length} 条`
+                : `共 ${battleHistories.length} 条`
+              : '最近 5 条'}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
@@ -3125,7 +3142,7 @@
                   <svelte:fragment slot="actions">
                     <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
                     <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
-                    <UiButton size="xs" disabled={!desktopRuntime} on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  {#if nativeRuntime}<UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>{/if}
                     <UiButton size="xs" tone="danger" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</UiButton>
                   </svelte:fragment>
                 </UiHistoryPanel>
@@ -3181,8 +3198,8 @@
       <fieldset class="preview-panel app-surface-dark" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
           <div><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
-          <strong class:warning={desktopRuntime && unresolvedPreviewCount > 0} class="preview-status">
-            {resolvingNames ? '核对中…' : desktopRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
+          <strong class:warning={businessRuntime && unresolvedPreviewCount > 0} class="preview-status">
+            {resolvingNames ? '核对中…' : businessRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
         </div>
 
@@ -3210,9 +3227,9 @@
                 name={row.name}
                 {index}
                 resolved={row.resolved}
-                {desktopRuntime}
+                desktopRuntime={businessRuntime}
                 {resolvingNames}
-                unknown={desktopRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
+                unknown={businessRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
                 insertActive={insertIndex === index}
                 {rankingSaving}
                 onRename={(name) => updatePreviewName(index, name)}
@@ -3274,8 +3291,8 @@
                 <fieldset class="battle-radio-group battle-order-group">
                   <legend>名单顺序</legend>
                   <UiRadio battle name="battle-order" value="input" bind:group={battleOrderMode}>按输入顺序</UiRadio>
-                  <UiRadio battle name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!desktopRuntime} title={desktopRuntime ? '' : '网页版没有排名数据库'}>按排名</UiRadio>
-                  {#if desktopRuntime && battleOrderMode === 'rank'}
+                  <UiRadio battle name="battle-order" value="rank" bind:group={battleOrderMode} disabled={!businessRuntime} title={businessRuntime ? '' : '网页版没有排名数据库'}>按排名</UiRadio>
+                  {#if businessRuntime && battleOrderMode === 'rank'}
                     <button
                       type="button"
                       class="rank-preview-button battle-rank-preview-button"
@@ -3311,7 +3328,7 @@
                 {/if}
               </div>
               <UiCheckbox compact reveal battleAction class="slow-reveal-setting battle-reveal-setting" bind:checked={slowRevealEnabled} on:change={() => updateSlowReveal(slowRevealEnabled)}>悬念揭晓</UiCheckbox>
-              {#if desktopRuntime}
+              {#if businessRuntime}
                 <button
                   type="button"
                   class:battle-control-hidden={!battleTmpAvailable || battleTmpSnapshot !== null}
@@ -3329,7 +3346,7 @@
 
         {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
 
-        {#if desktopRuntime && !resolvingNames && (battlePage ? battleOrderMode === 'rank' && !battleRankCountReady : groupingUnrankedCount > 0)}
+        {#if businessRuntime && !resolvingNames && (battlePage ? battleOrderMode === 'rank' && !battleRankCountReady : groupingUnrankedCount > 0)}
           <div class="rank-order-lock" role="status">
             {#if battlePage}
               固定前 {battleConfiguredFixedCount} 名，现 {battleRankedNameCount} 个排名。
@@ -3346,7 +3363,7 @@
         {/if}
         {#if !battlePage}
           <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
-            {#if desktopRuntime}
+            {#if businessRuntime}
             <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
@@ -3411,7 +3428,7 @@
                 <UiButton size="md" tone="accent" on:click={saveCurrentBattleHistory}>保存历史</UiButton>
                 <UiButton size="md" data-export="battle-excel" disabled={battleExporting !== null} on:click={exportBattleTmpExcel}>{battleExporting === 'excel' ? '导出中…' : 'Excel'}</UiButton>
                 <UiButton size="md" data-export="battle-json" disabled={battleExporting !== null} on:click={exportBattleTmpJson}>{battleExporting === 'json' ? '导出中…' : 'JSON'}</UiButton>
-                {#if desktopRuntime}
+                {#if nativeRuntime}
                   <UiButton size="md" on:click={openLineupDownloadFolder}>打开下载</UiButton>
                 {/if}
               </div>
@@ -3455,10 +3472,10 @@
               {/if}
               <UiButton size="sm" on:click={exportLineupExcel}>Excel</UiButton>
               <UiButton size="sm" on:click={exportLineupJson}>JSON</UiButton>
-              {#if desktopRuntime}
+              {#if nativeRuntime}
                 <UiButton size="sm" on:click={openLineupDownloadFolder}>打开下载</UiButton>
               {/if}
-              {#if desktopRuntime}
+              {#if businessRuntime}
                 <div class="history-save-control">
                   <button
                     type="button"
@@ -5082,6 +5099,12 @@
   .history-status.error { color: #dc725b; }
 
   @media (min-width: 1251px) {
+    .lineup-workbench:not(.desktop) .lineup-sidebar {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      height: auto;
+      contain: none;
+    }
     .lineup-workbench:not(.desktop) .lineup-center { display: contents; }
     .lineup-workbench:not(.desktop) .preview-panel { grid-column: 1; grid-row: 1; }
     .lineup-workbench:not(.desktop) .lineup-config { grid-column: 2; grid-row: 1; }
@@ -5119,6 +5142,12 @@
   }
 
   @media (max-width: 1250px) {
+    .lineup-workbench:not(.desktop) .lineup-sidebar {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      height: auto;
+      contain: none;
+    }
     .lineup-workbench.desktop {
       grid-template-columns:
         minmax(calc(250px * var(--lineup-layout-scale, 1)), calc(290px * var(--lineup-layout-scale, 1)))

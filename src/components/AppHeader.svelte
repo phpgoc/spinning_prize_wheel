@@ -4,7 +4,7 @@
 
   export let page: AppPage;
   export let variant: AppVariant;
-  export let desktopRuntime = false;
+  export let nativeRuntime = false;
   export let wheelBusy = false;
   export let mode: DrawMode = 'selected';
   export let onNavigatePage: (page: AppPage) => void;
@@ -18,8 +18,8 @@
     <span><strong>转盘</strong></span>
   </a>
 
-  <div class:desktop-controls={desktopRuntime} class="topbar-controls">
-    {#if !desktopRuntime}
+  <div class:desktop-controls={nativeRuntime} class="topbar-controls">
+    {#if !nativeRuntime}
       <nav class="variant-switch" aria-label="版本页面">
         <button type="button" class:active={variant === 'standard'} on:click={() => onNavigateVariant('standard')}>普通版</button>
         <button type="button" class:active={variant === 'caimi'} on:click={() => onNavigateVariant('caimi')}>猜蜜版</button>
@@ -34,14 +34,12 @@
         disabled={wheelBusy}
         on:click={() => onNavigatePage('grouping')}
       >分组</button>
-      {#if desktopRuntime}
-        <button
-          type="button"
-          class:active={page === 'battle'}
-          disabled={wheelBusy}
-          on:click={() => onNavigatePage('battle')}
-        >对战</button>
-      {/if}
+      <button
+        type="button"
+        class:active={page === 'battle'}
+        disabled={wheelBusy}
+        on:click={() => onNavigatePage('battle')}
+      >对战</button>
     </nav>
 
   </div>

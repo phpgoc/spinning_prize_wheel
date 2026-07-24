@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauriRuntime } from './runtime';
 
 export type ExcelCell = string | number | boolean | null | undefined;
 
@@ -137,5 +137,5 @@ function downloadBrowserBlob(prefix: string, extension: string, blob: Blob): str
 }
 
 function isDesktopRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  return isTauriRuntime();
 }

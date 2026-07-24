@@ -20,9 +20,9 @@ if (variant === 'standard') {
   console.log(`Web ZIP：${archiveName}`);
 }
 
-async function run(command: string[]) {
+async function run(command: string[], cwd = workspace) {
   const child = Bun.spawn(command, {
-    cwd: workspace,
+    cwd,
     env: { ...process.env, WEB_BUILD_OUT_DIR: outDir },
     stdin: 'inherit',
     stdout: 'inherit',
@@ -33,6 +33,11 @@ async function run(command: string[]) {
 }
 
 async function createWebArchive(bundleDirectory: string, archivePath: string) {
+  if (process.platform !== 'win32') {
+    // Linux/WSL 的自动化环境没有 powershell.exe，使用系统 zip 保持压缩包内容与 Windows 一致。
+    await run(['zip', '-q', '-r', archivePath, '.'], bundleDirectory);
+    return;
+  }
   const script = [
     `$bundleDirectory = ${powerShellLiteral(bundleDirectory)}`,
     `$archivePath = ${powerShellLiteral(archivePath)}`,

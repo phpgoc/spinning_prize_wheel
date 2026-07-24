@@ -110,7 +110,7 @@ test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) =>
   await confirmNames(page, ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']);
 
   await expect(page.getByText('悬念揭晓', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '开始分组' }).click();
+  await page.getByRole('button', { name: '按输入顺序分组' }).click();
 
   const resultRows = page.locator('.lineup-result tbody tr');
   await expect(resultRows).toHaveCount(2);
@@ -125,7 +125,7 @@ test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) =>
 
 test('Web 分组导出真正的 XLSX 文件', async ({ page }) => {
   await confirmNames(page, ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']);
-  await page.getByRole('button', { name: '开始分组' }).click();
+  await page.getByRole('button', { name: '按输入顺序分组' }).click();
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Excel', exact: true }).click();

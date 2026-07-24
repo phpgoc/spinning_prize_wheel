@@ -20,6 +20,7 @@
     type UiTheme,
   } from './lib/ui-settings';
   import type { DrawMode } from './lib/types';
+  import { isTauriRuntime } from './lib/runtime';
 
   export let pathname = typeof window === 'undefined' ? '/' : window.location.pathname;
 
@@ -30,7 +31,9 @@
 
   let page: AppPage = pageFromPath(pathname);
   let variant: AppVariant = variantFromPath(pathname);
-  let desktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  let tauriRuntime = isTauriRuntime();
+  let desktopRuntime = tauriRuntime;
+  const businessRuntime = true;
   let wheelPage: WheelPage | null = null;
   let WheelPageComponent: WheelPageComponent | null = null;
   let wheelPageLoad: Promise<void> | null = null;
@@ -65,7 +68,7 @@
       void goto(variantRoute(variant, 'wheel'), { replaceState: true });
     }
     updateFavicon(variant);
-    if (desktopRuntime) void registerCloseRequestedListener();
+    if (tauriRuntime) void registerCloseRequestedListener();
     return () => {
       appUnmounted = true;
       appMounted = false;
@@ -157,7 +160,7 @@
   }
 
   function navigateVariant(nextVariant: AppVariant) {
-    if (desktopRuntime || nextVariant === variant) return;
+    if (tauriRuntime || nextVariant === variant) return;
     void goto(variantRoute(nextVariant, page));
   }
 
@@ -227,7 +230,7 @@
 
 <div
   class:caimi-variant={variant === 'caimi'}
-  class:desktop-runtime={desktopRuntime}
+  class:desktop-runtime={tauriRuntime}
   class:wheel-active={page === 'wheel'}
   class="app-shell"
   data-ui-theme={uiTheme}
@@ -237,7 +240,7 @@
   <AppHeader
     {page}
     {variant}
-    {desktopRuntime}
+    nativeRuntime={tauriRuntime}
     wheelBusy={wheelSpinning || continuousRunning}
     mode={drawMode}
     onNavigatePage={navigatePage}
@@ -261,6 +264,7 @@
         bind:uiTheme
         active={page === 'wheel'}
         {desktopRuntime}
+        {businessRuntime}
         {variant}
       />
     {:else if page === 'wheel'}
