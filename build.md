@@ -173,6 +173,14 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 `test:e2e:web` 会启动本地网页并测试六个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
+Web 版的业务数据库由 `sql.js` 在浏览器内存中运行，写入时导出为 SQLite 二进制并保存到 IndexedDB（数据库名 `spinning-prize-wheel`）。因此不需要服务器或 SQLite 服务进程。发布 ZIP 可以直接双击其中的 `index.html` 尝试运行；由于浏览器对 `file://` 的 IndexedDB 策略不同，正式使用建议通过任意静态文件服务器提供文件。清理全部 Web 数据可在开发者工具 Console 执行：
+
+```js
+indexedDB.deleteDatabase('spinning-prize-wheel')
+```
+
+这会删除排名、别名、抽奖/分组/对战历史和对战临时状态；字号、主题等 `localStorage` 设置需另外清理，或直接在浏览器网站设置中清除该页面的全部站点数据。清理前请先导出 SQLite 备份。
+
 前 N 固定签位的真实桌面 E2E 使用可见 Tauri 窗口，并默认在每个操作后停留 2 秒，便于人工检查焦点和签位位置。人数参数只运行一个人数：
 
 ```powershell
@@ -192,7 +200,7 @@ bun run test:e2e:tauri:fixed -- all
 
 桌面程序使用 Rust 官方 MSVC ABI 编译，但 `.cargo/config.toml` 会把 C 运行库静态链接进 EXE。因此 Visual Studio Build Tools 只在编译电脑上需要，最终用户不需要另装 VC++ Redistributable。
 
-SQLite 使用 `rusqlite bundled`，SQLite 源码会分别编译进普通版和猜蜜版，不依赖 `sqlite3.dll`。两个程序仍然共用同一个排名和别名数据库文件，抽奖与分组历史按版本分开保存。
+桌面版 SQLite 使用 `rusqlite bundled`，SQLite 源码会分别编译进普通版和猜蜜版，不依赖 `sqlite3.dll`。两个程序仍然共用同一个排名和别名数据库文件，抽奖、分组和对战历史按版本分开保存；网页版使用上文所述的浏览器 IndexedDB SQLite，不与桌面端自动同步，可通过 SQLite 导入/导出交换数据。
 
 Excel 使用纯 JavaScript 的 `exceljs` 生成标准 XLSX。网页版在浏览器中直接生成和下载，桌面版生成同样的二进制后交给 Tauri 写入下载目录；构建时 Excel writer 会进入 Vite 前端资源，再由 Tauri 嵌入应用，不需要 Excel、Node.js 或额外 DLL。引入 Excel 后，普通版单文件 Web 脚本从约 905 KB 增加到 1,844 KB，gzip 从约 511 KB 增加到 770 KB，压缩传输增量约 259 KB。
 

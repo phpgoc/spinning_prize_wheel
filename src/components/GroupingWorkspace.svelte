@@ -5218,7 +5218,6 @@
     }
     .lineup-workbench.desktop.web-layout {
       /* Web 端字号放大时保留三列位置，同时不让侧栏按字号挤占中间预览区。 */
-      --lineup-layout-scale: 1;
       grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
       gap: clamp(14px, 1.7vw, 25px);
     }
