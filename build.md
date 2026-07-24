@@ -133,7 +133,15 @@ bun run build
 wheel-0.2.0-web.zip
 ```
 
-构建过程仍会保留 `dist\转盘-0.2.0` 目录用于检查。ZIP 根目录中的 `index.html` 已经内联全部资源，包含普通版和猜蜜版的抽奖、分组、对战六个地址。解压后可直接双击 `index.html` 使用；若浏览器限制 `file://` 的本地存储或脚本，可双击 `启动网页版.bat`，也可部署到网站根目录或任意子目录。
+构建过程仍会保留 `dist\转盘-0.2.0` 目录用于检查。ZIP 使用 SvelteKit/Vite 的标准静态产物结构，包含普通版和猜蜜版的抽奖、分组、对战六个地址。解压后不能直接双击 `index.html`，需要部署到静态网站，或在解压目录运行下面任一命令：
+
+```powershell
+python -m http.server 8000
+npx serve .
+bunx serve .
+```
+
+随后访问命令输出的本机 HTTP 地址。
 
 不需要再手动压缩 `dist`。
 
@@ -173,7 +181,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 `test:e2e:web` 会启动本地网页并测试六个正式地址；`test:e2e:tauri` 会构建普通版和猜蜜版 Debug EXE，再启动真实 WebView2 窗口进行桌面冒烟测试。也可以用 `bun run test:e2e` 依次执行两组 E2E。
 
-Web 版的业务数据库由 `sql.js` 在浏览器内存中运行，写入时导出为 SQLite 二进制并保存到 IndexedDB（数据库名 `spinning-prize-wheel`）。因此不需要业务服务器或 SQLite 服务进程。发布 ZIP 解压后可直接双击 `index.html`；如果浏览器限制 `file://` 的本地存储或脚本，可双击 `启动网页版.bat`，它会在本机启动只提供静态文件的临时服务。也可以通过任意静态文件服务器提供文件。清理全部 Web 数据可在开发者工具 Console 执行：
+Web 版的业务数据库由 `sql.js` 在浏览器内存中运行，写入时导出为 SQLite 二进制并保存到 IndexedDB（数据库名 `spinning-prize-wheel`）。因此不需要业务服务器或 SQLite 服务进程。发布 ZIP 只需要普通静态文件服务器；Python、Node 或 Bun 的上述命令不会处理业务数据。清理全部 Web 数据可在开发者工具 Console 执行：
 
 ```js
 indexedDB.deleteDatabase('spinning-prize-wheel')
