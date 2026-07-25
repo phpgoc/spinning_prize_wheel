@@ -5,7 +5,7 @@
   "build": {
     "beforeDevCommand": "bun run dev:caimi",
     "beforeBuildCommand": "bun run scripts/build-web.ts caimi tauri",
-    "frontendDist": "../dist/转盘-猜蜜版-0.2.0"
+    "frontendDist": "../dist/转盘-猜蜜版-0.2.1"
   },
   "app": {
     "windows": [
@@ -33,5 +33,5 @@
       }
     }
   },
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
