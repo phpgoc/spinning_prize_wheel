@@ -30,7 +30,7 @@
   import { createBattleBracketWorkbook } from '../lib/battle-excel';
   import {
     createBattleHistoryTransfer,
-    parseBattleHistoryTransfer,
+    parseBattleHistoryTransferRecord,
   } from '../lib/battle-history-transfer';
   import { downloadExcel, downloadExcelBytes, downloadFormattedJson } from '../lib/file-export';
   import {
@@ -216,6 +216,7 @@
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
   let battleTitle = '';
+  let battleTitleBeforeHistoryView: string | null = null;
   let battleTmpAvailable = false;
   let battleHistorySaved = false;
   let battleHistories: BattleHistory[] = [];
@@ -475,11 +476,6 @@
   function saveBattleColors() {
     const value = { ...battleColors, preset: battleColorPreset };
     void invoke('save_app_setting', { key: battleColorStorageKey(), value }).catch(() => undefined);
-    try {
-      localStorage.setItem(battleColorStorageKey(), JSON.stringify(value));
-    } catch {
-      // 浏览器禁用本地存储时仍允许本次临时调色。
-    }
   }
 
   function selectBattleColorPreset(preset: BattleColorPresetName) {
@@ -497,12 +493,7 @@
 
   function saveBattleColorSnapshot() {
     void invoke('save_app_setting', { key: battleColorSnapshotStorageKey(), value: battleColors }).catch(() => undefined);
-    try {
-      localStorage.setItem(battleColorSnapshotStorageKey(), JSON.stringify(battleColors));
-      battleColorSnapshotAvailable = true;
-    } catch {
-      battleColorSnapshotAvailable = false;
-    }
+    battleColorSnapshotAvailable = true;
   }
 
   async function loadBattleColorSnapshot() {
@@ -728,6 +719,10 @@
   async function generateBattle() {
     error = '';
     battleHistoryView = null;
+    if (battleTitleBeforeHistoryView !== null) {
+      battleTitle = battleTitleBeforeHistoryView;
+      battleTitleBeforeHistoryView = null;
+    }
     if (battleTmpSnapshot) {
       error = '已抽签，请先清空';
       return;
@@ -1087,6 +1082,10 @@
       }
       if (loaded) {
         battleHistoryView = null;
+        if (battleTitleBeforeHistoryView !== null) {
+          battleTitle = battleTitleBeforeHistoryView;
+          battleTitleBeforeHistoryView = null;
+        }
         await tick();
         await resolveNames();
         focusLineupResult();
@@ -1138,6 +1137,7 @@
   }
 
   async function viewBattleHistory(history: BattleHistory) {
+    if (battleHistoryView === null) battleTitleBeforeHistoryView = battleTitle;
     battleTitle = history.title ?? '';
     battleHistoryView = {
       ...history,
@@ -1149,6 +1149,10 @@
 
   async function returnToCurrentBattle() {
     battleHistoryView = null;
+    if (battleTitleBeforeHistoryView !== null) {
+      battleTitle = battleTitleBeforeHistoryView;
+      battleTitleBeforeHistoryView = null;
+    }
     await tick();
     focusLineupResult();
   }
@@ -1215,12 +1219,13 @@
   async function archiveBattleHistory(
     snapshot: BattleTmpSnapshot,
     markCurrent = false,
+    titleOverride?: string | null,
   ): Promise<boolean> {
     const record: BattleHistory = {
       id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
       createdAt: snapshot.updatedAt,
       updatedAt: snapshot.updatedAt,
-      title: battleTitle.trim() || null,
+      title: titleOverride === undefined ? (battleTitle.trim() || null) : (titleOverride?.trim() || null),
       snapshot: structuredClone(snapshot),
     };
     try {
@@ -1258,8 +1263,8 @@
     battleHistoryImporting = true;
     try {
       const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
-      const snapshot = parseBattleHistoryTransfer(value, variant);
-      if (!await archiveBattleHistory(snapshot)) throw new Error(battleHistoryError);
+      const transfer = parseBattleHistoryTransferRecord(value, variant);
+      if (!await archiveBattleHistory(transfer.snapshot, false, transfer.title)) throw new Error(battleHistoryError);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
     } finally {
@@ -1307,7 +1312,13 @@
     try {
       await invoke('delete_battle_history', { variant, id: history.id });
       await loadBattleHistories();
-      if (battleHistoryView?.id === history.id) battleHistoryView = null;
+      if (battleHistoryView?.id === history.id) {
+        battleHistoryView = null;
+        if (battleTitleBeforeHistoryView !== null) {
+          battleTitle = battleTitleBeforeHistoryView;
+          battleTitleBeforeHistoryView = null;
+        }
+      }
     } catch (reason) {
       battleHistoryError = messageFrom(reason, '无法删除对战历史数据库');
     }

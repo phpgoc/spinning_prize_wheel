@@ -7,6 +7,7 @@ import {
 import {
   createBattleHistoryTransfer,
   parseBattleHistoryTransfer,
+  parseBattleHistoryTransferRecord,
 } from './battle-history-transfer';
 
 function createSnapshot(variant: 'standard' | 'caimi' = 'standard'): BattleTmpSnapshot {
@@ -33,6 +34,15 @@ describe('对战历史同步文件', () => {
   test('兼容导入早期直接导出的裸临时表快照', () => {
     const snapshot = createSnapshot();
     expect(parseBattleHistoryTransfer(snapshot, 'standard')).toEqual(snapshot);
+  });
+
+  test('导入正式文件时保留历史名称', () => {
+    const snapshot = createSnapshot();
+    const transfer = createBattleHistoryTransfer(snapshot, '春季赛');
+    expect(parseBattleHistoryTransferRecord(transfer, 'standard')).toEqual({
+      snapshot,
+      title: '春季赛',
+    });
   });
 
   test('拒绝其他格式、未来版本和不同变体', () => {

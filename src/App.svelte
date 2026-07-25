@@ -61,6 +61,7 @@
   let appFullscreenChanging = false;
   let persistedFontScale = fontScale;
   let persistedUiTheme = uiTheme;
+  let appSettingsDatabaseLoaded = false;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
   $: logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
@@ -225,10 +226,12 @@
     } catch {
       // 损坏的旧设置只保留本次有效字号。
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
-    } catch {
-      // 禁用本地存储时字号仍在当前会话生效。
+    if (!appSettingsDatabaseLoaded) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
+      } catch {
+        // 禁用本地存储时字号仍在当前会话生效。
+      }
     }
     void saveAppSettings({ fontScale });
   }
@@ -241,6 +244,8 @@
       uiTheme = normalizeUiTheme(saved.uiTheme);
     } catch {
       // 数据库不可用时保留本地兼容配置。
+    } finally {
+      appSettingsDatabaseLoaded = true;
     }
   }
 

@@ -1059,15 +1059,14 @@ fn list_draw_histories_in(
     connection: &Connection,
     variant: &str,
 ) -> Result<Vec<SavedDraw>, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
-            "SELECT payload_json FROM draw_history
-             WHERE variant = ?1 ORDER BY created_at DESC",
+            "SELECT payload_json FROM draw_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取历史数据库：{error}"))?;
     let rows = statement
-        .query_map(params![variant], |row| row.get::<_, String>(0))
+        .query_map([], |row| row.get::<_, String>(0))
         .map_err(|error| format!("无法查询抽奖历史：{error}"))?;
 
     let mut histories = Vec::new();
@@ -1098,15 +1097,15 @@ fn delete_draw_history(
     variant: String,
     id: String,
 ) -> Result<(), String> {
-    let variant = validate_variant(&variant)?;
+    let _variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("抽奖记录编号不合法".to_string());
     }
     with_app_database(&app, &database, |connection| {
         connection
             .execute(
-                "DELETE FROM draw_history WHERE id = ?1 AND variant = ?2",
-                params![id, variant],
+                "DELETE FROM draw_history WHERE id = ?1",
+                params![id],
             )
             .map_err(|error| format!("无法删除抽奖记录：{error}"))?;
         Ok(())
@@ -1119,12 +1118,12 @@ fn clear_draw_histories(
     database: State<'_, DatabaseState>,
     variant: String,
 ) -> Result<(), String> {
-    let variant = validate_variant(&variant)?;
+    let _variant = validate_variant(&variant)?;
     with_app_database(&app, &database, |connection| {
         connection
             .execute(
-                "DELETE FROM draw_history WHERE variant = ?1",
-                params![variant],
+                "DELETE FROM draw_history",
+                [],
             )
             .map_err(|error| format!("无法清空抽奖历史：{error}"))?;
         Ok(())
@@ -1461,15 +1460,15 @@ fn list_lineup_histories_in(
     connection: &Connection,
     variant: &str,
 ) -> Result<Vec<SavedLineup>, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, input_json, result_json
-             FROM lineup_history WHERE variant = ?1 ORDER BY created_at DESC",
+             FROM lineup_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取分组历史：{error}"))?;
     let rows = statement
-        .query_map(params![variant], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1535,15 +1534,15 @@ fn delete_lineup_history(
     variant: String,
     id: String,
 ) -> Result<(), String> {
-    let variant = validate_variant(&variant)?;
+    let _variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("分组记录编号不合法".to_string());
     }
     with_app_database(&app, &database, |connection| {
         connection
             .execute(
-                "DELETE FROM lineup_history WHERE id = ?1 AND variant = ?2",
-                params![id, variant],
+                "DELETE FROM lineup_history WHERE id = ?1",
+                params![id],
             )
             .map_err(|error| format!("无法删除分组记录：{error}"))?;
         Ok(())
@@ -1551,11 +1550,11 @@ fn delete_lineup_history(
 }
 
 fn clear_lineup_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     connection
         .execute(
-            "DELETE FROM lineup_history WHERE variant = ?1",
-            params![variant],
+            "DELETE FROM lineup_history",
+            [],
         )
         .map_err(|error| format!("无法清空分组历史：{error}"))?;
     Ok(())
@@ -1581,9 +1580,6 @@ fn save_battle_history_in(
     let variant = validate_variant(variant)?;
     if !valid_selection_id(&history.id) {
         return Err("对战记录编号不合法".to_string());
-    }
-    if history.snapshot.variant != variant {
-        return Err("对战记录版本不一致".to_string());
     }
     if history.updated_at != history.snapshot.updated_at {
         return Err("对战记录更新时间不一致".to_string());
@@ -1652,15 +1648,15 @@ fn list_battle_histories_in(
     connection: &Connection,
     variant: &str,
 ) -> Result<Vec<BattleHistory>, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, updated_at, payload_json
-             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
+             FROM battle_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取对战历史：{error}"))?;
     let rows = statement
-        .query_map(params![variant], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1680,9 +1676,6 @@ fn list_battle_histories_in(
             payload.get("snapshot").cloned().unwrap_or_else(|| payload.clone()),
         )
         .map_err(|error| format!("无法解析对战签表：{error}"))?;
-        if snapshot.variant != variant {
-            return Err("对战历史版本不一致".to_string());
-        }
         let updated_at = u64::try_from(updated_at)
             .map_err(|_| "对战历史更新时间不合法".to_string())?;
         if updated_at != snapshot.updated_at {
@@ -1722,15 +1715,15 @@ fn delete_battle_history(
     variant: String,
     id: String,
 ) -> Result<(), String> {
-    let variant = validate_variant(&variant)?;
+    let _variant = validate_variant(&variant)?;
     if !valid_selection_id(&id) {
         return Err("对战记录编号不合法".to_string());
     }
     with_app_database(&app, &database, |connection| {
         connection
             .execute(
-                "DELETE FROM battle_history WHERE id = ?1 AND variant = ?2",
-                params![id, variant],
+                "DELETE FROM battle_history WHERE id = ?1",
+                params![id],
             )
             .map_err(|error| format!("无法删除对战记录：{error}"))?;
         Ok(())
@@ -1738,11 +1731,11 @@ fn delete_battle_history(
 }
 
 fn clear_battle_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     connection
         .execute(
-            "DELETE FROM battle_history WHERE variant = ?1",
-            params![variant],
+            "DELETE FROM battle_history",
+            [],
         )
         .map_err(|error| format!("无法清空对战历史：{error}"))?;
     Ok(())
@@ -1848,9 +1841,10 @@ mod tests {
                 "alias",
                 "lineup_history",
                 "battle_history",
+                "app_kv",
             ],
         );
-        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -2254,23 +2248,20 @@ mod tests {
         let caimi_histories =
             list_lineup_histories_in(&connection, "caimi").expect("读取猜蜜版排阵历史");
 
-        assert_eq!(histories.len(), 1);
-        assert_eq!(histories[0].id, lineup.id);
-        assert_eq!(histories[0].input, lineup.input);
-        assert_eq!(histories[0].result, lineup.result);
-        assert_eq!(caimi_histories.len(), 1);
-        assert_eq!(caimi_histories[0].id, caimi_lineup.id);
+        assert_eq!(histories.len(), 2);
+        let standard_history = histories.iter().find(|history| history.id == lineup.id).expect("找到普通版历史");
+        assert_eq!(standard_history.input, lineup.input);
+        assert_eq!(standard_history.result, lineup.result);
+        assert_eq!(caimi_histories.len(), 2);
+        assert!(caimi_histories.iter().any(|history| history.id == caimi_lineup.id));
 
         clear_lineup_histories_in(&connection, "standard").expect("清空普通版分组历史");
         assert!(list_lineup_histories_in(&connection, "standard")
-            .expect("读取已清空的普通版分组历史")
+            .expect("读取已清空的共享分组历史")
             .is_empty());
-        assert_eq!(
-            list_lineup_histories_in(&connection, "caimi")
-                .expect("读取保留的猜蜜版分组历史")
-                .len(),
-            1
-        );
+        assert!(list_lineup_histories_in(&connection, "caimi")
+            .expect("确认猜蜜版也使用共享分组历史")
+            .is_empty());
     }
 
     #[test]
@@ -2779,15 +2770,15 @@ mod tests {
         let caimi_histories =
             list_draw_histories_in(&connection, "caimi").expect("读取猜蜜版抽奖历史");
 
-        assert_eq!(histories.len(), 1);
-        assert_eq!(histories[0].id, draw.id);
-        assert_eq!(histories[0].created_at, draw.created_at);
-        assert_eq!(histories[0].mode, draw.mode);
-        assert_eq!(histories[0].reward_amount, draw.reward_amount);
-        assert_eq!(histories[0].prizes, draw.prizes);
-        assert_eq!(histories[0].records, draw.records);
-        assert_eq!(caimi_histories.len(), 1);
-        assert_eq!(caimi_histories[0].id, caimi_draw.id);
+        assert_eq!(histories.len(), 2);
+        let standard_history = histories.iter().find(|history| history.id == draw.id).expect("找到普通版历史");
+        assert_eq!(standard_history.created_at, draw.created_at);
+        assert_eq!(standard_history.mode, draw.mode);
+        assert_eq!(standard_history.reward_amount, draw.reward_amount);
+        assert_eq!(standard_history.prizes, draw.prizes);
+        assert_eq!(standard_history.records, draw.records);
+        assert_eq!(caimi_histories.len(), 2);
+        assert!(caimi_histories.iter().any(|history| history.id == caimi_draw.id));
     }
 
     #[test]

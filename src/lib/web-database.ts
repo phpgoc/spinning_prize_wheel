@@ -133,8 +133,8 @@ function executeCommand<T>(
       return queryJsonRows<SavedDraw>(
         db,
         `SELECT payload_json FROM draw_history
-         WHERE variant = ? ORDER BY created_at DESC`,
-        [String(args.variant)],
+         ORDER BY created_at DESC`,
+        [],
       ) as T;
     case 'save_draw_history': {
       const draw = args.draw as SavedDraw;
@@ -146,13 +146,10 @@ function executeCommand<T>(
       return undefined as T;
     }
     case 'delete_draw_history':
-      db.run('DELETE FROM draw_history WHERE id = ? AND variant = ?', [
-        String(args.id),
-        String(args.variant),
-      ]);
+      db.run('DELETE FROM draw_history WHERE id = ?', [String(args.id)]);
       return undefined as T;
     case 'clear_draw_histories':
-      db.run('DELETE FROM draw_history WHERE variant = ?', [String(args.variant)]);
+      db.run('DELETE FROM draw_history');
       return undefined as T;
     case 'load_app_setting': {
       const rows = db.exec('SELECT value_json FROM app_kv WHERE key = ?', [String(args.key)])[0]?.values ?? [];
@@ -189,8 +186,8 @@ function executeCommand<T>(
       return queryJsonRows<SavedLineup>(
         db,
         `SELECT payload_json FROM lineup_history
-         WHERE variant = ? ORDER BY created_at DESC`,
-        [String(args.variant)],
+         ORDER BY created_at DESC`,
+        [],
       ) as T;
     case 'save_lineup_history':
       saveLineupHistory(db, String(args.variant), args.lineup as SavedLineup);
@@ -200,17 +197,14 @@ function executeCommand<T>(
       return queryJsonRows<SavedLineup>(
         db,
         `SELECT payload_json FROM lineup_history
-         WHERE variant = ? ORDER BY created_at DESC`,
-        [String(args.variant)],
+         ORDER BY created_at DESC`,
+        [],
       ) as T;
     case 'delete_lineup_history':
-      db.run('DELETE FROM lineup_history WHERE id = ? AND variant = ?', [
-        String(args.id),
-        String(args.variant),
-      ]);
+      db.run('DELETE FROM lineup_history WHERE id = ?', [String(args.id)]);
       return undefined as T;
     case 'clear_lineup_histories':
-      db.run('DELETE FROM lineup_history WHERE variant = ?', [String(args.variant)]);
+      db.run('DELETE FROM lineup_history');
       return undefined as T;
     case 'list_battle_histories':
       return listBattleHistories(db, String(args.variant) as AppVariant) as T;
@@ -223,13 +217,10 @@ function executeCommand<T>(
       );
       return undefined as T;
     case 'delete_battle_history':
-      db.run('DELETE FROM battle_history WHERE id = ? AND variant = ?', [
-        String(args.id),
-        String(args.variant),
-      ]);
+      db.run('DELETE FROM battle_history WHERE id = ?', [String(args.id)]);
       return undefined as T;
     case 'clear_battle_histories':
-      db.run('DELETE FROM battle_history WHERE variant = ?', [String(args.variant)]);
+      db.run('DELETE FROM battle_history');
       return undefined as T;
     case 'load_battle_tmp_history_status':
       return loadBattleTmpHistoryStatus(db, String(args.variant) as AppVariant) as T;
@@ -915,12 +906,17 @@ function saveBattleHistory(
 function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[] {
   const rows = db.exec(
     `SELECT id, created_at, updated_at, payload_json FROM battle_history
-     WHERE variant = ? ORDER BY created_at DESC`,
-    [variant],
+     ORDER BY created_at DESC`,
+    [],
   )[0]?.values ?? [];
   return rows.map(([id, createdAt, updatedAt, payload]) => {
     const payloadValue = JSON.parse(String(payload)) as unknown;
-    const snapshot = parseBattleTmpSnapshot(unwrapBattleHistorySnapshot(payloadValue), variant);
+    const rawSnapshot = unwrapBattleHistorySnapshot(payloadValue);
+    const snapshotVariant = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot)
+      && (rawSnapshot as { variant?: unknown }).variant === 'caimi'
+      ? 'caimi'
+      : 'standard';
+    const snapshot = parseBattleTmpSnapshot(rawSnapshot, snapshotVariant);
     if (Number(updatedAt) !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
     return {
       id: String(id),
