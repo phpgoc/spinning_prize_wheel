@@ -2700,7 +2700,6 @@
         <section class="shortcut-group shortcut-draw">
           <h3>转盘</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>打开文本导入</span><kbd>W</kbd></div>
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
             <div><span>新抽奖并清空候选</span><kbd>R</kbd></div>
             <div><span>新抽奖并保留候选</span><kbd>T</kbd></div>
@@ -2715,6 +2714,7 @@
         <section class="shortcut-group shortcut-common">
           <h3>常用候选</h3>
           <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>打开文本区域</span><kbd>W</kbd></div>
             <div><span>引入候选</span><kbd>F</kbd></div>
           </div>
         </section>
@@ -2753,7 +2753,6 @@
           <h3>对战页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦对战区</span><kbd>X</kbd></div>
-            <div><span>聚焦名单</span><kbd>W</kbd></div>
             {#if businessRuntime}
               <div><span>打开 / 关闭排名</span><kbd>A</kbd></div>
               <div><span>打开 / 关闭对战历史</span><kbd>Z</kbd></div>
@@ -2768,7 +2767,7 @@
             <div><span>微调比分框上 / 下</span><kbd>U / J</kbd></div>
             <div><span>微调比分框左 / 右</span><kbd>H / K</kbd></div>
             <div><span>聚焦单败未完成比分</span><kbd>S</kbd></div>
-            <div><span>聚焦胜者 / 败者未完成比分</span><kbd>W / L</kbd></div>
+            <div><span>聚焦败者未完成比分</span><kbd>L</kbd></div>
           </div>
         </section>
 
