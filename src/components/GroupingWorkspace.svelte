@@ -3156,7 +3156,7 @@
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
-            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager" on:focusin={() => (rankingFocusActive = true)} on:focusout={leaveRankedUserActions} on:keydown={handleRankingKeydown}>
+            <div role="region" aria-label="排名管理" class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager" on:focusin={() => (rankingFocusActive = true)} on:focusout={leaveRankedUserActions} on:keydown={handleRankingKeydown}>
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}

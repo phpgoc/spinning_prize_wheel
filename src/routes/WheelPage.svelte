@@ -159,10 +159,9 @@
   let pendingDrawHistoryDeletion: DrawHistoryDeletion | null = null;
   let continuousTarget = 0;
   let staySeconds = DEFAULT_STAY_SECONDS;
-  let continuousIntervalSeconds = DEFAULT_STAY_SECONDS;
   let numberBeforeEdit: Record<ConfirmableNumberField, number> = {
     limit: continuousTarget,
-    interval: continuousIntervalSeconds,
+    interval: staySeconds,
     reward: rewardAmount,
   };
   export let continuousRunning = false;
@@ -314,7 +313,6 @@
         }
         // 旧版把统计栏的值直接持久化；迁移后只把它作为首次设置默认值。
         staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds);
-        continuousIntervalSeconds = staySeconds;
         uiTheme = normalizeUiTheme(parsed.uiTheme);
       }
     } catch {
@@ -1102,7 +1100,7 @@
 
   function currentConfirmableNumber(field: ConfirmableNumberField): number {
     if (field === 'limit') return continuousTarget;
-    if (field === 'interval') return continuousIntervalSeconds;
+    if (field === 'interval') return staySeconds;
     return rewardAmount;
   }
 
@@ -1112,8 +1110,8 @@
       return continuousTarget;
     }
     if (field === 'interval') {
-      continuousIntervalSeconds = normalizeStaySeconds(value);
-      return continuousIntervalSeconds;
+      staySeconds = normalizeStaySeconds(value);
+      return staySeconds;
     }
     rewardAmount = Math.max(0, Number(value) || 0);
     return rewardAmount;
@@ -1251,7 +1249,7 @@
   function startContinuousDraw() {
     if (isSpinning || continuousRunning || enabledPrizes.length < 2) return;
     normalizeContinuousTarget();
-    continuousIntervalSeconds = normalizeStaySeconds(continuousIntervalSeconds);
+    staySeconds = normalizeStaySeconds(staySeconds);
     drawSidePanel = 'statistics';
 
     if (continuousTarget === 0) {
@@ -1292,7 +1290,7 @@
     const completed = records.filter(
       (record) => record.outcome === 'selected' || record.outcome === 'winner',
     ).length;
-    const delay = continuousIntervalSeconds * 1000;
+    const delay = staySeconds * 1000;
 
     if (isResultLimitReached(continuousTarget, completed)) {
       continuousTimer = window.setTimeout(() => {
@@ -2040,28 +2038,6 @@
         </div>
       </section>
 
-      <section class="setting-block duration-block">
-        <div class="setting-title-row compact">
-          <div class="setting-label-with-note">
-            <label for="stay-duration">停留时间</label>
-            <small>仅启动时同步</small>
-          </div>
-          <output>{staySeconds.toFixed(1)}<small>秒</small></output>
-        </div>
-        <input
-          id="stay-duration"
-          class="range-input"
-          type="range"
-          min="0.5"
-          max="10"
-          step="0.5"
-          bind:value={staySeconds}
-          disabled={isSpinning}
-          style={`--range-progress: ${((staySeconds - 0.5) / 9.5) * 100}%`}
-        />
-        <div class="range-labels"><span>0.5 秒</span><span>10 秒</span></div>
-      </section>
-
       <div class="section-divider"></div>
 
       <section class="setting-block">
@@ -2415,7 +2391,7 @@
                       min="0.5"
                       max="10"
                       step="0.5"
-                      bind:value={continuousIntervalSeconds}
+                      bind:value={staySeconds}
                       disabled={continuousRunning}
                       on:focus={(event) => beginConfirmableNumberEdit(event, 'interval')}
                       on:change={(event) => updateConfirmableNumber(event, 'interval')}
