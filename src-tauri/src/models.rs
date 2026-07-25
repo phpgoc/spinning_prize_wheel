@@ -97,6 +97,8 @@ pub(super) struct ResolvedLineupName {
 pub(super) struct SavedLineup {
     pub(super) id: String,
     pub(super) created_at: u64,
+    #[serde(default)]
+    pub(super) title: Option<String>,
     pub(super) input: serde_json::Value,
     pub(super) result: serde_json::Value,
 }
@@ -108,6 +110,8 @@ pub(super) struct BattleHistory {
     pub(super) id: String,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
+    #[serde(default)]
+    pub(super) title: Option<String>,
     pub(super) snapshot: BattleTmpSnapshot,
 }
 

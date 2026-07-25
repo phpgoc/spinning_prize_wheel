@@ -1428,6 +1428,7 @@ fn list_lineup_histories_in(
         histories.push(SavedLineup {
             id,
             created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
+            title: None,
             input: serde_json::from_str(&input_json)
                 .map_err(|error| format!("无法解析分组输入：{error}"))?,
             result: serde_json::from_str(&result_json)
@@ -1546,7 +1547,10 @@ fn save_battle_history_in(
     }
     let created_at =
         i64::try_from(history.created_at).map_err(|_| "对战记录时间不合法".to_string())?;
-    let payload_json = serde_json::to_string(&history.snapshot)
+    let payload_json = serde_json::to_string(&serde_json::json!({
+        "title": history.title,
+        "snapshot": history.snapshot,
+    }))
         .map_err(|error| format!("无法序列化对战记录：{error}"))?;
     transaction
         .execute(
@@ -1615,7 +1619,7 @@ fn list_battle_histories_in(
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|error| format!("无法解析对战签表：{error}"))?;
         let snapshot: BattleTmpSnapshot = serde_json::from_value(
-            payload.get("snapshot").cloned().unwrap_or(payload),
+            payload.get("snapshot").cloned().unwrap_or_else(|| payload.clone()),
         )
         .map_err(|error| format!("无法解析对战签表：{error}"))?;
         if snapshot.variant != variant {
@@ -1626,11 +1630,16 @@ fn list_battle_histories_in(
         if updated_at != snapshot.updated_at {
             return Err("对战历史更新时间不一致".to_string());
         }
+        let title = payload
+            .get("title")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned);
         histories.push(BattleHistory {
             id,
             created_at: u64::try_from(created_at)
                 .map_err(|_| "对战记录时间不合法".to_string())?,
             updated_at,
+            title,
             snapshot,
         });
     }
@@ -2166,6 +2175,7 @@ mod tests {
         let lineup = SavedLineup {
             id: "lineup-1".to_string(),
             created_at: 1_700_000_000_000,
+            title: None,
             input: serde_json::json!({"names": ["甲", "乙"], "groupCount": 2}),
             result: serde_json::json!({"tiers": [["甲", "乙"]]}),
         };
@@ -2173,6 +2183,7 @@ mod tests {
         let caimi_lineup = SavedLineup {
             id: "lineup-caimi".to_string(),
             created_at: lineup.created_at + 1,
+            title: None,
             input: lineup.input.clone(),
             result: lineup.result.clone(),
         };
@@ -2208,6 +2219,7 @@ mod tests {
         let old = SavedLineup {
             id: "lineup-old".to_string(),
             created_at: 1_700_000_000_000,
+            title: None,
             input: serde_json::json!({"names": ["旧"]}),
             result: serde_json::json!({"tiers": [["旧"]]}),
         };
@@ -2216,6 +2228,7 @@ mod tests {
         let valid = SavedLineup {
             id: "lineup-new".to_string(),
             created_at: old.created_at + 1,
+            title: None,
             input: serde_json::json!({"names": ["新"]}),
             result: serde_json::json!({"tiers": [["新"]]}),
         };
@@ -2226,6 +2239,7 @@ mod tests {
         let invalid = SavedLineup {
             id: "非法 编号".to_string(),
             created_at: old.created_at + 2,
+            title: None,
             input: valid.input.clone(),
             result: valid.result.clone(),
         };
@@ -2437,6 +2451,7 @@ mod tests {
             id: "battle-state-1".to_string(),
             created_at: snapshot.updated_at,
             updated_at: snapshot.updated_at,
+            title: None,
             snapshot: snapshot.clone(),
         };
 

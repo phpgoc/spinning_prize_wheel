@@ -892,7 +892,7 @@ function saveBattleHistory(
     db.run(
       `INSERT OR REPLACE INTO battle_history (id, created_at, updated_at, variant, payload_json)
        VALUES (?, ?, ?, ?, ?)`,
-      [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify(snapshot)],
+      [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify({ title: history.title ?? null, snapshot })],
     );
     if (markCurrent) markBattleTmpHistorySaved(db, variant, snapshot.updatedAt);
   });
@@ -905,15 +905,17 @@ function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[]
     [variant],
   )[0]?.values ?? [];
   return rows.map(([id, createdAt, updatedAt, payload]) => {
-    const snapshot = parseBattleTmpSnapshot(
-      unwrapBattleHistorySnapshot(JSON.parse(String(payload))),
-      variant,
-    );
+    const payloadValue = JSON.parse(String(payload)) as unknown;
+    const snapshot = parseBattleTmpSnapshot(unwrapBattleHistorySnapshot(payloadValue), variant);
     if (Number(updatedAt) !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
     return {
       id: String(id),
       createdAt: Number(createdAt),
       updatedAt: Number(updatedAt),
+      title: payloadValue && typeof payloadValue === 'object' && !Array.isArray(payloadValue)
+        && typeof (payloadValue as { title?: unknown }).title === 'string'
+        ? (payloadValue as { title: string }).title
+        : null,
       snapshot,
     };
   });

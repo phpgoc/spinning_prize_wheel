@@ -5,15 +5,17 @@ export interface BattleHistoryTransfer {
   kind: 'battle-history';
   version: 1;
   updatedAt: number;
+  title?: string | null;
   snapshot: BattleTmpSnapshot;
 }
 
 /** 创建带格式标识的对战历史文件，避免与临时表 JSON 混淆。 */
-export function createBattleHistoryTransfer(snapshot: BattleTmpSnapshot): BattleHistoryTransfer {
+export function createBattleHistoryTransfer(snapshot: BattleTmpSnapshot, title?: string | null): BattleHistoryTransfer {
   return {
     kind: 'battle-history',
     version: 1,
     updatedAt: snapshot.updatedAt,
+    ...(title ? { title } : {}),
     snapshot,
   };
 }

@@ -171,6 +171,7 @@
   let rankSelectionShortcutAt = 0;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let resultOrderMode: LineupOrderMode = 'input';
+  let lineupTitle = '';
   let resultSourceNames: string[] = [];
   let resultOrderedNames: string[] = [];
   let resultHistory: SavedLineup | null = null;
@@ -214,6 +215,7 @@
   let battleFixedSeedCount = 0;
   let battleDoubleGrandFinal = false;
   let battleTmpSnapshot: BattleTmpSnapshot | null = null;
+  let battleTitle = '';
   let battleTmpAvailable = false;
   let battleHistorySaved = false;
   let battleHistories: BattleHistory[] = [];
@@ -694,6 +696,7 @@
           : `lineup-${createdAt}-${Math.random().toString(16).slice(2)}`,
         createdAt,
         input: {
+          title: lineupTitle.trim() || null,
           sourceNames: resultSourceNames,
           orderedNames,
           groupCount,
@@ -818,7 +821,7 @@
     if (!result) return;
     error = '';
     try {
-      await downloadExcel('分组结果', lineupExcelRows(result));
+      await downloadExcel(lineupTitle.trim() || '分组结果', lineupExcelRows(result));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 Excel');
     }
@@ -863,7 +866,7 @@
     historyExporting = { id: history.id, format: 'excel' };
     historyError = '';
     try {
-      await downloadExcel('分组结果', lineupExcelRows(historicalResult));
+      await downloadExcel(lineupHistoryTitle(history) || '分组结果', lineupExcelRows(historicalResult));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 Excel');
     } finally {
@@ -1127,6 +1130,7 @@
   }
 
   async function viewBattleHistory(history: BattleHistory) {
+    battleTitle = history.title ?? '';
     battleHistoryView = {
       ...history,
       snapshot: structuredClone(history.snapshot),
@@ -1208,6 +1212,7 @@
       id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
       createdAt: snapshot.updatedAt,
       updatedAt: snapshot.updatedAt,
+      title: battleTitle.trim() || null,
       snapshot: structuredClone(snapshot),
     };
     try {
@@ -1259,7 +1264,7 @@
     battleHistoryExporting = { id: history.id, format: 'json' };
     battleHistoryError = '';
     try {
-      await downloadFormattedJson('对战历史', createBattleHistoryTransfer(history.snapshot));
+      await downloadFormattedJson(history.title || '对战历史', createBattleHistoryTransfer(history.snapshot, history.title));
     } catch (reason) {
       battleHistoryError = messageFrom(reason, '无法导出对战历史 JSON');
     } finally {
@@ -1272,7 +1277,7 @@
     battleHistoryExporting = { id: history.id, format: 'excel' };
     battleHistoryError = '';
     try {
-      await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(history.snapshot));
+      await downloadExcelBytes(history.title || '对战签表', await createBattleBracketWorkbook(history.snapshot));
     } catch (reason) {
       battleHistoryError = messageFrom(reason, '无法导出对战历史 Excel');
     } finally {
@@ -1591,6 +1596,11 @@
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
+  function lineupHistoryTitle(history: SavedLineup): string | null {
+    const input = history.input as { title?: unknown };
+    return typeof input.title === 'string' && input.title.trim() ? input.title.trim() : null;
+  }
+
   function openLineupHistoryImporter() {
     historyFileInput?.click();
   }
@@ -1692,6 +1702,7 @@
     }
     result = historicalResult;
     resultHistory = history;
+    lineupTitle = lineupHistoryTitle(history) ?? '';
     const input = history.input as Partial<{
       orderMode: LineupOrderMode;
       orderedNames: unknown[];
@@ -3113,7 +3124,7 @@
     if (!battleTmpSnapshot || battleExporting) return;
     battleExporting = 'excel';
     try {
-      await downloadExcelBytes('对战签表', await createBattleBracketWorkbook(battleTmpSnapshot));
+      await downloadExcelBytes(battleTitle.trim() || '对战签表', await createBattleBracketWorkbook(battleTmpSnapshot));
       error = '';
     } catch (reason) {
       error = messageFrom(reason, '无法导出对战签表 Excel');
@@ -3358,7 +3369,7 @@
                     {#each visibleBattleHistories as history (history.id)}
                       <UiHistoryRow
                         eyebrow={formatHistoryDate(history.createdAt)}
-                        title={`${history.snapshot.participantCount} 人 · ${battleTmpFormatLabel(history.snapshot.format)}`}
+                        title={history.title ?? `${history.snapshot.participantCount} 人 · ${battleTmpFormatLabel(history.snapshot.format)}`}
                         hint="查看比赛 →"
                         active={battleHistoryView?.id === history.id}
                         on:select={() => viewBattleHistory(history)}
@@ -3394,7 +3405,7 @@
                   {#each visibleHistories as history (history.id)}
                     <UiHistoryRow
                       eyebrow={formatHistoryDate(history.createdAt)}
-                      title={historySummary(history)}
+                      title={lineupHistoryTitle(history) ?? historySummary(history)}
                       hint="查看分组 →"
                       on:select={() => viewHistory(history)}
                     >
@@ -3646,8 +3657,8 @@
               </div>
             </fieldset>
           </div>
-          <div class="result-heading">
-            <div><span>03</span><div><h2>{battleHistoryView ? '历史对战' : '对战'}</h2><p>{battleHistoryView ? `${formatHistoryDate(battleHistoryView.createdAt)} · ${battleHistoryView.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryView.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
+            <div class="result-heading">
+            <div><div><h2>{battleTitle.trim() || (battleHistoryView ? '历史对战' : '对战')}</h2><p>{battleHistoryView ? `${formatHistoryDate(battleHistoryView.createdAt)} · ${battleHistoryView.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryView.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
             {#if battleHistoryView}
               <div class="result-output-actions">
                 <UiButton size="sm" on:click={returnToCurrentBattle}>返回当前对战</UiButton>
@@ -3696,7 +3707,7 @@
           {/if}
         {:else}
         <div class="result-heading">
-          <div><span>03</span><div><h2>分组结果</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
+          <div><div><h2>{lineupTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
               {#if hiddenLineupCellCount > 0}
@@ -3765,6 +3776,14 @@
           <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
         {/if}
       </div>
+      <label class="lineup-title-field">
+        <span>{battlePage ? '对战名称（可选）' : '分组名称（可选）'}</span>
+        {#if battlePage}
+          <input bind:value={battleTitle} maxlength="40" placeholder="例如：周五单败赛" />
+        {:else}
+          <input bind:value={lineupTitle} maxlength="40" placeholder="例如：季度分组" />
+        {/if}
+      </label>
       {#if !battlePage}
         <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
       {/if}
@@ -3976,8 +3995,7 @@
     display: flex;
   }
 
-  .config-heading span,
-  .result-heading > div > span {
+  .config-heading span {
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: calc(12px * var(--font-scale, 1));
@@ -4056,6 +4074,19 @@
   .list-actions .confirm-list:hover:not(:disabled) { border-color: var(--accent-strong); background: color-mix(in srgb, var(--accent-soft) 75%, var(--accent)); color: var(--accent-ink); }
   .list-actions .clear-list { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
   .list-actions .clear-list:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
+
+  .lineup-title-field { display: grid; gap: 5px; margin-top: 12px; }
+  .lineup-title-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .lineup-title-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--line-subtle);
+    border-radius: 8px;
+    background: var(--color-app-surface-raised);
+    color: var(--color-app-text);
+    font-size: calc(13px * var(--font-scale, 1));
+  }
 
   .group-setting {
     align-items: stretch;
@@ -4397,7 +4428,6 @@
     background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
   .result-heading > div { align-items: center; gap: 11px; }
-  .result-heading > div > span { display: grid; width: 31px; height: 31px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 50%; place-items: center; }
   .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }

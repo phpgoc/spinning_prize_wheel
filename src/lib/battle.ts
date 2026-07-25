@@ -97,6 +97,7 @@ export interface BattleHistory {
   createdAt: number;
   /** 生成这条历史时临时签表的更新时间；与数据库 battle_history.updated_at 一致。 */
   updatedAt: number;
+  title?: string | null;
   snapshot: BattleTmpSnapshot;
 }
 

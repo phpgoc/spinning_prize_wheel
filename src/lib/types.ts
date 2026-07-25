@@ -97,6 +97,7 @@ export interface ResolvedLineupName {
 export interface SavedLineup {
   id: string;
   createdAt: number;
+  title?: string | null;
   input: unknown;
   result: unknown;
 }
