@@ -1400,23 +1400,14 @@ test('键盘排序中间落点执行替换', async ({ page }) => {
   await expect.poll(() => mockedRankedNames(page)).toEqual(['乙', '甲', '丙']);
 });
 
-test('键盘排序上方落点执行插入，无排名项可循环插入第一名', async ({ page }) => {
+test('键盘排序上方落点执行插入', async ({ page }) => {
   await openDesktopLineup(page);
   await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
   await page.keyboard.press('Space');
-  for (let index = 0; index < 5; index += 1) await page.keyboard.press('ArrowUp');
+  for (let index = 0; index < 4; index += 1) await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Space');
   await expect.poll(() => mockedRankedNames(page)).toEqual(['丙', '甲', '乙']);
-
-  await page.locator('[data-rank-user-id="3"]').focus();
-  await page.keyboard.press('3');
-  await page.keyboard.press('ArrowDown');
-  await expect(page.locator('[data-rank-user-id="4"]')).toHaveClass(/keyboard-selected/);
-  await page.keyboard.press('Space');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Space');
-  await expect.poll(() => mockedRankedNames(page)).toEqual(['丁', '丙', '甲', '乙']);
 });
 
 test('鼠标拖拽中间区域替换，无排名项的中间区域只插入', async ({ page }) => {

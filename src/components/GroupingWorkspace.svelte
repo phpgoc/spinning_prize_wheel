@@ -1765,8 +1765,6 @@
   }
 
   function selectRankedUserFromPointer(userId: number) {
-    // 卡片拖拽会阻止浏览器默认聚焦；鼠标选中后仍应允许继续使用数字快捷键。
-    rankingFocusActive = true;
     selectedRankedUserId = userId;
     rankedUserActionIndex = -1;
   }
@@ -1823,6 +1821,19 @@
     );
   }
 
+  function keyboardRankDropPointIsNoop(point: ReturnType<typeof keyboardRankDropPoints>[number]): boolean {
+    const sourceId = keyboardMovingUserId ?? selectedRankedUserId;
+    if (sourceId === null) return false;
+    const sourceIndex = rankedPeople.findIndex((user) => user.id === sourceId);
+    if (sourceIndex < 0) return false;
+    if (point.target.kind === 'swap') return point.target.userId === sourceId;
+    if (point.target.kind === 'insert') {
+      // 移除源项后插回原位置，或原位置之后，结果都不会改变。
+      return point.target.index === sourceIndex || point.target.index === sourceIndex + 1;
+    }
+    return false;
+  }
+
   function rankMoveSourceCanSwap(userId: number | null): boolean {
     return userId !== null
       && rankedUsers.some((user) => user.id === userId && user.rank < 10_000);
@@ -1855,12 +1866,22 @@
     if (sourcePoint < 0) return;
     clearRankDragState();
     keyboardMovingUserId = selectedRankedUserId;
+    // 当前项作为移动锚点；上下移动时会跳过当前项的无效落点。
     void showKeyboardRankDropPoint(sourcePoint);
   }
 
   function moveKeyboardRankDropPoint(delta: -1 | 1) {
     if (keyboardMovingUserId === null) return;
-    void showKeyboardRankDropPoint(keyboardDropPointIndex + delta);
+    const points = keyboardRankDropPoints();
+    if (points.length === 0) return;
+    let nextIndex = keyboardDropPointIndex;
+    for (let step = 0; step < points.length; step += 1) {
+      nextIndex = (nextIndex + delta + points.length) % points.length;
+      if (!keyboardRankDropPointIsNoop(points[nextIndex])) {
+        void showKeyboardRankDropPoint(nextIndex);
+        return;
+      }
+    }
   }
 
   function cancelKeyboardRankMove() {
@@ -1874,7 +1895,7 @@
   function confirmKeyboardRankMove() {
     const userId = keyboardMovingUserId;
     const point = keyboardRankDropPoints()[keyboardDropPointIndex];
-    if (userId === null || !point) return;
+    if (userId === null || !point || keyboardRankDropPointIsNoop(point)) return;
     cancelKeyboardRankMove();
     void moveRankedUser(userId, point.target);
   }
@@ -1936,9 +1957,7 @@
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     // 名称占据卡片的大部分区域，也应当可以作为拖拽起点；右侧操作按钮仍只执行自身操作。
     if ((event.target as HTMLElement).closest('[data-rank-action], input, textarea, select, form')) return;
-    // 拖拽需要阻止默认聚焦，但卡片被鼠标选中后仍应成为键盘入口，确保数字快捷键立即可用。
-    (event.currentTarget as HTMLElement).focus({ preventScroll: true });
-    // 仍阻止浏览器默认点击行为，避免拖拽结束时误触发名称编辑。
+    // 阻止浏览器默认点击行为，避免拖拽结束时误触发名称编辑；无拖动时在松开后补焦点。
     event.preventDefault();
     suppressRankNameClickUserId = null;
     pendingRankDragUserId = userId;
@@ -2003,9 +2022,15 @@
   function finishRankPointerDrag(event: PointerEvent) {
     if (event.pointerId !== rankDragPointerId) return;
     const userId = draggingUserId;
+    const clickedUserId = pendingRankDragUserId;
     // pointermove 可能被浏览器合并，松手坐标才是最终落点；旧落点只在移出列表时兜底。
     const target = rankDropTargetAt(event.clientX, event.clientY) ?? activeRankDropTarget;
     clearRankDragState();
+    if (userId === null && clickedUserId !== null) {
+      rankingFocusActive = true;
+      document.querySelector<HTMLElement>(`[data-rank-user-id="${clickedUserId}"]`)
+        ?.focus({ preventScroll: true });
+    }
     if (userId !== null) {
       // pointerup 之后浏览器仍可能派发名称按钮的 click，需要跳过这一次，不能误入编辑。
       event.preventDefault();
