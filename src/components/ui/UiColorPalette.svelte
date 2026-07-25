@@ -48,10 +48,10 @@
   function commitHexValue(event: Event) {
     const field = event.currentTarget as HTMLInputElement;
     const next = field.value.trim();
-    if (/^#[0-9a-f]{6}$/iu.test(next)) {
-      selectColor(next.toLowerCase());
+    if (/^[0-9a-f]{6}$/iu.test(next)) {
+      selectColor(`#${next.toLowerCase()}`);
     } else {
-      field.value = value;
+      field.value = value.replace(/^#/u, '');
     }
   }
 
@@ -118,7 +118,7 @@
       <div bind:this={pickerHost} class="iro-picker"></div>
       <label class="palette-hex-field">
         <span>十六进制</span>
-        <input class="palette-hex-input" value={value} maxlength="7" spellcheck="false" aria-label={`${label}十六进制`} on:change={commitHexValue} />
+        <input class="palette-hex-input" value={value.replace(/^#/u, '')} maxlength="6" spellcheck="false" inputmode="text" aria-label={`${label}六位十六进制`} on:change={commitHexValue} />
       </label>
     </div>
   {/if}
