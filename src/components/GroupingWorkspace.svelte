@@ -3491,7 +3491,6 @@
           </div>
         {:else}
           <div class="preview-empty">
-            <span>请先在右侧粘贴名单</span>
             {#if insertIndex === 0}
               <form class="preview-insert-form" on:submit|preventDefault={confirmPreviewInsertion}>
                 <label>
