@@ -392,7 +392,7 @@
     void initializeDesktop();
   }
   $: if (mounted && battlePage && battleColorLoadedVariant !== variant) {
-    loadBattleColors();
+    void loadBattleColors();
   }
 
   onMount(() => {
@@ -435,12 +435,15 @@
     }
   }
 
-  function loadBattleColors() {
+  async function loadBattleColors() {
     battleColorLoadedVariant = variant;
     battleColorPreset = 'classic';
     battleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
     try {
-      const saved = JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}') as Partial<BattleColors> & {
+      const databaseSaved = await invoke<unknown>('load_app_setting', { key: battleColorStorageKey() });
+      const saved = (databaseSaved && typeof databaseSaved === 'object' && !Array.isArray(databaseSaved)
+        ? databaseSaved
+        : JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}')) as Partial<BattleColors> & {
         preset?: unknown;
       };
       const defaultColors = BATTLE_COLOR_PRESETS.classic.colors;
@@ -458,7 +461,9 @@
     } catch {
       // 本地颜色损坏时继续使用默认值，不影响对战操作。
     }
-    battleColorSnapshotAvailable = readBattleColorSnapshot() !== null;
+    battleColorSnapshotAvailable = await invoke<unknown>('load_app_setting', { key: battleColorSnapshotStorageKey() })
+      .then((value) => Boolean(value))
+      .catch(() => readBattleColorSnapshot() !== null);
   }
 
   function matchingBattleColorPreset(colors: BattleColors): BattleColorPresetName | null {
@@ -468,11 +473,10 @@
   }
 
   function saveBattleColors() {
+    const value = { ...battleColors, preset: battleColorPreset };
+    void invoke('save_app_setting', { key: battleColorStorageKey(), value }).catch(() => undefined);
     try {
-      localStorage.setItem(battleColorStorageKey(), JSON.stringify({
-        ...battleColors,
-        preset: battleColorPreset,
-      }));
+      localStorage.setItem(battleColorStorageKey(), JSON.stringify(value));
     } catch {
       // 浏览器禁用本地存储时仍允许本次临时调色。
     }
@@ -492,6 +496,7 @@
   }
 
   function saveBattleColorSnapshot() {
+    void invoke('save_app_setting', { key: battleColorSnapshotStorageKey(), value: battleColors }).catch(() => undefined);
     try {
       localStorage.setItem(battleColorSnapshotStorageKey(), JSON.stringify(battleColors));
       battleColorSnapshotAvailable = true;
@@ -500,8 +505,11 @@
     }
   }
 
-  function loadBattleColorSnapshot() {
-    const saved = readBattleColorSnapshot();
+  async function loadBattleColorSnapshot() {
+    const stored = await invoke<unknown>('load_app_setting', { key: battleColorSnapshotStorageKey() }).catch(() => null);
+    const saved = stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? stored as BattleColors
+      : readBattleColorSnapshot();
     if (!saved) {
       battleColorSnapshotAvailable = false;
       return;
