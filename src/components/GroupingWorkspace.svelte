@@ -3923,6 +3923,9 @@
   }
 
   .lineup-workbench {
+    --ranking-width-scale: 0.85;
+    --ranking-row-height-scale: 0.9;
+    --workspace-font-scale: var(--font-scale, 1);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
     align-items: stretch;
@@ -3933,7 +3936,7 @@
 
   .lineup-workbench.desktop {
     grid-template-columns:
-      minmax(calc(260px * var(--lineup-layout-scale, 1)), calc(310px * var(--lineup-layout-scale, 1)))
+      minmax(calc(260px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(310px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)))
       minmax(0, 1fr)
       minmax(calc(300px * var(--lineup-layout-scale, 1)), calc(360px * var(--lineup-layout-scale, 1)));
     gap: calc(clamp(14px, 1.7vw, 25px) * var(--lineup-layout-scale, 1));
@@ -4675,6 +4678,8 @@
   }
 
   .lineup-sidebar {
+    /* 排名区使用略紧凑的字号，避免缩小列宽后内容显得拥挤。 */
+    --font-scale: calc(var(--workspace-font-scale, 1) * 0.9);
     display: grid;
     height: 100%;
     min-height: 0;
@@ -4963,7 +4968,7 @@
     position: relative;
     display: grid;
     min-width: 0;
-    min-height: calc(70px + 24px * var(--font-scale, 1));
+    min-height: calc((70px + 24px * var(--workspace-font-scale, 1)) * var(--ranking-row-height-scale, 1));
     grid-template-columns: var(--rank-number-size) minmax(0, 1fr);
     align-items: center;
     gap: calc(4px + 4px * var(--font-scale, 1));
@@ -5318,7 +5323,7 @@
     }
     .lineup-workbench.desktop.web-layout {
       /* Web 端字号放大时保留三列位置，同时不让侧栏按字号挤占中间预览区。 */
-      grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(300px, 360px);
+      grid-template-columns: minmax(calc(260px * var(--ranking-width-scale, 1)), calc(310px * var(--ranking-width-scale, 1))) minmax(0, 1fr) minmax(300px, 360px);
       gap: clamp(14px, 1.7vw, 25px);
     }
     .lineup-workbench.desktop .lineup-center { display: contents; }
@@ -5355,7 +5360,7 @@
     }
     .lineup-workbench.desktop {
       grid-template-columns:
-        minmax(calc(250px * var(--lineup-layout-scale, 1)), calc(290px * var(--lineup-layout-scale, 1)))
+        minmax(calc(250px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(290px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)))
         minmax(0, 1fr);
     }
 
