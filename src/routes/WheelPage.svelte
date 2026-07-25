@@ -188,6 +188,8 @@
   let statsExportError = '';
   let batchExportError = '';
   let hydrated = false;
+  let databaseSettingsLoaded = false;
+  let persistedWheelSettings: Record<string, unknown> = {};
   let timer: number | undefined;
   let continuousTimer: number | undefined;
   const drawSound = createDrawSoundController();
@@ -259,7 +261,7 @@
         .filter((option) => !option.isRetry)
         .map((option) => [option.id, Math.max(1, Math.round(option.weight))]))
     : null;
-  $: if (hydrated) {
+  $: if (hydrated && databaseSettingsLoaded) {
     persistWheelSettings({
       mode,
       animationStyle,
@@ -324,6 +326,7 @@
     }
     void loadCommonSelections();
     void loadDrawHistories();
+    void loadWheelSettingsFromDatabase();
     hydrated = true;
   });
 
@@ -335,21 +338,55 @@
 
   /** 转盘设置与应用壳的字号共用一个键，写入时保留彼此字段。 */
   function persistWheelSettings(next: Record<string, unknown>) {
-    let saved: Record<string, unknown> = {};
+    const saved = { ...persistedWheelSettings, ...next };
+    persistedWheelSettings = saved;
+    void invoke('save_app_setting', { key: 'wheel-settings', value: saved }).catch(() => {
+      // 数据库不可用时继续保留当前会话状态。
+    });
     try {
-      const parsed = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
-      ) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        saved = parsed as Record<string, unknown>;
+      if (!databaseSettingsLoaded) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
       }
     } catch {
-      // 损坏的旧设置直接由当前有效设置替换。
+      // 禁用本地存储时仍允许数据库配置继续生效。
     }
+  }
+
+  async function loadWheelSettingsFromDatabase() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, ...next }));
+      const value = await invoke<unknown>('load_app_setting', { key: 'wheel-settings' });
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const parsed = value as Partial<{
+          mode: DrawMode;
+          animationStyle: AnimationStyle;
+          durationSeconds: number;
+          soundEnabled: boolean;
+          rewardAmount: number;
+          retryEnabled: boolean;
+          retryWeight: number;
+          autoSaveHistory: boolean;
+          continuousTarget: number;
+          staySeconds: number;
+          continuousIntervalSeconds: number;
+          uiTheme: UiTheme;
+        }>;
+        persistedWheelSettings = { ...(value as Record<string, unknown>) };
+        if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
+        if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) animationStyle = parsed.animationStyle!;
+        if (typeof parsed.durationSeconds === 'number') durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
+        if (typeof parsed.soundEnabled === 'boolean') soundEnabled = parsed.soundEnabled;
+        if (typeof parsed.rewardAmount === 'number') rewardAmount = Math.max(0, parsed.rewardAmount);
+        if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
+        retryWeight = positiveNumberOrFallback(parsed.retryWeight, retryWeight);
+        if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
+        if (typeof parsed.continuousTarget === 'number') continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
+        staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds ?? staySeconds);
+        uiTheme = normalizeUiTheme(parsed.uiTheme);
+      }
     } catch {
-      // 禁用本地存储时仍允许当前会话继续调整界面。
+      // 首次运行或旧版本数据库没有配置时使用默认值和兼容迁移值。
+    } finally {
+      databaseSettingsLoaded = true;
     }
   }
 
