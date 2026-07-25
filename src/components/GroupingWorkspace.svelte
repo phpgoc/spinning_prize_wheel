@@ -2296,6 +2296,7 @@
       && !event.altKey
       && !event.shiftKey
       && ['f', 'h'].includes(key)
+      && (target === lineupResultElement || target === document.body)
     ) {
       event.preventDefault();
       void setBattleFullscreen(!battleFullscreen);
