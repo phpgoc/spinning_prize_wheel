@@ -2590,11 +2590,8 @@
       {#if activePanel === 'history'}
       <div class="accordion-content history-content">
         <div class="panel-heading">
-          <div><h2>历史</h2></div>
           {#if businessRuntime}
-            <span class="count-badge">{drawHistoryStart || drawHistoryEnd
-              ? `查询条件下共 ${filteredDrawHistories.length} 条`
-              : `共 ${drawHistories.length} 条`}</span>
+            <span class="count-badge">{Math.min(5, drawHistoryStart || drawHistoryEnd ? filteredDrawHistories.length : drawHistories.length)}/{drawHistoryStart || drawHistoryEnd ? filteredDrawHistories.length : drawHistories.length}条</span>
           {/if}
         </div>
 

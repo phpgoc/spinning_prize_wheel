@@ -1721,6 +1721,11 @@
     }).format(new Date(createdAt));
   }
 
+  function historyCountLabel(total: number, filtered: number, hasFilter: boolean): string {
+    const count = hasFilter ? filtered : total;
+    return `${Math.min(5, count)}/${count}条`;
+  }
+
   function resetUserForm() {
     editingUserId = null;
     editingRankField = 'name';
@@ -3349,12 +3354,8 @@
             on:click={() => toggleDesktopPanel('history')}
           >
             <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage
-              ? battleHistoryStart || battleHistoryEnd
-                ? `查询条件下共 ${visibleBattleHistories.length} 条`
-                : `共 ${battleHistories.length} 条`
-              : historyStart || historyEnd
-                ? `查询条件下共 ${visibleHistories.length} 条`
-                : `共 ${lineupHistories.length} 条`}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+              ? historyCountLabel(battleHistories.length, visibleBattleHistories.length, Boolean(battleHistoryStart || battleHistoryEnd))
+              : historyCountLabel(lineupHistories.length, visibleHistories.length, Boolean(historyStart || historyEnd))}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
