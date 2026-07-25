@@ -1865,6 +1865,7 @@
       );
     if (sourcePoint < 0) return;
     clearRankDragState();
+    resetRankSelectionShortcut();
     keyboardMovingUserId = selectedRankedUserId;
     // 当前项作为移动锚点；上下移动时会跳过当前项的无效落点。
     void showKeyboardRankDropPoint(sourcePoint);
@@ -1881,6 +1882,36 @@
         void showKeyboardRankDropPoint(nextIndex);
         return;
       }
+    }
+  }
+
+  function moveKeyboardRankDropPointByShortcut(key: string) {
+    if (keyboardMovingUserId === null) return;
+    const points = keyboardRankDropPoints();
+    if (points.length === 0) return;
+
+    const now = Date.now();
+    const current = now - rankSelectionShortcutAt <= 900 ? rankSelectionShortcutInput : '';
+    let next = updateRankShortcutInput(current, key);
+    const numberedUsers = rankedUsers.filter((user) => user.rank < 10_000);
+    if (/^\d$/u.test(key) && !numberedUsers.some((user) => String(user.rank).startsWith(next))) {
+      next = key;
+    }
+    rankSelectionShortcutInput = next;
+    rankSelectionShortcutAt = now;
+
+    const targetUser = numberedUsers.find((user) => String(user.rank) === next)
+      ?? numberedUsers.find((user) => String(user.rank).startsWith(next));
+    if (!targetUser) return;
+    const targetIndex = points.findIndex((point) => (
+      point.target.kind === 'swap' && point.target.userId === targetUser.id
+    ));
+    const fallbackIndex = points.findIndex((point) => (
+      point.target.kind === 'insert' && point.target.index === targetUser.rank - 1
+    ));
+    const pointIndex = targetIndex >= 0 ? targetIndex : fallbackIndex;
+    if (pointIndex >= 0 && !keyboardRankDropPointIsNoop(points[pointIndex])) {
+      void showKeyboardRankDropPoint(pointIndex);
     }
   }
 
@@ -1903,6 +1934,15 @@
   function toggleKeyboardRankMove() {
     if (keyboardMovingUserId === null) beginKeyboardRankMove();
     else confirmKeyboardRankMove();
+  }
+
+  function handleRankingKeydown(event: KeyboardEvent) {
+    if (keyboardMovingUserId === null) return;
+    if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
+      event.preventDefault();
+      event.stopPropagation();
+      moveKeyboardRankDropPointByShortcut(event.key);
+    }
   }
 
   function keyboardRankDropLabel(): string {
@@ -1953,6 +1993,8 @@
 
   function beginRankPointerDrag(event: PointerEvent, userId: number) {
     resetRankSelectionShortcut();
+    // 鼠标重新选中条目时结束键盘排序，避免两种移动状态互相覆盖。
+    cancelKeyboardRankMove();
     selectRankedUserFromPointer(userId);
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     // 名称占据卡片的大部分区域，也应当可以作为拖拽起点；右侧操作按钮仍只执行自身操作。
@@ -2537,6 +2579,9 @@
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault();
         moveKeyboardRankDropPoint(event.key === 'ArrowUp' ? -1 : 1);
+      } else if (/^\d$/u.test(event.key) || event.key === 'Backspace') {
+        event.preventDefault();
+        moveKeyboardRankDropPointByShortcut(event.key);
       } else if (event.code === 'Space') {
         event.preventDefault();
         confirmKeyboardRankMove();
@@ -2553,6 +2598,9 @@
     }
     if (rankingFocusActive && (/^\d$/u.test(event.key) || event.key === 'Backspace')) {
       event.preventDefault();
+      // 数字快捷键只用于选择源项；鼠标或键盘移动进行中不切换源项，
+      // 否则会让当前落点与拖拽源不一致，导致空格无法提交。
+      if (pendingRankDragUserId !== null || draggingUserId !== null) return;
       updateRankSelectionShortcut(event.key);
       return;
     }
@@ -3108,7 +3156,7 @@
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'ranking'}
-            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager" on:focusin={() => (rankingFocusActive = true)} on:focusout={leaveRankedUserActions}>
+            <div class:dragging={draggingUserId !== null} class:keyboard-moving={keyboardMovingUserId !== null} class:reordering={rankingReordering} class="desktop-accordion-content rank-manager" on:focusin={() => (rankingFocusActive = true)} on:focusout={leaveRankedUserActions} on:keydown={handleRankingKeydown}>
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}

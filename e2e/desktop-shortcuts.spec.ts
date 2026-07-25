@@ -1331,6 +1331,17 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
   await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
 });
 
+test('鼠标选中后数字跳转仍可用空格提交排序', async ({ page }) => {
+  await openDesktopLineup(page);
+  await page.locator('[data-rank-user-id="1"]').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('3');
+  await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await expect.poll(() => mockedRankedNames(page)).toEqual(['甲', '丙', '乙']);
+});
+
 test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
   await openDesktopLineup(page);
   const thirdCard = page.locator('[data-rank-user-id="3"]');
