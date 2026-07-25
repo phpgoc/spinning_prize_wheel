@@ -112,11 +112,14 @@
   </button>
   <!-- 保留一个不可见的原生输入作为事件桥接，界面只显示一个圆盘入口。 -->
   <input bind:this={input} class="palette-value-input" type="color" aria-label={label} {value} on:input />
-  <input class="palette-hex-input" value={value} maxlength="7" spellcheck="false" aria-label={`${label}十六进制`} on:change={commitHexValue} />
 
   {#if open}
     <div id={panelId} class="palette-popover" role="dialog" aria-label={`${label.replace('颜色', '')}色盘`}>
       <div bind:this={pickerHost} class="iro-picker"></div>
+      <label class="palette-hex-field">
+        <span>十六进制</span>
+        <input class="palette-hex-input" value={value} maxlength="7" spellcheck="false" aria-label={`${label}十六进制`} on:change={commitHexValue} />
+      </label>
     </div>
   {/if}
 </div>
@@ -145,11 +148,14 @@
   .palette-trigger > span:nth-child(2) { overflow: hidden; font-size: calc(10px * var(--font-scale, 1)); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
   .palette-trigger small { grid-column: 2; color: color-mix(in srgb, currentColor 58%, transparent); font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(8px * var(--font-scale, 1)); }
   .trigger-color { width: 17px; height: 17px; grid-row: 1 / 3; border: 1px solid rgb(255 255 255 / 45%); border-radius: 50%; background: var(--color-value); box-shadow: inset 0 0 0 2px rgb(0 0 0 / 18%); }
-  .palette-popover { position: absolute; z-index: 120; top: calc(100% + 7px); right: 0; display: grid; min-width: 150px; justify-items: center; padding: 10px; border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 24%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, black); box-shadow: 0 12px 30px rgb(0 0 0 / 42%); }
+  .palette-popover { position: absolute; z-index: 120; top: calc(100% + 7px); right: 0; display: grid; min-width: 150px; justify-items: center; gap: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--battle-text-color, white) 24%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, black); box-shadow: 0 12px 30px rgb(0 0 0 / 42%); }
   .iro-picker { width: 132px; min-height: 132px; }
   :global(.IroColorPicker) { margin: 0 auto; }
   .palette-value-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+  .palette-hex-field { display: flex; width: 100%; align-items: center; gap: 6px; color: color-mix(in srgb, currentColor 72%, transparent); font-size: calc(10px * var(--font-scale, 1)); }
+  .palette-hex-field span { flex: 0 0 auto; }
   .palette-hex-input {
+    flex: 1;
     width: 70px;
     min-width: 0;
     padding: 4px 5px;
