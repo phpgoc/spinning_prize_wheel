@@ -150,7 +150,8 @@
   .single-bracket-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
   .single-bracket-connectors path { fill: none; stroke: color-mix(in srgb, var(--accent) 42%, transparent); stroke-width: calc(2px * var(--battle-layout-scale, 1)); stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .single-bracket-side { position: relative; z-index: 1; display: flex; align-items: stretch; gap: var(--battle-round-column-gap); }
-  .single-bracket-side.left { justify-content: flex-end; }
+  /* 左侧内容宽度在部分 WebView 下可能被低估；安全对齐可避免溢出时首列被推到滚动区外。 */
+  .single-bracket-side.left { justify-content: safe flex-end; }
   .single-bracket-side.right { justify-content: flex-start; }
   .single-bracket-side .battle-round { display: flex; flex-direction: column; justify-content: center; }
   .single-bracket-final { position: relative; z-index: 1; min-width: 0; padding: calc(12px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--battle-background-color, #282c34) 96%, transparent); }
