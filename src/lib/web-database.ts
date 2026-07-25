@@ -154,6 +154,16 @@ function executeCommand<T>(
     case 'clear_draw_histories':
       db.run('DELETE FROM draw_history WHERE variant = ?', [String(args.variant)]);
       return undefined as T;
+    case 'load_app_setting': {
+      const rows = db.exec('SELECT value_json FROM app_kv WHERE key = ?', [String(args.key)])[0]?.values ?? [];
+      return (rows.length > 0 ? JSON.parse(String(rows[0][0])) : null) as T;
+    }
+    case 'save_app_setting':
+      db.run(
+        `INSERT OR REPLACE INTO app_kv (key, value_json) VALUES (?, ?)`,
+        [String(args.key), JSON.stringify(args.value)],
+      );
+      return undefined as T;
     case 'list_ranked_users':
       return listRankedUsers(db) as T;
     case 'resolve_lineup_names':
@@ -316,6 +326,10 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
       created_at INTEGER NOT NULL,
       payload_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS app_kv (
+      key TEXT PRIMARY KEY NOT NULL,
+      value_json TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS draw_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
@@ -373,7 +387,7 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
 function hasKnownDatabaseTable(db: Database): boolean {
   const result = db.exec(
     `SELECT name FROM sqlite_master
-     WHERE type = 'table' AND name IN ('schema_migrations', 'draw_history', 'user', 'lineup_history', 'battle_tmp', 'battle_history')`,
+     WHERE type = 'table' AND name IN ('schema_migrations', 'app_kv', 'draw_history', 'user', 'lineup_history', 'battle_tmp', 'battle_history')`,
   )[0];
   return Boolean(result?.values.length);
 }

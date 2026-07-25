@@ -110,6 +110,13 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
          ON battle_history(variant, created_at DESC);",
     ),
+    (
+        6,
+        "CREATE TABLE IF NOT EXISTS app_kv (
+           key TEXT PRIMARY KEY NOT NULL,
+           value_json TEXT NOT NULL
+         );",
+    ),
 ];
 
 mod models;
@@ -444,6 +451,57 @@ fn validate_variant(variant: &str) -> Result<&str, String> {
         "standard" | "caimi" => Ok(variant),
         _ => Err("应用版本不合法".to_string()),
     }
+}
+
+fn validate_app_key(key: &str) -> Result<&str, String> {
+    let key = key.trim();
+    if key.is_empty() || key.len() > 128 || key.chars().any(char::is_control) {
+        return Err("配置键不合法".to_string());
+    }
+    Ok(key)
+}
+
+#[tauri::command]
+fn load_app_setting(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    key: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let key = validate_app_key(&key)?.to_string();
+    with_app_database(&app, &database, |connection| {
+        let value = connection
+            .query_row(
+                "SELECT value_json FROM app_kv WHERE key = ?1",
+                params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| format!("无法读取应用配置：{error}"))?;
+        value
+            .map(|raw| serde_json::from_str(&raw).map_err(|error| format!("应用配置格式错误：{error}")))
+            .transpose()
+    })
+}
+
+#[tauri::command]
+fn save_app_setting(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let key = validate_app_key(&key)?.to_string();
+    let value_json = serde_json::to_string(&value).map_err(|error| format!("无法序列化应用配置：{error}"))?;
+    with_app_database(&app, &database, |connection| {
+        connection
+            .execute(
+                "INSERT INTO app_kv (key, value_json) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                params![key, value_json],
+            )
+            .map_err(|error| format!("无法保存应用配置：{error}"))?;
+        Ok(())
+    })
 }
 
 fn migrate_database(connection: &mut Connection) -> Result<(), String> {
@@ -1708,6 +1766,8 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DatabaseState::default())
         .invoke_handler(tauri::generate_handler![
+            load_app_setting,
+            save_app_setting,
             save_common_selection,
             list_common_selections,
             delete_common_selection,

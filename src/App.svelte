@@ -26,6 +26,7 @@
   } from './lib/ui-settings';
   import type { DrawMode } from './lib/types';
   import { isTauriRuntime } from './lib/runtime';
+  import { invoke } from './lib/runtime';
 
   export let pathname = typeof window === 'undefined' ? '/' : window.location.pathname;
 
@@ -59,6 +60,7 @@
   let appFullscreen = false;
   let appFullscreenChanging = false;
   let persistedFontScale = fontScale;
+  let persistedUiTheme = uiTheme;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
   $: logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
@@ -72,6 +74,10 @@
     persistedFontScale = fontScale;
     saveFontScale();
   }
+  $: if (appMounted && uiTheme !== persistedUiTheme) {
+    persistedUiTheme = uiTheme;
+    void saveAppSettings({ uiTheme });
+  }
 
   onMount(() => {
     appUnmounted = false;
@@ -79,6 +85,7 @@
     if (pathname === '/' || pathname === '/caimi') {
       void goto(variantRoute(variant, 'wheel'), { replaceState: true });
     }
+    void loadAppSettings();
     updateFavicon(variant);
     if (tauriRuntime) void registerCloseRequestedListener();
     else registerBrowserBeforeUnloadListener();
@@ -222,6 +229,30 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
     } catch {
       // 禁用本地存储时字号仍在当前会话生效。
+    }
+    void saveAppSettings({ fontScale });
+  }
+
+  async function loadAppSettings() {
+    try {
+      const saved = await invoke<{ fontScale?: unknown; uiTheme?: unknown } | null>('load_app_setting', { key: 'app-settings' });
+      if (!saved) return;
+      fontScale = normalizeFontScale(saved.fontScale);
+      uiTheme = normalizeUiTheme(saved.uiTheme);
+    } catch {
+      // 数据库不可用时保留本地兼容配置。
+    }
+  }
+
+  async function saveAppSettings(changes: Record<string, unknown>) {
+    try {
+      const current = await invoke<Record<string, unknown> | null>('load_app_setting', { key: 'app-settings' });
+      await invoke('save_app_setting', {
+        key: 'app-settings',
+        value: { ...(current ?? {}), ...changes },
+      });
+    } catch {
+      // 数据库不可用时仍保留当前会话状态。
     }
   }
 
