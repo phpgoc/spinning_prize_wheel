@@ -1,6 +1,8 @@
 import type ExcelJS from 'exceljs';
 import {
   battleRoundLabel,
+  battleTmpMatchCode,
+  battleTmpSlotOrigin,
   battleTmpWinnerId,
   type BattleTmpMatch,
   type BattleTmpSnapshot,
@@ -234,6 +236,7 @@ function renderDoubleEliminationSection(
     renderRoundHeader(worksheet, winnerHeaderRow, columns, level.label);
     renderAlignedRound(
       worksheet,
+      snapshot,
       level.matches,
       columns,
       winnerDataStartRow,
@@ -255,6 +258,7 @@ function renderDoubleEliminationSection(
     renderRoundHeader(worksheet, loserHeaderRow, columns, level.label);
     renderAlignedRound(
       worksheet,
+      snapshot,
       level.matches,
       columns,
       loserDataStartRow,
@@ -264,12 +268,12 @@ function renderDoubleEliminationSection(
     );
   });
 
-  const winnerFinalStartRow = winnerDataEndRow - 3;
+  const winnerFinalStartRow = winnerDataEndRow - 4;
   const loserFinalStartRow = loserDataStartRow;
   const convergingCenter = (
-    winnerFinalStartRow + 1.5 + loserFinalStartRow + 1.5
+    winnerFinalStartRow + 2 + loserFinalStartRow + 2
   ) / 2;
-  const finalStartRow = Math.round(convergingCenter - 1.5);
+  const finalStartRow = Math.round(convergingCenter - 2);
   const finalHeaderRow = finalStartRow - 1;
   levels.final.forEach((level, levelIndex) => {
     const columns = layout.finals[levelIndex];
@@ -281,11 +285,14 @@ function renderDoubleEliminationSection(
     );
     renderSingleRound(
       worksheet,
+      snapshot,
       level.matches,
       columns,
       finalStartRow,
-      4,
+      5,
       nameById,
+      2,
+      true,
     );
   });
 
@@ -295,14 +302,14 @@ function renderDoubleEliminationSection(
     snapshot,
     layout.champion,
     finalStartRow,
-    finalStartRow + 3,
+    finalStartRow + 4,
     nameById,
   );
   return loserDataEndRow + 2;
 }
 
 function roundOccupiedRows(matchCount: number): number {
-  return Math.max(0, matchCount * 4 + Math.max(0, matchCount - 1));
+  return Math.max(0, matchCount * 5);
 }
 
 function renderSectionTitle(
@@ -321,6 +328,7 @@ function renderSectionTitle(
 
 function renderAlignedRound(
   worksheet: ExcelJS.Worksheet,
+  snapshot: BattleTmpSnapshot,
   matches: BattleTmpMatch[],
   columns: SingleExcelRoundColumns,
   dataStartRow: number,
@@ -332,10 +340,11 @@ function renderAlignedRound(
   const alignedStartRow = dataStartRow + (alignment === 'bottom' ? dataRows - occupiedRows : 0);
   matches.forEach((match, matchIndex) => {
     const matchStartRow = alignedStartRow + matchIndex * 5;
+    renderMatchCode(worksheet, matchStartRow, columns, match);
     renderBattleSlot(
       worksheet,
-      matchStartRow,
       matchStartRow + 1,
+      matchStartRow + 2,
       columns.name,
       columns.score,
       match.up,
@@ -344,11 +353,12 @@ function renderAlignedRound(
       nameById,
       match.status,
       match.down,
+      battleSlotSourceLabel(snapshot, match, 'up'),
     );
     renderBattleSlot(
       worksheet,
-      matchStartRow + 2,
       matchStartRow + 3,
+      matchStartRow + 4,
       columns.name,
       columns.score,
       match.down,
@@ -357,6 +367,7 @@ function renderAlignedRound(
       nameById,
       match.status,
       match.up,
+      battleSlotSourceLabel(snapshot, match, 'down'),
     );
   });
 }
@@ -423,6 +434,7 @@ function renderSingleEliminationSection(
     renderRoundHeader(worksheet, headerRow, layout.right[levelIndex], label);
     renderSingleRound(
       worksheet,
+      snapshot,
       leftMatches,
       layout.left[levelIndex],
       dataStartRow,
@@ -431,6 +443,7 @@ function renderSingleEliminationSection(
     );
     renderSingleRound(
       worksheet,
+      snapshot,
       rightMatches,
       layout.right[levelIndex],
       dataStartRow,
@@ -444,6 +457,7 @@ function renderSingleEliminationSection(
   if (finalLevel?.matches[0]) {
     renderSingleRound(
       worksheet,
+      snapshot,
       [finalLevel.matches[0]],
       layout.final,
       dataStartRow,
@@ -492,22 +506,26 @@ function renderRoundHeader(
 
 function renderSingleRound(
   worksheet: ExcelJS.Worksheet,
+  snapshot: BattleTmpSnapshot,
   matches: BattleTmpMatch[],
   columns: SingleExcelRoundColumns,
   dataStartRow: number,
   dataRows: number,
   nameById: Map<number, string>,
   slotRows = 2,
+  showMatchCode = false,
 ) {
   matches.forEach((match, matchIndex) => {
-    const matchRows = slotRows * 2;
+    const matchRows = slotRows * 2 + (showMatchCode ? 1 : 0);
     const matchStart = dataStartRow + Math.max(0, Math.round(
       (matchIndex + 0.5) * dataRows / matches.length - matchRows / 2,
     ));
+    if (showMatchCode) renderMatchCode(worksheet, matchStart, columns, match);
+    const slotStart = matchStart + (showMatchCode ? 1 : 0);
     renderBattleSlot(
       worksheet,
-      matchStart,
-      matchStart + slotRows - 1,
+      slotStart,
+      slotStart + slotRows - 1,
       columns.name,
       columns.score,
       match.up,
@@ -516,11 +534,12 @@ function renderSingleRound(
       nameById,
       match.status,
       match.down,
+      battleSlotSourceLabel(snapshot, match, 'up'),
     );
     renderBattleSlot(
       worksheet,
-      matchStart + slotRows,
-      matchStart + matchRows - 1,
+      slotStart + slotRows,
+      slotStart + slotRows * 2 - 1,
       columns.name,
       columns.score,
       match.down,
@@ -529,6 +548,7 @@ function renderSingleRound(
       nameById,
       match.status,
       match.up,
+      battleSlotSourceLabel(snapshot, match, 'down'),
     );
   });
 }
@@ -564,6 +584,7 @@ function renderBattleSlot(
   nameById: Map<number, string>,
   status: BattleTmpMatch['status'],
   opponentId: number | null,
+  sourceLabel: string | null,
 ) {
   if (endRow > startRow) {
     worksheet.mergeCells(startRow, nameColumn, endRow, nameColumn);
@@ -573,9 +594,14 @@ function renderBattleSlot(
   const scoreCell = worksheet.getCell(startRow, scoreColumn);
   // 已经结束的空签不能再显示“等待上游”，否则完整赛果导出看上去像还没打完。
   const resolvedEmptySlot = status === 'completed' || status === 'skipped';
-  nameCell.value = participantId === null
-    ? resolvedEmptySlot ? opponentId === null ? '空签' : '轮空' : '等待上游'
+  const participantName = participantId === null
+    ? null
     : nameById.get(participantId) ?? `#${participantId}`;
+  nameCell.value = participantName === null
+    ? resolvedEmptySlot
+      ? opponentId === null ? '空签' : '轮空'
+      : sourceLabel ?? '等待上游'
+    : participantName;
   scoreCell.value = score ?? '';
   for (const cell of [nameCell, scoreCell]) {
     cell.font = { bold: winner, color: { argb: participantId === null ? 'FF979C8D' : 'FF30352A' } };
@@ -583,6 +609,38 @@ function renderBattleSlot(
     cell.alignment = { vertical: 'middle', horizontal: 'center', indent: cell === nameCell ? 1 : 0 };
     cell.border = thinBorder();
   }
+}
+
+/** 双败未知签位使用页面相同的上游场次编号。 */
+function battleSlotSourceLabel(
+  snapshot: BattleTmpSnapshot,
+  match: BattleTmpMatch,
+  slot: 'up' | 'down',
+): string | null {
+  if (snapshot.format !== 'double-elimination') return null;
+  const origin = battleTmpSlotOrigin(snapshot, match, slot);
+  if (!origin) return null;
+  const originMatch = snapshot.matches.find((candidate) => candidate.matchId === origin.matchId);
+  return originMatch ? battleTmpMatchCode(originMatch) : null;
+}
+
+/** 与页面签表一致，在两位对手上一行显示当前场次编号。 */
+function renderMatchCode(
+  worksheet: ExcelJS.Worksheet,
+  row: number,
+  columns: SingleExcelRoundColumns,
+  match: BattleTmpMatch,
+) {
+  const startColumn = Math.min(columns.name, columns.score);
+  const endColumn = Math.max(columns.name, columns.score);
+  worksheet.mergeCells(row, startColumn, row, endColumn);
+  const cell = worksheet.getCell(row, startColumn);
+  cell.value = battleTmpMatchCode(match);
+  cell.font = { bold: true, size: 9, color: { argb: 'FF69705D' } };
+  cell.fill = solidFill(SLOT_FILL);
+  cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  cell.border = thinBorder();
+  worksheet.getRow(row).height = 16;
 }
 
 function battleChampionId(snapshot: BattleTmpSnapshot): number | null {

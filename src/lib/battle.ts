@@ -470,6 +470,16 @@ export function battleTmpSlotOrigin(
   return battleTmpSlotSource(snapshot, match, slot);
 }
 
+/** 页面与导出共用的场次编号。 */
+export function battleTmpMatchCode(match: BattleTmpMatch): string {
+  const stage = match.stage === 'pairing' ? 'P'
+    : match.stage === 'single' ? 'S'
+      : match.stage === 'winner' ? 'W'
+        : match.stage === 'loser' ? 'L'
+          : 'F';
+  return `${stage}${match.level} P${match.position}`;
+}
+
 /** 下游对应签位已录分时，只锁定会影响该签位的当前选手。 */
 export function battleTmpScoreLocked(
   snapshot: BattleTmpSnapshot,

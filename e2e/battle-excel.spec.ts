@@ -85,16 +85,20 @@ test('双败从上下向总决赛收拢并把总冠军固定在最右侧', async
   const initialSheet = await exportBattleWorksheet(page);
   expect(initialSheet.columnCount).toBe(17);
   expect(initialSheet.getCell('A4').value).toBe('胜者组');
-  expect(initialSheet.getCell('A26').value).toBe('败者组');
+  expect(initialSheet.getCell('A27').value).toBe('败者组');
   expect(initialSheet.getCell('M24').value).toBe('总决赛');
   expect(initialSheet.getCell('P24').value).toBe('总冠军');
   expect(initialSheet.getCell('P25').value).toBe('等待总决赛');
-  expect(initialSheet.getCell('A10').value).toBeNull();
-  expect(initialSheet.getCell('A32').value).toBeNull();
+  expect(worksheetValues(initialSheet)).toEqual(expect.arrayContaining(['W1 P1', 'W1 P2', 'L1 P1']));
+  expect(worksheetValues(initialSheet)).not.toContain('等待上游');
+  expect(initialSheet.getCell('A6').value).toBe('W1 P1');
+  expect(initialSheet.getCell('D16').value).toBe('W2 P1');
+  expect(initialSheet.getCell('D17').value).toBe('W1 P1');
+  expect(initialSheet.getCell('A29').value).toBe('L1 P1');
+  expect(initialSheet.getCell('A30').value).toBe('W1 P1');
   expect(initialSheet.getCell('G6').value).toBeNull();
   expect(initialSheet.getCell('G24').value).not.toBeNull();
   expect(initialSheet.getCell('J28').value).not.toBeNull();
-  expect(initialSheet.getCell('J33').value).toBeNull();
 
   const firstMatch = page.locator(
     '[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]',
@@ -102,6 +106,10 @@ test('双败从上下向总决赛收拢并把总冠军固定在最右侧', async
   await enterBattleScore(firstMatch, 4, 1);
   const partialSheet = await exportBattleWorksheet(page);
   expect(excelLayoutSignature(partialSheet)).toEqual(excelLayoutSignature(initialSheet));
+  expect(partialSheet.getCell('D16').value).toBe('W2 P1');
+  expect(partialSheet.getCell('D17').value).toMatch(/^选手/u);
+  expect(partialSheet.getCell('A29').value).toBe('L1 P1');
+  expect(partialSheet.getCell('A30').value).toMatch(/^选手/u);
 
   await completeBattleBracket(page, '.double-battle-bracket');
   const completedSheet = await exportBattleWorksheet(page);

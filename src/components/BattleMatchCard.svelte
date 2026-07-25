@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     battleTmpScoreLocked,
+    battleTmpMatchCode,
     battleTmpSlotOrigin,
     battleTmpWinnerId,
     type BattleTmpMatch,
@@ -33,15 +34,6 @@
     if (current.up === null && current.down !== null) return current.down;
     if (current.down === null && current.up !== null) return current.up;
     return null;
-  }
-
-  function battleTmpMatchCode(current: BattleTmpMatch): string {
-    const stage = current.stage === 'pairing' ? 'P'
-      : current.stage === 'single' ? 'S'
-        : current.stage === 'winner' ? 'W'
-          : current.stage === 'loser' ? 'L'
-            : 'F';
-    return `${stage}${current.level} P${current.position}`;
   }
 
   function battleTmpParticipantName(id: number | null): string {

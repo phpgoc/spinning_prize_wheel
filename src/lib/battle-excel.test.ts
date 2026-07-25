@@ -135,26 +135,31 @@ describe('对战签表 Excel', () => {
     expect(values).toContain('胜者组');
     expect(values).toContain('败者组');
     expect(values).toContain('总决赛');
+    expect(values).toEqual(expect.arrayContaining(['W1 P1', 'W1 P2', 'L1 P1']));
+    expect(values).not.toContain('等待上游');
     expect(worksheet.columnCount).toBe(17);
     expect(worksheet.model.merges).toEqual(expect.arrayContaining([
       'A5:B5',
       'D5:E5',
       'G5:H5',
-      'A27:B27',
-      'D27:E27',
-      'G27:H27',
-      'J27:K27',
+      'A28:B28',
+      'D28:E28',
+      'G28:H28',
+      'J28:K28',
       'M24:N24',
       'P24:Q24',
     ]));
-    expect(worksheet.getCell('A10').value).toBeNull();
-    expect(worksheet.getCell('A15').value).toBeNull();
-    expect(worksheet.getCell('A20').value).toBeNull();
-    expect(worksheet.getCell('D20').value).toBeNull();
+    expect(worksheet.getCell('A6').value).toBe('W1 P1');
+    expect(worksheet.getCell('A11').value).toBe('W1 P2');
+    expect(worksheet.getCell('D16').value).toBe('W2 P1');
+    expect(worksheet.getCell('D17').value).toBe('W1 P1');
+    expect(worksheet.getCell('D19').value).toBe('W1 P2');
     expect(worksheet.getCell('G6').value).toBeNull();
-    expect(worksheet.getCell('A32').value).toBeNull();
-    expect(worksheet.getCell('D32').value).toBeNull();
-    expect(worksheet.getCell('J33').value).toBeNull();
+    expect(worksheet.getCell('A29').value).toBe('L1 P1');
+    expect(worksheet.getCell('A30').value).toBe('W1 P1');
+    expect(worksheet.getCell('D29').value).toBe('L2 P1');
+    expect(worksheet.getCell('D30').value).toBe('L1 P1');
+    expect(worksheet.getCell('D32').value).toBe('W2 P2');
     expect(worksheet.getCell('A24').value).not.toBeNull();
     expect(worksheet.getCell('D24').value).not.toBeNull();
     expect(worksheet.getCell('G24').value).not.toBeNull();
@@ -165,7 +170,7 @@ describe('对战签表 Excel', () => {
     for (const spacerColumn of [3, 6, 9, 12, 15]) {
       expect(worksheet.getColumn(spacerColumn).width).toBe(3);
       expect(worksheet.getCell(5, spacerColumn).value).toBeNull();
-      expect(worksheet.getCell(27, spacerColumn).value).toBeNull();
+      expect(worksheet.getCell(28, spacerColumn).value).toBeNull();
     }
     expect(worksheet.getCell('M24').value).toBe('总决赛');
     expect(worksheet.getCell('P24').value).toBe('总冠军');
@@ -173,6 +178,25 @@ describe('对战签表 Excel', () => {
     expect(worksheet.getCell('Q25').value).toBe('冠军');
     expect(worksheet.getColumn(13).width).toBe(24);
     expect(worksheet.getColumn(16).width).toBe(24);
+  });
+
+  test('双败签位确定后仍在两位对手上一行保留当前场次编号', async () => {
+    const initial = createBattleTmpSnapshot('standard', createSeededBattlePlan(names(8), {
+      format: 'double-elimination',
+      orderMode: 'input',
+      fixedSeedCount: 4,
+      random: () => 0.25,
+    }), 1_700_000_000_000);
+    const first = initial.matches.find((match) => match.matchId === 'W1-M1')!;
+    const partial = updateBattleTmpResult(initial, first.matchId, 4, 1, 1_700_000_000_001);
+    const winnerName = partial.participants.find((participant) => participant.id === first.up)!.name;
+    const loserName = partial.participants.find((participant) => participant.id === first.down)!.name;
+    const worksheet = await loadBattleWorksheet(partial);
+
+    expect(worksheet.getCell('D16').value).toBe('W2 P1');
+    expect(worksheet.getCell('D17').value).toBe(winnerName);
+    expect(worksheet.getCell('A29').value).toBe('L1 P1');
+    expect(worksheet.getCell('A30').value).toBe(loserName);
   });
 
   test('双败未比赛、部分比分和完赛时坐标不变且冠军写在最右侧', async () => {
