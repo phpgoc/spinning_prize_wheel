@@ -45,6 +45,16 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  function commitHexValue(event: Event) {
+    const field = event.currentTarget as HTMLInputElement;
+    const next = field.value.trim();
+    if (/^#[0-9a-f]{6}$/iu.test(next)) {
+      selectColor(next.toLowerCase());
+    } else {
+      field.value = value;
+    }
+  }
+
   async function togglePalette() {
     open = !open;
     if (open) await tick();
@@ -102,6 +112,7 @@
   </button>
   <!-- 保留一个不可见的原生输入作为事件桥接，界面只显示一个圆盘入口。 -->
   <input bind:this={input} class="palette-value-input" type="color" aria-label={label} {value} on:input />
+  <input class="palette-hex-input" value={value} maxlength="7" spellcheck="false" aria-label={`${label}十六进制`} on:change={commitHexValue} />
 
   {#if open}
     <div id={panelId} class="palette-popover" role="dialog" aria-label={`${label.replace('颜色', '')}色盘`}>
@@ -138,4 +149,15 @@
   .iro-picker { width: 132px; min-height: 132px; }
   :global(.IroColorPicker) { margin: 0 auto; }
   .palette-value-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+  .palette-hex-input {
+    width: 70px;
+    min-width: 0;
+    padding: 4px 5px;
+    border: 1px solid color-mix(in srgb, var(--battle-text-color, var(--color-app-text)) 18%, transparent);
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: calc(10px * var(--font-scale, 1));
+  }
 </style>
