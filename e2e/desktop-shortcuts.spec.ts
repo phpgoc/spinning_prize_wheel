@@ -1283,6 +1283,9 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
   expect(await page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (
     cards.map((card) => card.getAttribute('data-rank-user-id'))
   ))).toEqual(selectedBefore);
+  await page.locator('[data-rank-user-id="1"]').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('3');
+  await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
   await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
   await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);

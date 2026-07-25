@@ -1765,6 +1765,8 @@
   }
 
   function selectRankedUserFromPointer(userId: number) {
+    // 卡片拖拽会阻止浏览器默认聚焦；鼠标选中后仍应允许继续使用数字快捷键。
+    rankingFocusActive = true;
     selectedRankedUserId = userId;
     rankedUserActionIndex = -1;
   }
@@ -1934,7 +1936,9 @@
     if (aliasLinkName !== null || rankingReordering || keyboardMovingUserId !== null || event.button !== 0) return;
     // 名称占据卡片的大部分区域，也应当可以作为拖拽起点；右侧操作按钮仍只执行自身操作。
     if ((event.target as HTMLElement).closest('[data-rank-action], input, textarea, select, form')) return;
-    // 避免按下时焦点让顶部操作区突然出现，导致整列卡片在拖拽开始后向下跳动。
+    // 拖拽需要阻止默认聚焦，但卡片被鼠标选中后仍应成为键盘入口，确保数字快捷键立即可用。
+    (event.currentTarget as HTMLElement).focus({ preventScroll: true });
+    // 仍阻止浏览器默认点击行为，避免拖拽结束时误触发名称编辑。
     event.preventDefault();
     suppressRankNameClickUserId = null;
     pendingRankDragUserId = userId;
