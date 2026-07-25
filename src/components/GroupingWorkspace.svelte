@@ -2295,7 +2295,7 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
-      && ['f', 'h'].includes(key)
+      && key === 'f'
       && (target === lineupResultElement || target === document.body)
     ) {
       event.preventDefault();
@@ -3139,7 +3139,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L H' : undefined}>
+<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L F' : undefined}>
   <!-- Web 端也启用了完整业务工作区，宽屏布局需要与 Tauri 保持一致。 -->
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="lineup-workbench">
     {#if businessRuntime}
@@ -3618,7 +3618,7 @@
       >
         {#if battlePage}
           <div class="battle-result-toolbar">
-            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F H" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
+            <button type="button" class="battle-fullscreen-button" aria-pressed={battleFullscreen} aria-keyshortcuts="F" disabled={battleFullscreenChanging} on:click={() => setBattleFullscreen(!battleFullscreen)}>{battleFullscreen ? '返回' : '全屏'}</button>
             {#if battleTmpSnapshot && !battleHistoryView}
               <button type="button" class="battle-clear-button" disabled={clearingBattleTmp} on:click={requestClearAll}>清空对战</button>
             {/if}

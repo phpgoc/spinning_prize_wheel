@@ -56,6 +56,8 @@
   let appUnmounted = false;
   let appMounted = false;
   let closingWindow = false;
+  let appFullscreen = false;
+  let appFullscreenChanging = false;
   let persistedFontScale = fontScale;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
@@ -80,6 +82,10 @@
     updateFavicon(variant);
     if (tauriRuntime) void registerCloseRequestedListener();
     else registerBrowserBeforeUnloadListener();
+    const handleFullscreenChange = () => {
+      appFullscreen = Boolean(document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
       appUnmounted = true;
       appMounted = false;
@@ -87,6 +93,7 @@
       removeCloseRequestedListener = null;
       removeBeforeUnloadListener?.();
       removeBeforeUnloadListener = null;
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   });
 
@@ -247,7 +254,43 @@
     navigatePage(APP_PAGE_ORDER[nextIndex]);
   }
 
+  async function toggleAppFullscreen() {
+    if (appFullscreenChanging) return;
+    appFullscreenChanging = true;
+    try {
+      if (tauriRuntime) {
+        const currentWindow = getCurrentWindow();
+        const fullscreen = await currentWindow.isFullscreen();
+        await currentWindow.setFullscreen(!fullscreen);
+        appFullscreen = !fullscreen;
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        appFullscreen = false;
+      } else if (document.fullscreenEnabled) {
+        await document.documentElement.requestFullscreen();
+        appFullscreen = true;
+      }
+    } catch (reason) {
+      console.error('无法切换应用全屏', reason);
+    } finally {
+      appFullscreenChanging = false;
+    }
+  }
+
   function handleGlobalShortcut(event: KeyboardEvent) {
+    const target = event.target;
+    if (
+      event.key.toLowerCase() === 'h'
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
+      && !(target instanceof HTMLElement && target.matches('input, textarea, select, button, [contenteditable="true"]'))
+    ) {
+      event.preventDefault();
+      void toggleAppFullscreen();
+      return;
+    }
     handleGlobalFontScaleShortcut(event);
     handleGlobalPageShortcut(event);
   }

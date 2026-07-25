@@ -2684,6 +2684,7 @@
         <section class="shortcut-group shortcut-general">
           <h3>通用操作逻辑</h3>
           <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>进入 / 返回应用全屏</span><kbd>H</kbd></div>
             <div><span>单行文本确认</span><kbd>回车</kbd></div>
             <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
             <div><span>取消编辑</span><kbd>Esc</kbd></div>
@@ -2763,7 +2764,7 @@
         <section class="shortcut-group shortcut-battle-area">
           <h3>对战区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>进入 / 返回全屏</span><kbd>F / H</kbd></div>
+            <div><span>进入 / 返回对战区全屏</span><kbd>F</kbd></div>
             <div><span>微调比分框上 / 下</span><kbd>U / J</kbd></div>
             <div><span>微调比分框左 / 右</span><kbd>H / K</kbd></div>
             <div><span>聚焦单败未完成比分</span><kbd>S</kbd></div>
