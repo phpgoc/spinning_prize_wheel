@@ -1,4 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     collections::{HashSet, VecDeque},
     fs::{self, OpenOptions},
@@ -6,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, State};
 use time::OffsetDateTime;
@@ -16,9 +18,63 @@ const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.wheel";
 const DATABASE_FILE_NAME: &str = "draw-history.sqlite3";
 const SQL_LOG_FILE_NAME: &str = "sql.log";
 const DATABASE_SCHEMA_VERSION: i64 = 1;
+const DOWNLOAD_FOLDER_DUPLICATE_INTERVAL: Duration = Duration::from_secs(1);
 
 static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static SQL_TRACE_DEDUPLICATOR: OnceLock<Mutex<SqlTraceDeduplicator>> = OnceLock::new();
+static DOWNLOAD_FOLDER_OPENED_AT: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+
+#[cfg(target_os = "windows")]
+const WINDOWS_REUSE_DOWNLOAD_FOLDER_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+
+function Normalize-FolderPath([string]$path) {
+    return [IO.Path]::GetFullPath($path).TrimEnd([char[]]@('\', '/'))
+}
+
+$target = Normalize-FolderPath $env:WHEEL_DOWNLOAD_DIRECTORY
+$shell = New-Object -ComObject Shell.Application
+$existing = $null
+
+foreach ($window in @($shell.Windows())) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($window.LocationURL)) {
+            continue
+        }
+        $location = [Uri]$window.LocationURL
+        $current = Normalize-FolderPath $location.LocalPath
+        if ([string]::Equals($current, $target, [StringComparison]::OrdinalIgnoreCase)) {
+            $existing = $window
+            break
+        }
+    } catch {
+        # 系统窗口中可能混有不提供文件夹路径的对象，忽略后继续查找。
+    }
+}
+
+if ($null -eq $existing) {
+    $shell.Explore($target)
+    exit 0
+}
+
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class WheelExplorerWindow {
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindowAsync(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr window);
+}
+'@
+
+$existing.Visible = $true
+$handle = [IntPtr]::new([int64]$existing.HWND)
+$null = [WheelExplorerWindow]::ShowWindowAsync($handle, 9)
+$null = [WheelExplorerWindow]::SetForegroundWindow($handle)
+"#;
 
 /// 由 Tauri 托管的数据库连接；所有命令复用同一个连接。
 #[derive(Default)]
@@ -303,14 +359,39 @@ fn open_database_folder(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_download_folder(app: AppHandle) -> Result<(), String> {
-    let directory = export_directory(&app)?;
+async fn open_download_folder(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || open_download_folder_in(&app))
+        .await
+        .map_err(|error| format!("无法执行下载文件夹打开任务：{error}"))?
+}
+
+fn open_download_folder_in(app: &AppHandle) -> Result<(), String> {
+    let directory = export_directory(app)?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建下载目录：{error}"))?;
+
+    // 串行处理来自不同页面或双击产生的请求，避免首次打开时同时创建多个窗口。
+    let mut opened_at = DOWNLOAD_FOLDER_OPENED_AT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "无法锁定下载文件夹打开状态".to_string())?;
+    if download_folder_request_is_duplicate(*opened_at, Instant::now()) {
+        return Ok(());
+    }
 
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut command = Command::new("explorer.exe");
-        command.arg(&directory);
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                WINDOWS_REUSE_DOWNLOAD_FOLDER_SCRIPT,
+            ])
+            .env("WHEEL_DOWNLOAD_DIRECTORY", &directory)
+            .creation_flags(0x0800_0000);
         command
     };
     #[cfg(target_os = "macos")]
@@ -326,10 +407,29 @@ fn open_download_folder(app: AppHandle) -> Result<(), String> {
         command
     };
 
+    #[cfg(target_os = "windows")]
+    {
+        let status = command
+            .status()
+            .map_err(|error| format!("无法打开下载文件夹：{error}"))?;
+        if !status.success() {
+            return Err(format!("无法打开或定位下载文件夹：{status}"));
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     command
         .spawn()
         .map_err(|error| format!("无法打开下载文件夹：{error}"))?;
+
+    *opened_at = Some(Instant::now());
     Ok(())
+}
+
+fn download_folder_request_is_duplicate(opened_at: Option<Instant>, now: Instant) -> bool {
+    opened_at.is_some_and(|time| {
+        now.saturating_duration_since(time) < DOWNLOAD_FOLDER_DUPLICATE_INTERVAL
+    })
 }
 
 #[tauri::command]
@@ -2235,6 +2335,20 @@ mod tests {
         let mut connection = Connection::open_in_memory().expect("创建内存数据库");
         migrate_database(&mut connection).expect("执行数据库迁移");
         connection
+    }
+
+    #[test]
+    fn download_folder_ignores_rapid_duplicate_requests() {
+        let opened_at = Instant::now();
+        assert!(download_folder_request_is_duplicate(
+            Some(opened_at),
+            opened_at + Duration::from_millis(999)
+        ));
+        assert!(!download_folder_request_is_duplicate(
+            Some(opened_at),
+            opened_at + DOWNLOAD_FOLDER_DUPLICATE_INTERVAL
+        ));
+        assert!(!download_folder_request_is_duplicate(None, opened_at));
     }
 
     #[test]
