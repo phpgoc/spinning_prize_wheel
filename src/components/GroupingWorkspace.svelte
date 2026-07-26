@@ -5614,24 +5614,6 @@
     .grouping-workbench.desktop .grouping-center { grid-column: 2; grid-row: 1; }
     .grouping-workbench.desktop .grouping-config { grid-column: 2; grid-row: 2; width: min(100%, 420px); }
 
-    /* Web 端名单配置保持在首屏左侧；桌面端仍沿用上面的原布局。 */
-    .grouping-workbench.desktop.web-layout {
-      grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-    }
-    .grouping-workbench.desktop.web-layout .grouping-sidebar {
-      grid-column: 1 / -1;
-      grid-row: 2;
-    }
-    .grouping-workbench.desktop.web-layout .grouping-center {
-      grid-column: 2;
-      grid-row: 1;
-    }
-    .grouping-workbench.desktop.web-layout .grouping-config {
-      grid-column: 1;
-      grid-row: 1;
-      width: 100%;
-    }
-
     /* 对战结果区在中等窗口也会比整页窄，颜色控件需要换到工具栏下一行，不能横向裁掉。 */
     .battle-result-toolbar { flex-wrap: wrap; }
     .battle-color-controls {
@@ -5648,9 +5630,6 @@
     .grouping-workbench.desktop .grouping-sidebar,
     .grouping-workbench.desktop .grouping-center,
     .grouping-workbench.desktop .grouping-config { grid-column: 1; grid-row: auto; width: 100%; }
-    .grouping-workbench.desktop.web-layout .grouping-config { grid-column: 1; grid-row: 1; }
-    .grouping-workbench.desktop.web-layout .grouping-center { grid-column: 1; grid-row: 2; }
-    .grouping-workbench.desktop.web-layout .grouping-sidebar { grid-column: 1; grid-row: 3; }
     .grouping-config { width: 100%; }
     .grouping-sidebar,
     .grouping-sidebar.ranking-open,
