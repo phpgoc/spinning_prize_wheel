@@ -316,7 +316,8 @@
   function handleGlobalShortcut(event: KeyboardEvent) {
     const target = event.target;
     if (
-      event.key.toLowerCase() === 'h'
+      event.key === 'F11'
+      && tauriRuntime
       && !event.ctrlKey
       && !event.metaKey
       && !event.altKey

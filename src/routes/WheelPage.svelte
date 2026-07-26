@@ -2723,7 +2723,7 @@
         <section class="shortcut-group shortcut-general">
           <h3>通用</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>进入 / 返回应用全屏</span><kbd>H</kbd></div>
+            <div><span>进入 / 返回应用全屏</span><kbd>F11</kbd></div>
             <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
             <div><span>确认 / 编辑</span><kbd>回车</kbd></div>
             <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
