@@ -50,11 +50,13 @@ export async function invokeWebCommand<T>(
   const db = await getDatabase();
   if (isMutation(command)) {
     let result!: T;
-    mutationQueue = mutationQueue.then(async () => {
+    const operation = mutationQueue.then(async () => {
       result = executeCommand<T>(db, command, args);
       await persistDatabase(db);
     });
-    await mutationQueue;
+    // 当前写入失败只影响当前命令，不能让后续所有 Web SQLite 操作永久跟着失败。
+    mutationQueue = operation.then(() => undefined, () => undefined);
+    await operation;
     return result;
   }
   await mutationQueue;
