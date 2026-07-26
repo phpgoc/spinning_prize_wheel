@@ -2340,6 +2340,19 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
+      && key === 'w'
+      && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination'
+    ) {
+      event.preventDefault();
+      focusBattleScoreGroup('winner');
+      return;
+    }
+    if (
+      battleMagicFocusActive
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
       && key === 'l'
       && (battleTmpSnapshot?.format ?? battleFormat) === 'double-elimination'
     ) {
