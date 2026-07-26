@@ -2,7 +2,7 @@
   export let start = '';
   export let end = '';
   export let startLabel = '开始日期';
-  export let endLabel = '结束前（不含）';
+  export let endLabel = '结束日期(不含)';
 </script>
 
 <div class="ui-date-range" role="group" aria-label="日期范围">
@@ -11,8 +11,8 @@
     <div>
       <b aria-hidden="true">始</b>
       <span class="date-input-shell">
-        <input class:empty={!start} type="date" bind:value={start} aria-label={startLabel} placeholder="YYYY / MM / DD" />
-        {#if !start}<span class="date-placeholder" aria-hidden="true">YYYY / MM / DD</span>{/if}
+        <input class:empty={!start} type="date" bind:value={start} aria-label={startLabel} placeholder="yyyy / mm / dd" />
+        {#if !start}<span class="date-placeholder" aria-hidden="true">yyyy / mm / dd</span>{/if}
       </span>
     </div>
   </label>
@@ -21,8 +21,8 @@
     <div>
       <b aria-hidden="true">止</b>
       <span class="date-input-shell">
-        <input class:empty={!end} type="date" bind:value={end} aria-label={endLabel} placeholder="YYYY / MM / DD" />
-        {#if !end}<span class="date-placeholder" aria-hidden="true">YYYY / MM / DD</span>{/if}
+        <input class:empty={!end} type="date" bind:value={end} aria-label={endLabel} placeholder="yyyy / mm / dd" />
+        {#if !end}<span class="date-placeholder" aria-hidden="true">yyyy / mm / dd</span>{/if}
       </span>
     </div>
   </label>

@@ -181,7 +181,8 @@ test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page 
 test('抽奖、分组和对战历史共用同一套日期、列表与底部操作组件', async ({ page }) => {
   const expectDateRange = async () => {
     const dateRange = page.locator('.ui-history-panel .ui-date-range');
-    await expect(dateRange.locator('.date-placeholder')).toHaveText(['YYYY / MM / DD', 'YYYY / MM / DD']);
+    await expect(dateRange.locator('.date-placeholder')).toHaveText(['yyyy / mm / dd', 'yyyy / mm / dd']);
+    await expect(dateRange.locator('input').nth(1)).toHaveAccessibleName('结束日期(不含)');
     const boxes = await dateRange.locator('label').evaluateAll((labels) => labels.map((label) => {
       const rect = label.getBoundingClientRect();
       return { x: rect.x, y: rect.y };
