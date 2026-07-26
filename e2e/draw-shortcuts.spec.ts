@@ -76,6 +76,17 @@ async function importCandidates(page: Page, names: string[]) {
   await expect(page.locator('[data-prize-id]')).toHaveCount(names.length);
 }
 
+async function loadWebAppSetting<T extends Record<string, unknown>>(
+  page: Page,
+  key: string,
+): Promise<T | null> {
+  return page.evaluate(async (settingKey) => {
+    const modulePath = '/src/lib/runtime.ts';
+    const runtime = await import(/* @vite-ignore */ modulePath);
+    return runtime.invoke('load_app_setting', { key: settingKey });
+  }, key);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
@@ -98,6 +109,9 @@ test('转盘音乐与音效可关闭并持久化', async ({ page }) => {
   await expect(soundToggle).toHaveAttribute('aria-pressed', 'true');
   await soundToggle.click();
   await expect(page.getByRole('button', { name: '开启音乐与音效' })).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => (
+    (await loadWebAppSetting<{ soundEnabled: boolean }>(page, 'wheel-settings'))?.soundEnabled
+  )).toBe(false);
 
   await page.reload();
   await expect(page.getByRole('button', { name: '开启音乐与音效' })).toHaveAttribute('aria-pressed', 'false');
@@ -383,6 +397,9 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
+  await expect.poll(async () => (
+    (await loadWebAppSetting<{ fontScale: number }>(page, 'app-settings'))?.fontScale
+  )).toBe(1.1);
   expect((await wheelPageButton.boundingBox())!.height).toBeGreaterThan(initialButtonHeight);
 
   await page.goto('/grouping');
@@ -407,10 +424,16 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
+  await expect.poll(async () => (
+    (await loadWebAppSetting<{ fontScale: number }>(page, 'app-settings'))?.fontScale
+  )).toBe(1.1);
 
   await page.goto('/wheel');
   await expect(page.locator('.wheel-page-host .workspace')).toBeVisible();
   await page.getByRole('button', { name: UI_THEME_CASES[1].buttonName }).click();
+  await expect.poll(async () => (
+    await loadWebAppSetting<{ fontScale: number; uiTheme: string }>(page, 'app-settings')
+  )).toMatchObject({ fontScale: 1.1, uiTheme: 'mist' });
   await page.reload();
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()

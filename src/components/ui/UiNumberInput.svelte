@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
 
   export let value: number | string = '';
   export let min: number | undefined = undefined;
@@ -18,6 +18,15 @@
 
   let input: HTMLInputElement;
   let changedWithAlt = false;
+  let focusRestoreTimer: number | null = null;
+
+  function cancelFocusRestore() {
+    if (focusRestoreTimer === null) return;
+    window.clearTimeout(focusRestoreTimer);
+    focusRestoreTimer = null;
+  }
+
+  onDestroy(cancelFocusRestore);
 
   function numericValue(raw: string): number | string {
     if (raw.trim() === '') return '';
@@ -73,7 +82,9 @@
     changedWithAlt = true;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     // 某些 Chromium 版本会把 Alt+方向键的焦点移到页面，下一帧恢复到数字框，便于连续调整。
-    window.setTimeout(() => {
+    cancelFocusRestore();
+    focusRestoreTimer = window.setTimeout(() => {
+      focusRestoreTimer = null;
       if (!input.disabled && document.activeElement !== input) input.focus({ preventScroll: true });
     }, 0);
   }
@@ -83,6 +94,9 @@
     dispatch('keydown', { sourceEvent: event });
   }
 </script>
+
+<!-- Alt 调整后的下一次按键代表用户已经继续操作，不能再由旧定时器抢回焦点。 -->
+<svelte:window on:keydown|capture={cancelFocusRestore} />
 
 <input
   {...$$restProps}

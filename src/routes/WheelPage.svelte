@@ -188,6 +188,7 @@
   let hydrated = false;
   let databaseSettingsLoaded = false;
   let persistedWheelSettings: Record<string, unknown> = {};
+  let wheelSettingsSaveQueue: Promise<void> = Promise.resolve();
   let timer: number | undefined;
   let continuousTimer: number | undefined;
   const drawSound = createDrawSoundController();
@@ -291,13 +292,19 @@
     drawSound.dispose();
   });
 
-  /** 转盘设置与应用壳的字号共用一个键，写入时保留彼此字段。 */
-  function persistWheelSettings(next: Record<string, unknown>) {
+  /** 转盘设置共用一个数据库键，写入时保留未改动字段。 */
+  function persistWheelSettings(next: Record<string, unknown>): Promise<void> {
     const saved = { ...persistedWheelSettings, ...next };
     persistedWheelSettings = saved;
-    void invoke('save_app_setting', { key: 'wheel-settings', value: saved }).catch(() => {
-      // 数据库不可用时继续保留当前会话状态。
+    // 连续切换设置时保持写入顺序，不能让先发出的旧快照最后落库。
+    wheelSettingsSaveQueue = wheelSettingsSaveQueue.then(async () => {
+      try {
+        await invoke('save_app_setting', { key: 'wheel-settings', value: saved });
+      } catch {
+        // 数据库不可用时继续保留当前会话状态。
+      }
     });
+    return wheelSettingsSaveQueue;
   }
 
   async function loadWheelSettingsFromDatabase() {

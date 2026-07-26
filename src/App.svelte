@@ -59,6 +59,7 @@
   let appFullscreenChanging = false;
   let persistedFontScale = fontScale;
   let persistedUiTheme = uiTheme;
+  let appSettingsSaveQueue: Promise<void> = Promise.resolve();
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
   $: logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
@@ -202,16 +203,20 @@
     }
   }
 
-  async function saveAppSettings(changes: Record<string, unknown>) {
-    try {
-      const current = await invoke<Record<string, unknown> | null>('load_app_setting', { key: 'app-settings' });
-      await invoke('save_app_setting', {
-        key: 'app-settings',
-        value: { ...(current ?? {}), ...changes },
-      });
-    } catch {
-      // 数据库不可用时仍保留当前会话状态。
-    }
+  function saveAppSettings(changes: Record<string, unknown>): Promise<void> {
+    // 字号和主题可能连续变化；串行执行读改写，避免较慢的旧请求覆盖较新的设置。
+    appSettingsSaveQueue = appSettingsSaveQueue.then(async () => {
+      try {
+        const current = await invoke<Record<string, unknown> | null>('load_app_setting', { key: 'app-settings' });
+        await invoke('save_app_setting', {
+          key: 'app-settings',
+          value: { ...(current ?? {}), ...changes },
+        });
+      } catch {
+        // 数据库不可用时仍保留当前会话状态。
+      }
+    });
+    return appSettingsSaveQueue;
   }
 
   function handleGlobalFontScaleShortcut(event: KeyboardEvent) {
