@@ -61,6 +61,7 @@
     rankedUserDropTargetForCard,
     rankedUserKeyboardDropPoints,
     filterLineupHistories,
+    shuffleLineupNames,
     unrankedLineupNameCount,
     unresolvedLineupNameCount,
     uniqueLineupNames,
@@ -81,7 +82,7 @@
 
   const nativeRuntime = isTauriRuntime();
 
-  type LineupOrderMode = 'rank' | 'input';
+  type LineupOrderMode = 'rank' | 'input' | 'random';
   type BattleColorName = 'background' | 'text' | 'participant' | 'match';
   type BattleColors = Record<BattleColorName, string>;
   type BattleColorPresetName = 'classic' | 'ocean' | 'sunset';
@@ -251,7 +252,7 @@
   $: desktopRankSignature = businessRuntime
     ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
     : 'web';
-  $: inputSignature = `${groupCount}|${namesSignature}|${desktopRankSignature}`;
+  $: inputSignature = `${groupCount}|${namesSignature}|${resultOrderMode === 'random' ? 'random' : desktopRankSignature}`;
   $: resultOutdated = result !== null && resultSignature !== inputSignature;
   $: tierPreview = names.length > 0 ? Math.ceil(names.length / Math.max(2, Number(groupCount) || 2)) : 0;
   $: unresolvedPreviewCount = businessRuntime
@@ -340,6 +341,7 @@
     groupingUnresolvedCapacity,
   );
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
+  $: canGenerateByRandom = !sourceTextDirty && names.length >= 2;
   $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailability.rank;
   $: battleFixedOptions = battleFixedSeedOptions(names.length);
   $: if (battleFixedSeedCount !== 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
@@ -646,6 +648,9 @@
   }
 
   function orderedNamesForGrouping(orderMode: LineupOrderMode): string[] {
+    if (orderMode === 'random') {
+      return shuffleLineupNames(names);
+    }
     if (!businessRuntime) return names;
     if (orderMode === 'input') {
       return resolvedNames.map((person) => person.inputName);
@@ -689,7 +694,7 @@
         ? createLineupRankingSnapshot(orderedNames, resolvedNames, true)
         : [];
       const generated = createRandomLineup(orderedNames, Number(groupCount));
-      result = variant === 'caimi'
+      result = variant === 'caimi' && orderMode !== 'random'
         ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
         : generated;
       resultOrderMode = orderMode;
@@ -712,7 +717,9 @@
         },
         result,
       };
-      const resolvedSignature = businessRuntime
+      const resolvedSignature = orderMode === 'random'
+        ? 'random'
+        : businessRuntime
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
@@ -1571,7 +1578,7 @@
   function historySummary(history: SavedLineup): string {
     const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number; orderMode: LineupOrderMode }>;
     const peopleCount = Array.isArray(input.sourceNames) ? input.sourceNames.length : 0;
-    const mode = input.orderMode === 'input' ? '输入顺序' : '排名';
+    const mode = input.orderMode === 'input' ? '输入顺序' : input.orderMode === 'random' ? '全随机' : '排名';
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
@@ -1687,7 +1694,9 @@
       orderedNames: unknown[];
       sourceNames: unknown[];
     }>;
-    resultOrderMode = input.orderMode === 'input' ? 'input' : 'rank';
+    resultOrderMode = input.orderMode === 'input'
+      ? 'input'
+      : input.orderMode === 'random' ? 'random' : 'rank';
     resultSourceNames = Array.isArray(input.sourceNames)
       ? input.sourceNames.filter((name): name is string => typeof name === 'string')
       : [];
@@ -3620,8 +3629,10 @@
             <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
+            <button type="button" class="input-order-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>
             {:else}
               <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
+              <button type="button" class="input-order-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>
             {/if}
           </div>
         {/if}
@@ -3717,7 +3728,7 @@
           {/if}
         {:else}
         <div class="result-heading">
-          <div><div><h2>{lineupTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
+          <div><div><h2>{lineupTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : resultOrderMode === 'random' ? '全随机' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
               {#if hiddenLineupCellCount > 0}

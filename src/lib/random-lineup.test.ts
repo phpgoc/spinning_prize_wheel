@@ -18,6 +18,7 @@ import {
   rankedUserIdAtShortcut,
   rankedUserDropTargetForCard,
   rankedUserKeyboardDropPoints,
+  shuffleLineupNames,
   filterLineupHistories,
   unrankedLineupNameCount,
   unresolvedLineupNameCount,
@@ -54,6 +55,22 @@ describe('随机排阵', () => {
     expect(result.tiers).toHaveLength(3);
     expect(result.tiers[2].filter(Boolean)).toHaveLength(2);
     expect(result.tiers.flat().filter(Boolean)).toHaveLength(10);
+  });
+
+  test('全随机打乱名单并保证各组人数最多相差一人', () => {
+    const names = Array.from({ length: 33 }, (_, index) => `选手${index + 1}`);
+    const result = createRandomLineup(
+      shuffleLineupNames(names, () => 0),
+      5,
+      () => 0.5,
+    );
+    const groupCounts = Array.from({ length: result.groupCount }, (_, groupIndex) => (
+      result.tiers.flat().filter((entry) => entry?.groupIndex === groupIndex).length
+    ));
+
+    expect(result.tiers.flat().filter(Boolean).map((entry) => entry!.name)).not.toEqual(names);
+    expect(Math.max(...groupCounts) - Math.min(...groupCounts)).toBeLessThanOrEqual(1);
+    expect(groupCounts.sort((left, right) => left - right)).toEqual([6, 6, 7, 7, 7]);
   });
 
   test('猜蜜版把自己换进最弱组并标记交换双方', () => {

@@ -458,6 +458,20 @@ function shuffledGroupIndexes(groupCount: number, random: () => number): number[
   return indexes;
 }
 
+/** 全随机分组先打乱名单，完全不使用排名或输入顺序。 */
+export function shuffleLineupNames(
+  names: readonly string[],
+  random: () => number = secureRandom,
+): string[] {
+  const shuffled = names.map((name) => name.trim()).filter(Boolean);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const sample = Math.min(0.999999999999, Math.max(0, random()));
+    const target = Math.floor(sample * (index + 1));
+    [shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]];
+  }
+  return shuffled;
+}
+
 /**
  * 按输入顺序每 groupCount 项划为一档，再把同档成员随机放入不同组。
  */
