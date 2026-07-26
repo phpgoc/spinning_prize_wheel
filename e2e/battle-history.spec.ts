@@ -284,19 +284,18 @@ test('对战历史显示总数并按日期显示查询结果数量和二次确�
 
   const historyCards = battleHistoryCards(page);
   const historyToggle = page.locator('.desktop-accordion-toggle').filter({ hasText: '对战历史' });
-  await expect(historyCards).toHaveCount(21);
-  await expect(historyToggle).toContainText('共 21 条');
-  await expect(historyToggle).not.toContainText('最近 20 条');
+  await expect(historyCards).toHaveCount(8);
+  await expect(historyToggle).toContainText('8/21条');
   const dateInputs = page.locator('.history-panel input[type="date"]');
   await dateInputs.nth(0).fill('2026-01-10');
   await dateInputs.nth(1).fill('2026-01-12');
   await expect(historyCards).toHaveCount(2);
-  await expect(historyToggle).toContainText('查询条件下共 2 条');
+  await expect(historyToggle).toContainText('2/2条');
 
   await dateInputs.nth(0).fill('');
   await dateInputs.nth(1).fill('');
-  await expect(historyCards).toHaveCount(21);
-  await expect(historyToggle).toContainText('共 21 条');
+  await expect(historyCards).toHaveCount(8);
+  await expect(historyToggle).toContainText('8/21条');
   await page.getByRole('button', { name: '删除全部', exact: true }).click();
   await expect(page.getByRole('alertdialog', { name: '删除全部对战历史？' })).toBeVisible();
   await page.keyboard.press('Enter');

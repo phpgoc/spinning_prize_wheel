@@ -162,6 +162,11 @@
     background: var(--battle-match-color, rgb(255 255 255 / 3.5%));
   }
 
+  .battle-match:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
   .battle-match > small {
     display: flex;
     align-items: center;

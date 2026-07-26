@@ -94,20 +94,19 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
 
   const battleShortcuts = page.locator('.shortcut-battle');
   await expect(battleShortcuts.getByRole('heading', { name: '对战页' })).toBeVisible();
-  await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(4);
+  await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(3);
   await expect(battleShortcuts).toContainText('聚焦对战区');
-  await expect(battleShortcuts).toContainText('聚焦名单');
   await expect(battleShortcuts).toContainText('打开 / 关闭排名');
   await expect(battleShortcuts).toContainText('打开 / 关闭对战历史');
 
   const battleAreaShortcuts = page.locator('.shortcut-battle-area');
   await expect(battleAreaShortcuts.getByRole('heading', { name: '对战区' })).toBeVisible();
-  await expect(battleAreaShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(5);
+  await expect(battleAreaShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(4);
   await expect(battleAreaShortcuts).toContainText('进入 / 返回全屏');
   await expect(battleAreaShortcuts).toContainText('微调比分框上 / 下');
   await expect(battleAreaShortcuts).toContainText('微调比分框左 / 右');
   await expect(battleAreaShortcuts).toContainText('聚焦单败未完成比分');
-  await expect(battleAreaShortcuts).toContainText('聚焦胜者 / 败者未完成比分');
+  await expect(battleAreaShortcuts).toContainText('聚焦单败 / 败者未完成比分');
 });
 
 test('排名字号放大时排名框同步扩容', async ({ page }) => {
@@ -198,17 +197,18 @@ test('分组历史显示总数并按日期显示查询结果数量', async ({ pa
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
 
   const historyToggle = page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' });
-  await expect(historyToggle).toContainText('共 7 条');
-  await expect(historyToggle).not.toContainText('最近 5 条');
+  await expect(historyToggle).toContainText('5/7条');
   await historyToggle.click();
 
   const historyCards = page.locator('.history-panel article');
-  await expect(historyCards).toHaveCount(7);
+  await expect(historyCards).toHaveCount(5);
+  await expect(historyCards.first()).toContainText('01/03');
+  await expect(historyCards.last()).toContainText('01/07');
   const dateInputs = page.locator('.history-panel input[type="date"]');
   await dateInputs.nth(0).fill('2026-01-03');
   await dateInputs.nth(1).fill('2026-01-05');
   await expect(historyCards).toHaveCount(2);
-  await expect(historyToggle).toContainText('查询条件下共 2 条');
+  await expect(historyToggle).toContainText('2/2条');
 });
 
 test('日期范围输入框有足够大的手写区和日历点击区，并随字号放大', async ({ page }) => {
@@ -979,7 +979,7 @@ test('单败左右晋级，上下衔接且对战快捷键不被比分框占用',
   const scroller = page.locator('.double-battle-scroll');
   await scroller.focus();
   const before = await scroller.evaluate((element) => element.scrollLeft);
-  await scroller.press('k');
+  await scroller.press('n');
   await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(before);
   const after = await scroller.evaluate((element) => element.scrollLeft);
   expect(after - before).toBeLessThanOrEqual(60);

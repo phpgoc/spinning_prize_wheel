@@ -73,8 +73,8 @@
     gap: calc(6px * var(--app-component-scale, 1));
     color: var(--color-app-muted);
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: calc(9px * var(--font-scale, 1));
-    font-weight: 700;
+    font-size: calc(10px * var(--font-scale, 1));
+    font-weight: 750;
   }
 
   .ui-history-summary > span i {
@@ -88,7 +88,8 @@
 
   .ui-history-summary strong {
     overflow: hidden;
-    font-size: calc(13px * var(--font-scale, 1));
+    font-size: calc(14px * var(--font-scale, 1));
+    font-weight: 800;
     line-height: 1.3;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -96,8 +97,8 @@
 
   .ui-history-summary small {
     color: var(--accent-strong);
-    font-size: calc(10px * var(--font-scale, 1));
-    font-weight: 750;
+    font-size: calc(11px * var(--font-scale, 1));
+    font-weight: 800;
   }
 
   .ui-history-actions {

@@ -82,6 +82,7 @@
   const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
   const LEGACY_COMMON_SELECTION_STORAGE_KEY = ['for', 'tuna-wheel-common-selections-v1'].join('');
   const MAX_ROULETTE_ROUNDS = 5;
+  const DRAW_HISTORY_DISPLAY_LIMIT = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
   const defaultPrizes: Prize[] = [];
 
@@ -229,7 +230,10 @@
     drawHistoryStart,
     drawHistoryEnd,
   );
-  $: visibleDrawHistories = filteredDrawHistories.slice(0, 5);
+  // 数据库按时间倒序查询，界面只展示最新上限条，并在列表中按时间正序阅读。
+  $: visibleDrawHistories = filteredDrawHistories
+    .slice(0, DRAW_HISTORY_DISPLAY_LIMIT)
+    .reverse();
   $: batchRows = createBatchRows(batchResult);
   $: batchHistory = batchResult ? [...batchResult.events].reverse().slice(0, 160) : [];
   $: parsedImportOptions = parseOptionText(importText);
@@ -2378,8 +2382,7 @@
 
           {#if importOpen}
             <section class="import-box" aria-label="文本批量导入">
-              <div class="import-heading">
-                <strong>粘贴选项文本</strong>
+                <div class="import-heading">
                 <button type="button" aria-label="关闭文本导入" on:click={() => (importOpen = false)}>×</button>
               </div>
               <UiTextarea
@@ -2388,7 +2391,7 @@
                 size="compact"
                 aria-keyshortcuts="Alt+Enter"
                 rows="4"
-                placeholder={'张三 李四 王五\n或从表格复制整列后直接粘贴'}
+                placeholder="每行一个，也支持空格、逗号和 Excel 粘贴"
               />
               <div class="import-footer">
                 <span>识别到 <strong>{parsedImportOptions.length}</strong> 项，重复项会跳过</span>
@@ -2620,7 +2623,7 @@
         on:click={() => togglePanel('history')}
       >
         <span class="accordion-icon">◷</span>
-        <span><strong>历史</strong></span>
+        <span><strong>转盘历史</strong></span>
         <i>{activePanel === 'history' ? '−' : '+'}</i>
       </button>
 
@@ -2628,7 +2631,7 @@
       <div class="accordion-content history-content">
         <div class="panel-heading">
           {#if businessRuntime}
-            <span class="count-badge">{Math.min(5, drawHistoryStart || drawHistoryEnd ? filteredDrawHistories.length : drawHistories.length)}/{drawHistoryStart || drawHistoryEnd ? filteredDrawHistories.length : drawHistories.length}条</span>
+            <span class="count-badge">{Math.min(DRAW_HISTORY_DISPLAY_LIMIT, filteredDrawHistories.length)}/{filteredDrawHistories.length}条</span>
           {/if}
         </div>
 
@@ -2722,16 +2725,10 @@
           <h3>通用操作逻辑</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>进入 / 返回应用全屏</span><kbd>H</kbd></div>
-            <div><span>单行文本确认</span><kbd>回车</kbd></div>
             <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
-            <div><span>取消编辑</span><kbd>Esc</kbd></div>
-            <div><span>取消区域选择</span><kbd>Esc</kbd></div>
-            <div><span>列表上一项</span><kbd>↑</kbd></div>
-            <div><span>列表下一项</span><kbd>↓</kbd></div>
-            <div><span>候选 / 排名编辑</span><kbd>回车</kbd></div>
-            <div><span>非选择状态滚屏</span><kbd>↑ / ↓</kbd></div>
+            <div><span>确认 / 编辑</span><kbd>回车</kbd></div>
             <div><span>增大 / 减小界面字号</span><kbd>Ctrl</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
-            <div><span>关闭折叠栏</span><kbd>Esc</kbd></div>
+            <div><span>取消编辑 / 退出选择 / 关闭折叠栏</span><kbd>Esc</kbd></div>
           </div>
         </section>
 
@@ -2801,11 +2798,10 @@
         <section class="shortcut-group shortcut-battle-area">
           <h3>对战区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>进入 / 返回对战区全屏</span><kbd>F</kbd></div>
-            <div><span>微调比分框上 / 下</span><kbd>U / J</kbd></div>
-            <div><span>微调比分框左 / 右</span><kbd>H / K</kbd></div>
-            <div><span>聚焦单败未完成比分</span><kbd>S</kbd></div>
-            <div><span>聚焦败者未完成比分</span><kbd>L</kbd></div>
+            <div><span>进入 / 返回全屏</span><kbd>F</kbd></div>
+            <div><span>微调比分框上 / 下</span><kbd>G / B</kbd></div>
+            <div><span>微调比分框左 / 右</span><kbd>V / N</kbd></div>
+            <div><span>聚焦单败 / 败者未完成比分</span><kbd>S / L</kbd></div>
           </div>
         </section>
 

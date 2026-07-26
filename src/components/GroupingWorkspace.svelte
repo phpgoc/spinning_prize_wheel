@@ -241,6 +241,8 @@
   let battleColorSnapshotAvailable = false;
   let battleExporting: 'excel' | 'json' | null = null;
   let clearedBattlePreviewSignature: string | null = null;
+  const LINEUP_HISTORY_DISPLAY_LIMIT = 5;
+  const BATTLE_HISTORY_DISPLAY_LIMIT = 8;
 
   $: battlePage = purpose === 'battle';
   $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
@@ -273,8 +275,11 @@
     keyboardDropPointIndex;
     keyboardRankLabel = keyboardRankDropLabel();
   }
-  $: visibleHistories = filterLineupHistories(lineupHistories, historyStart, historyEnd);
-  $: visibleBattleHistories = battleHistories
+  $: filteredLineupHistories = filterLineupHistories(lineupHistories, historyStart, historyEnd);
+  $: visibleHistories = filteredLineupHistories
+    .slice(0, LINEUP_HISTORY_DISPLAY_LIMIT)
+    .reverse();
+  $: filteredBattleHistories = battleHistories
     .filter((history) => {
       const date = new Date(history.createdAt);
       const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -282,6 +287,9 @@
         && (!battleHistoryEnd || day < battleHistoryEnd);
     })
     .sort((left, right) => right.createdAt - left.createdAt || right.updatedAt - left.updatedAt);
+  $: visibleBattleHistories = filteredBattleHistories
+    .slice(0, BATTLE_HISTORY_DISPLAY_LIMIT)
+    .reverse();
   $: hiddenLineupCellKeys = (() => {
     if (!result || !slowRevealEnabled || allLineupCellsRevealed) {
       return new Set<string>();
@@ -1751,9 +1759,8 @@
     }).format(new Date(createdAt));
   }
 
-  function historyCountLabel(total: number, filtered: number, hasFilter: boolean): string {
-    const count = hasFilter ? filtered : total;
-    return `${Math.min(5, count)}/${count}条`;
+  function historyCountLabel(filtered: number, limit: number): string {
+    return `${Math.min(limit, filtered)}/${filtered}条`;
   }
 
   function resetUserForm() {
@@ -2316,6 +2323,10 @@
     if (
       battlePage
       && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
       && (target === document.body || target === lineupResultElement)
       && moveFromLastConfirmedBattleScore(event)
     ) return;
@@ -2338,7 +2349,7 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
-      && ['u', 'j', 'h', 'k'].includes(key)
+      && ['g', 'b', 'v', 'n'].includes(key)
     ) {
       event.preventDefault();
       scrollBattleByKey(key);
@@ -2348,6 +2359,10 @@
       battlePage
       && event.target === lineupResultElement
       && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.shiftKey
     ) {
       event.preventDefault();
       document.querySelector<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')
@@ -2534,6 +2549,17 @@
       return;
     }
 
+    // 比分输入框按 Esc 后先聚焦当前对战框；再次按 Esc 才回到整个对战区。
+    // 这样方向键仍由对战框接管，Ctrl+↑/↓ 则可交给全局字号快捷键。
+    const focusedBattleMatch = target instanceof Element
+      ? target.closest<HTMLElement>('.battle-match')
+      : null;
+    if (battlePage && event.key === 'Escape' && focusedBattleMatch) {
+      event.preventDefault();
+      lineupResultElement?.focus({ preventScroll: true });
+      return;
+    }
+
     if (event.key === 'Escape') {
       event.preventDefault();
       if (keyboardMovingUserId !== null) {
@@ -2659,18 +2685,18 @@
 
   function scrollBattleByKey(key: string) {
     if (!lineupResultElement) return;
-    if (key === 'h' || key === 'k') {
+    if (key === 'v' || key === 'n') {
       const scroller = lineupResultElement.querySelector<HTMLElement>(
         '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
       );
       scroller?.scrollBy({
-        left: (key === 'h' ? -1 : 1) * 36,
+        left: (key === 'v' ? -1 : 1) * 36,
         behavior: 'smooth',
       });
       return;
     }
     lineupResultElement.scrollBy({
-      top: (key === 'u' ? -1 : 1) * 36,
+      top: (key === 'g' ? -1 : 1) * 36,
       behavior: 'smooth',
     });
   }
@@ -3169,7 +3195,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L F' : undefined}>
+<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L F G B V N' : undefined}>
   <!-- Web 端也启用了完整业务工作区，宽屏布局需要与 Tauri 保持一致。 -->
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="lineup-workbench">
     {#if businessRuntime}
@@ -3372,8 +3398,8 @@
             on:click={() => toggleDesktopPanel('history')}
           >
             <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage
-              ? historyCountLabel(battleHistories.length, visibleBattleHistories.length, Boolean(battleHistoryStart || battleHistoryEnd))
-              : historyCountLabel(lineupHistories.length, visibleHistories.length, Boolean(historyStart || historyEnd))}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+              ? historyCountLabel(filteredBattleHistories.length, BATTLE_HISTORY_DISPLAY_LIMIT)
+              : historyCountLabel(filteredLineupHistories.length, LINEUP_HISTORY_DISPLAY_LIMIT)}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
@@ -3460,7 +3486,7 @@
     <section class="lineup-center" aria-live="polite">
       <fieldset class="preview-panel app-surface-dark" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
-          <div><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2><p>可直接修正名字；桌面端会核对别名表</p></div></div>
+          <div><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2></div></div>
           <strong class:warning={businessRuntime && unresolvedPreviewCount > 0} class="preview-status">
             {resolvingNames ? '核对中…' : businessRuntime && unresolvedPreviewCount > 0 ? `${unresolvedPreviewCount} 项未识别` : `${names.length} 项`}
           </strong>
@@ -3643,7 +3669,7 @@
         class="lineup-result app-surface-dark"
         style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
         tabindex="-1"
-        aria-keyshortcuts={battlePage ? 'F U J H K L W S' : undefined}
+        aria-keyshortcuts={battlePage ? 'F G B V N L W S' : undefined}
       >
         {#if battlePage}
           <div class="battle-result-toolbar">

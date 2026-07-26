@@ -643,7 +643,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
     .toContainText('W1 P1');
   await doubleScroll.focus();
   const scrollBefore = await doubleScroll.evaluate((element) => element.scrollLeft);
-  await doubleScroll.press('k');
+  await doubleScroll.press('n');
   await expect.poll(() => doubleScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(scrollBefore);
   const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
   await firstWinnerMatch.focus();

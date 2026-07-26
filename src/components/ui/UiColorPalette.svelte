@@ -45,10 +45,18 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  // 输入框只保留六位十六进制字符，颜色值中的 # 由组件统一补齐。
+  function sanitizeHexInput(event: Event) {
+    const field = event.currentTarget as HTMLInputElement;
+    const sanitized = field.value.replace(/[^0-9a-f]/giu, '').slice(0, 6);
+    if (field.value !== sanitized) field.value = sanitized;
+  }
+
   function commitHexValue(event: Event) {
     const field = event.currentTarget as HTMLInputElement;
-    const next = field.value.trim();
+    const next = field.value.trim().replace(/^#/u, '');
     if (/^[0-9a-f]{6}$/iu.test(next)) {
+      field.value = next.toLowerCase();
       selectColor(`#${next.toLowerCase()}`);
     } else {
       field.value = value.replace(/^#/u, '');
@@ -118,7 +126,8 @@
       <div bind:this={pickerHost} class="iro-picker"></div>
       <label class="palette-hex-field">
         <span>十六进制</span>
-        <input class="palette-hex-input" value={value.replace(/^#/u, '')} maxlength="6" spellcheck="false" inputmode="text" aria-label={`${label}六位十六进制`} on:change={commitHexValue} />
+        <span class="palette-hex-prefix" aria-hidden="true">#</span>
+        <input class="palette-hex-input" value={value.replace(/^#/u, '')} maxlength="6" spellcheck="false" inputmode="text" autocomplete="off" autocapitalize="none" aria-label={`${label}六位十六进制`} on:input={sanitizeHexInput} on:change={commitHexValue} />
       </label>
     </div>
   {/if}
@@ -154,8 +163,8 @@
   .palette-value-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
   .palette-hex-field { display: flex; width: 100%; align-items: center; gap: 6px; color: color-mix(in srgb, currentColor 72%, transparent); font-size: calc(10px * var(--font-scale, 1)); }
   .palette-hex-field span { flex: 0 0 auto; }
+  .palette-hex-prefix { margin-left: auto; color: color-mix(in srgb, currentColor 82%, transparent); font-family: var(--font-mono, ui-monospace, monospace); font-weight: 700; }
   .palette-hex-input {
-    flex: 1;
     width: 70px;
     min-width: 0;
     padding: 4px 5px;
