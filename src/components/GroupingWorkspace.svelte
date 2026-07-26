@@ -138,6 +138,7 @@
   let rankingSaving = false;
   let rankingError = '';
   let desktopPanel: DesktopPanel | null = 'ranking';
+  let historyPanelToggle: HTMLButtonElement;
   let editingUserId: number | null = null;
   let editingRankField: 'name' | 'aliases' = 'name';
   let selectedRankedUserId: number | null = null;
@@ -1212,8 +1213,8 @@
             title: history.title,
           };
         }
-        return history;
-      });
+        return history as BattleHistoryListItem;
+      }) as BattleHistoryListItem[];
     } catch (reason) {
       battleHistories = [];
       battleHistoryError = messageFrom(reason, '无法读取对战历史数据库');
@@ -2051,6 +2052,15 @@
     }
   }
 
+  async function focusBattleHistoryPanel() {
+    if (!businessRuntime || !battlePage) return;
+    cancelKeyboardRankMove();
+    desktopPanel = 'history';
+    rankingFocusActive = false;
+    await tick();
+    historyPanelToggle?.focus();
+  }
+
   function toggleDesktopPanelShortcut(panel: DesktopPanel) {
     toggleDesktopPanel(panel);
   }
@@ -2644,6 +2654,11 @@
     if (key === 'w') {
       event.preventDefault();
       sourceTextarea?.focus({ preventScroll: true });
+      return;
+    }
+    if (battlePage && key === 'z') {
+      event.preventDefault();
+      if (!battleFullscreen) void focusBattleHistoryPanel();
       return;
     }
     if (battleFocusActive) return;
@@ -3450,6 +3465,7 @@
 
         <section class:open={desktopPanel === 'history'} class="desktop-accordion">
           <button
+            bind:this={historyPanelToggle}
             type="button"
             class="desktop-accordion-toggle"
             aria-expanded={desktopPanel === 'history'}
