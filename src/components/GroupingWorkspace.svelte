@@ -3692,7 +3692,7 @@
             </fieldset>
           </div>
             <div class="result-heading">
-            <div><div><h2>{battleTitle.trim() || (battleHistoryView ? '历史对战' : '对战')}</h2><p>{battleHistoryView ? `${formatHistoryDate(battleHistoryView.createdAt)} · ${battleHistoryView.snapshot.participantCount} 项 · ${battleTmpFormatLabel(battleHistoryView.snapshot.format)}` : battleTmpSnapshot ? `${battleTmpSnapshot.participantCount} 项 · ${battleTmpFormatLabel(battleTmpSnapshot.format)} · ${battleTmpSnapshot.orderMode === 'rank' ? '排名' : '输入顺序'}` : battlePreviewSnapshot ? '固定签位已显示，其余随机' : '点击抽签生成对战'}</p></div></div>
+            <div><div><h2>{battleTitle.trim() || (battleHistoryView ? '历史对战' : '对战')}</h2></div></div>
             {#if battleHistoryView}
               <div class="result-output-actions">
                 <UiButton size="sm" on:click={returnToCurrentBattle}>返回当前对战</UiButton>
@@ -3747,7 +3747,7 @@
           {/if}
         {:else}
         <div class="result-heading">
-          <div><div><h2>{groupingTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : resultOrderMode === 'random' ? '全随机' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
+          <div><div><h2>{groupingTitle.trim() || '分组结果'}</h2></div></div>
           {#if result}
             <div class="result-output-actions">
               {#if hiddenGroupingCellCount > 0}
@@ -4478,7 +4478,6 @@
     background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
   .result-heading > div { align-items: center; gap: 11px; }
-  .result-heading p { margin-top: 3px; color: var(--grouping-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
