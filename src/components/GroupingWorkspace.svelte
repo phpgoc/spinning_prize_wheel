@@ -2394,7 +2394,7 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
-      && ['g', 'b', 'v', 'n'].includes(key)
+      && ['u', 'j', 'h', 'k'].includes(key)
     ) {
       event.preventDefault();
       scrollBattleByKey(key);
@@ -2747,12 +2747,12 @@
 
   function scrollBattleByKey(key: string) {
     if (!groupingResultElement) return;
-    if (key === 'v' || key === 'n') {
+    if (key === 'h' || key === 'k') {
       const scroller = groupingResultElement.querySelector<HTMLElement>(
         '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
       );
       scroller?.scrollBy({
-        left: (key === 'v' ? -1 : 1) * 72,
+        left: (key === 'h' ? -1 : 1) * 72,
         behavior: 'smooth',
       });
       return;
@@ -2765,7 +2765,7 @@
       ? groupingResultElement
       : window;
     verticalScroller.scrollBy({
-      top: (key === 'g' ? -1 : 1) * 72,
+      top: (key === 'u' ? -1 : 1) * 72,
       behavior: 'smooth',
     });
   }
@@ -3268,7 +3268,7 @@
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="grouping-page app-page-frame" id={battlePage ? 'battle' : 'grouping'} aria-keyshortcuts={battlePage ? 'A Z X W S L F G B V N' : undefined}>
+<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="grouping-page app-page-frame" id={battlePage ? 'battle' : 'grouping'} aria-keyshortcuts={battlePage ? 'A Z X W S L F U J H K' : undefined}>
   <!-- Web 端也启用了完整业务工作区，宽屏布局需要与 Tauri 保持一致。 -->
   <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="grouping-workbench">
     {#if businessRuntime}
@@ -3745,7 +3745,7 @@
         class="grouping-result app-surface-dark"
         style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
         tabindex="-1"
-        aria-keyshortcuts={battlePage ? 'F G B V N L W S' : undefined}
+        aria-keyshortcuts={battlePage ? 'F U J H K L W S' : undefined}
       >
         {#if battlePage}
           <div class="battle-result-toolbar">

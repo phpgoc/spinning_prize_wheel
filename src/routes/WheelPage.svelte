@@ -2821,7 +2821,7 @@
           <h3>对战区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>进入 / 返回全屏</span><kbd>F</kbd></div>
-            <div><span>微调比分框</span><kbd>G / B / V / N</kbd></div>
+            <div><span>微调比分框</span><kbd>U / J / H / K</kbd></div>
             <div><span>聚焦单败</span><kbd>S</kbd></div>
             <div><span>聚焦胜者组 / 败者组</span><kbd>W / L</kbd></div>
           </div>
