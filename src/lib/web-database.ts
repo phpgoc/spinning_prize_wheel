@@ -5,6 +5,7 @@ import {
   parseBattleTmpSnapshot,
   updateBattleTmpResult,
   type BattleHistory,
+  type BattleHistoryListItem,
   type BattleTmpSnapshot,
 } from './battle';
 import type { AppVariant } from './app-variant';
@@ -15,6 +16,7 @@ import type {
   ResolvedGroupingName,
   SavedDraw,
   SavedGrouping,
+  HistoryListItem,
 } from './types';
 import type { RankedUserDropTarget } from './random-grouping';
 
@@ -185,23 +187,15 @@ function executeCommand<T>(
         args.target as RankedUserDropTarget,
       ) as T;
     case 'list_grouping_histories':
-      return queryJsonRows<SavedGrouping>(
-        db,
-        `SELECT payload_json FROM grouping_history
-         ORDER BY created_at DESC`,
-        [],
-      ) as T;
+      return listGroupingHistoryItems(db, String(args.variant) as AppVariant) as T;
+    case 'load_grouping_history':
+      return loadGroupingHistory(db, String(args.variant) as AppVariant, String(args.id)) as T;
     case 'save_grouping_history':
       saveGroupingHistory(db, String(args.variant), args.grouping as SavedGrouping);
       return undefined as T;
     case 'import_grouping_history':
       saveGroupingHistory(db, String(args.variant), args.history as SavedGrouping);
-      return queryJsonRows<SavedGrouping>(
-        db,
-        `SELECT payload_json FROM grouping_history
-         ORDER BY created_at DESC`,
-        [],
-      ) as T;
+      return listGroupingHistoryItems(db, String(args.variant) as AppVariant) as T;
     case 'delete_grouping_history':
       db.run('DELETE FROM grouping_history WHERE id = ?', [String(args.id)]);
       return undefined as T;
@@ -209,7 +203,9 @@ function executeCommand<T>(
       db.run('DELETE FROM grouping_history');
       return undefined as T;
     case 'list_battle_histories':
-      return listBattleHistories(db, String(args.variant) as AppVariant) as T;
+      return listBattleHistoryItems(db, String(args.variant) as AppVariant) as T;
+    case 'load_battle_history':
+      return loadBattleHistory(db, String(args.variant) as AppVariant, String(args.id)) as T;
     case 'save_battle_history':
       saveBattleHistory(
         db,
@@ -348,6 +344,7 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     CREATE TABLE IF NOT EXISTS grouping_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
@@ -364,6 +361,7 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     CREATE TABLE IF NOT EXISTS battle_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
@@ -373,6 +371,51 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${DATABASE_SCHEMA_VERSION}, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
+  ensureHistoryDisplayNameColumns(db);
+}
+
+function ensureHistoryDisplayNameColumns(db: Database) {
+  for (const table of ['grouping_history', 'battle_history']) {
+    if (!tableColumns(db, table).has('display_name')) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`);
+    }
+  }
+  backfillHistoryDisplayNames(db);
+}
+
+/** 为旧数据库一次性补齐历史列表名称；正常列表查询不再解析 payload_json。 */
+function backfillHistoryDisplayNames(db: Database) {
+  const groupingRows = db.exec(
+    "SELECT id, created_at, variant, payload_json FROM grouping_history WHERE display_name = ''",
+  )[0]?.values ?? [];
+  for (const [id, createdAt, variant, payloadJson] of groupingRows) {
+    const history = JSON.parse(String(payloadJson)) as SavedGrouping;
+    db.run(
+      'UPDATE grouping_history SET display_name = ? WHERE id = ? AND variant = ?',
+      [groupingDisplayName(history), String(id), String(variant)],
+    );
+  }
+  const battleRows = db.exec(
+    "SELECT id, variant, payload_json FROM battle_history WHERE display_name = ''",
+  )[0]?.values ?? [];
+  for (const [id, variant, payloadJson] of battleRows) {
+    const payload = JSON.parse(String(payloadJson)) as Record<string, unknown>;
+    const snapshot = parseBattleTmpSnapshot(
+      payload.snapshot ?? payload,
+      String(variant) as AppVariant,
+    );
+    const history = {
+      id: String(id),
+      createdAt: 0,
+      updatedAt: snapshot.updatedAt,
+      title: typeof payload.title === 'string' ? payload.title : null,
+      snapshot,
+    } satisfies BattleHistory;
+    db.run(
+      'UPDATE battle_history SET display_name = ? WHERE id = ? AND variant = ?',
+      [battleHistoryDisplayName(history, snapshot), String(id), String(variant)],
+    );
+  }
 }
 
 function assertDatabaseVersion(db: Database) {
@@ -435,6 +478,7 @@ function normalizeImportedGroupingHistory(db: Database) {
     CREATE TABLE grouping_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
@@ -451,9 +495,10 @@ function normalizeImportedGroupingHistory(db: Database) {
       } catch {
         throw new Error('分组历史内容损坏，无法导入');
       }
+      const history = { id: String(id), createdAt: Number(createdAt), input, result } as SavedGrouping;
       db.run(
-        'INSERT OR REPLACE INTO grouping_history (id, created_at, variant, payload_json) VALUES (?, ?, ?, ?)',
-        [id, createdAt, variant, JSON.stringify({ id, createdAt, input, result })],
+        'INSERT OR REPLACE INTO grouping_history (id, created_at, display_name, variant, payload_json) VALUES (?, ?, ?, ?, ?)',
+        [id, createdAt, groupingDisplayName(history), variant, JSON.stringify(history)],
       );
     }
   });
@@ -540,9 +585,9 @@ function validateDatabaseSchema(db: Database) {
     draw_history: ['id', 'created_at', 'variant', 'payload_json'],
     user: ['id', 'name', 'rank'],
     alias: ['id', 'name', 'user_id'],
-    grouping_history: ['id', 'created_at', 'variant', 'payload_json'],
+    grouping_history: ['id', 'created_at', 'display_name', 'variant', 'payload_json'],
     battle_tmp: ['variant', 'created_at', 'updated_at', 'history_saved', 'payload_json'],
-    battle_history: ['id', 'created_at', 'variant', 'payload_json'],
+    battle_history: ['id', 'created_at', 'display_name', 'variant', 'payload_json'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const actual = tableColumns(db, table);
@@ -750,10 +795,24 @@ function assertUniqueAlias(db: Database, value: string, ownerId: number | null =
 
 function saveGroupingHistory(db: Database, variant: string, history: SavedGrouping) {
   db.run(
-    `INSERT OR REPLACE INTO grouping_history (id, created_at, variant, payload_json)
-     VALUES (?, ?, ?, ?)`,
-    [history.id, history.createdAt, variant, JSON.stringify(history)],
+    `INSERT OR REPLACE INTO grouping_history (id, created_at, display_name, variant, payload_json)
+     VALUES (?, ?, ?, ?, ?)`,
+    [history.id, history.createdAt, groupingDisplayName(history), variant, JSON.stringify(history)],
   );
+}
+
+function groupingDisplayName(history: SavedGrouping): string {
+  const input = history.input && typeof history.input === 'object' && !Array.isArray(history.input)
+    ? history.input as Record<string, unknown>
+    : {};
+  const custom = typeof history.title === 'string' && history.title.trim()
+    ? history.title.trim()
+    : typeof input.title === 'string' && input.title.trim() ? input.title.trim() : '';
+  if (custom) return custom;
+  const people = Array.isArray(input.sourceNames) ? input.sourceNames.length : 0;
+  const groups = Number.isFinite(Number(input.groupCount)) ? Number(input.groupCount) : '—';
+  const mode = input.orderMode === 'input' ? '输入顺序' : input.orderMode === 'random' ? '全随机' : '排名';
+  return `${people} 项 · ${groups} 组 · ${mode}`;
 }
 
 function saveBattleHistory(
@@ -765,6 +824,8 @@ function saveBattleHistory(
   transaction(db, () => {
     const snapshot = parseBattleTmpSnapshot(history.snapshot, variant);
     if (history.updatedAt !== snapshot.updatedAt) throw new Error('对战记录更新时间不一致');
+    if (snapshot.createdAt > snapshot.updatedAt) throw new Error('对战签表时间顺序不正确');
+    if (history.createdAt <= snapshot.updatedAt) throw new Error('历史保存时间必须晚于签表更新时间');
     if (markCurrent) {
       const status = loadBattleTmpHistoryStatus(db, variant);
       if (status && status.updatedAt !== snapshot.updatedAt) {
@@ -773,9 +834,9 @@ function saveBattleHistory(
       if (status?.historySaved) throw new Error('同一对战状态已经保存过历史');
     }
     db.run(
-      `INSERT OR REPLACE INTO battle_history (id, created_at, variant, payload_json)
-       VALUES (?, ?, ?, ?)`,
-      [history.id, history.createdAt, variant, JSON.stringify({
+      `INSERT OR REPLACE INTO battle_history (id, created_at, display_name, variant, payload_json)
+       VALUES (?, ?, ?, ?, ?)`,
+      [history.id, history.createdAt, battleHistoryDisplayName(history, snapshot), variant, JSON.stringify({
         title: history.title ?? null,
         createdAt: snapshot.createdAt,
         updatedAt: history.updatedAt,
@@ -786,11 +847,18 @@ function saveBattleHistory(
   });
 }
 
+function battleHistoryDisplayName(history: BattleHistory, snapshot: BattleTmpSnapshot): string {
+  const title = history.title?.trim();
+  if (title) return title;
+  const format = snapshot.format === 'avoid-first-pair' ? '同组不对战1对2' : snapshot.format === 'single-elimination' ? '单败' : '双败';
+  return `${snapshot.participantCount} 人 · ${format}`;
+}
+
 function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[] {
   const rows = db.exec(
     `SELECT id, created_at, payload_json FROM battle_history
-     ORDER BY created_at DESC`,
-    [],
+     WHERE variant = ? ORDER BY created_at DESC`,
+    [variant],
   )[0]?.values ?? [];
   return rows.map(([id, createdAt, payload]) => {
     const payloadValue = JSON.parse(String(payload)) as unknown;
@@ -807,7 +875,9 @@ function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[]
       ? Number((payloadValue as { createdAt?: unknown }).createdAt)
       : Number.NaN;
     if (updatedAt !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
+    if (snapshot.createdAt > snapshot.updatedAt) throw new Error('对战签表时间顺序不正确');
     if (payloadCreatedAt !== snapshot.createdAt) throw new Error('对战历史创建时间不一致');
+    if (Number(createdAt) <= snapshot.updatedAt) throw new Error('历史保存时间必须晚于签表更新时间');
     return {
       id: String(id),
       createdAt: Number(createdAt),
@@ -819,6 +889,40 @@ function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[]
       snapshot,
     };
   });
+}
+
+function listGroupingHistoryItems(db: Database, _variant: AppVariant): HistoryListItem[] {
+  const rows = db.exec(
+    'SELECT id, created_at, display_name FROM grouping_history ORDER BY created_at DESC',
+  )[0]?.values ?? [];
+  return rows.map(([id, createdAt, displayName]) => ({
+    id: String(id), createdAt: Number(createdAt), displayName: String(displayName),
+  }));
+}
+
+function loadGroupingHistory(db: Database, _variant: AppVariant, id: string): SavedGrouping {
+  const rows = db.exec(
+    'SELECT payload_json FROM grouping_history WHERE id = ? ORDER BY created_at DESC LIMIT 1',
+    [id],
+  )[0]?.values ?? [];
+  if (!rows.length) throw new Error('找不到分组历史');
+  return JSON.parse(String(rows[0][0])) as SavedGrouping;
+}
+
+function listBattleHistoryItems(db: Database, variant: AppVariant): BattleHistoryListItem[] {
+  const rows = db.exec(
+    'SELECT id, created_at, display_name FROM battle_history WHERE variant = ? ORDER BY created_at DESC',
+    [variant],
+  )[0]?.values ?? [];
+  return rows.map(([id, createdAt, displayName]) => ({
+    id: String(id), createdAt: Number(createdAt), displayName: String(displayName),
+  }));
+}
+
+function loadBattleHistory(db: Database, variant: AppVariant, id: string): BattleHistory {
+  const history = listBattleHistories(db, variant).find((item) => item.id === id);
+  if (!history) throw new Error('找不到对战历史');
+  return history;
 }
 
 function unwrapBattleHistorySnapshot(value: unknown): unknown {

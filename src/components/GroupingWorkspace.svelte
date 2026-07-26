@@ -15,6 +15,7 @@
   import UiTextarea from './ui/UiTextarea.svelte';
   import {
     battleFixedSeedOptions,
+    battleHistoryTitle,
     battleTmpScoresWithMagicFill,
     createAvoidSameGroupPlan,
     createBattleTmpSnapshot,
@@ -23,6 +24,7 @@
     updateBattleTmpResult,
     type BattleFormat,
     type BattleHistory,
+    type BattleHistoryListItem,
     type BattleOrderMode,
     type BattleTmpMatch,
     type BattleTmpSnapshot,
@@ -71,7 +73,7 @@
     type RandomGrouping,
   } from '../lib/random-grouping';
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
-  import type { RankedUser, ResolvedGroupingName, SavedGrouping } from '../lib/types';
+  import type { HistoryListItem, RankedUser, ResolvedGroupingName, SavedGrouping } from '../lib/types';
   import { invoke, isTauriRuntime } from '../lib/runtime';
   import { importWebDatabase } from '../lib/web-database';
 
@@ -90,11 +92,11 @@
   type BattleScoreGroup = 'single' | 'winner' | 'loser';
   type DesktopPanel = 'ranking' | 'history';
   type GroupingHistoryDeletion =
-    | { kind: 'one'; history: SavedGrouping }
+    | { kind: 'one'; history: HistoryListItem }
     | { kind: 'all'; confirmation: 1 | 2 };
   type BattleLoadTarget =
     | { kind: 'current' }
-    | { kind: 'history'; history: BattleHistory };
+    | { kind: 'history'; history: BattleHistoryListItem };
   type PendingBattleLoad = { target: BattleLoadTarget; confirmation: 1 | 2 | 3 };
 
   const BATTLE_COLOR_PRESETS: Record<BattleColorPresetName, {
@@ -176,7 +178,7 @@
   let resultSourceNames: string[] = [];
   let resultOrderedNames: string[] = [];
   let resultHistory: SavedGrouping | null = null;
-  let groupingHistories: SavedGrouping[] = [];
+  let groupingHistories: HistoryListItem[] = [];
   let historyLoading = false;
   let historyError = '';
   let historyImportStatus = '';
@@ -220,7 +222,7 @@
   let battleTitleBeforeHistoryView: string | null = null;
   let battleTmpAvailable = false;
   let battleHistorySaved = false;
-  let battleHistories: BattleHistory[] = [];
+  let battleHistories: BattleHistoryListItem[] = [];
   let battleHistoryView: BattleHistory | null = null;
   let battleHistoryStart = '';
   let battleHistoryEnd = '';
@@ -229,7 +231,7 @@
   let battleHistoryExporting: { id: string; format: 'excel' | 'json' } | null = null;
   let battleHistoryError = '';
   let battleHistoryDeleteConfirmation: 0 | 1 | 2 = 0;
-  let pendingBattleHistoryDeletion: BattleHistory | null = null;
+  let pendingBattleHistoryDeletion: BattleHistoryListItem | null = null;
   let pendingBattleLoad: PendingBattleLoad | null = null;
   let battleLoadingTarget = false;
   let battleSyncStatus: 'idle' | 'loading' | 'saving' | 'saved' | 'error' = 'idle';
@@ -287,7 +289,7 @@
       return (!battleHistoryStart || day >= battleHistoryStart)
         && (!battleHistoryEnd || day < battleHistoryEnd);
     })
-    .sort((left, right) => right.createdAt - left.createdAt || right.updatedAt - left.updatedAt);
+    .sort((left, right) => right.createdAt - left.createdAt || (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
   $: visibleBattleHistories = filteredBattleHistories
     .slice(0, BATTLE_HISTORY_DISPLAY_LIMIT)
     .reverse();
@@ -855,18 +857,24 @@
     ];
   }
 
+  async function loadGroupingHistory(history: HistoryListItem): Promise<SavedGrouping> {
+    if ('input' in history && 'result' in history) return history as HistoryListItem & SavedGrouping;
+    return invoke<SavedGrouping>('load_grouping_history', { variant, id: history.id });
+  }
+
   function historyResult(history: SavedGrouping): RandomGrouping | null {
     const candidate = history.result as Partial<RandomGrouping>;
     if (!Array.isArray(candidate.groupNames) || !Array.isArray(candidate.tiers)) return null;
     return candidate as RandomGrouping;
   }
 
-  async function exportGroupingHistoryJson(history: SavedGrouping) {
+  async function exportGroupingHistoryJson(history: HistoryListItem) {
     if (historyExporting) return;
     historyExporting = { id: history.id, format: 'json' };
     historyError = '';
     try {
-      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(history, variant));
+      const fullHistory = await loadGroupingHistory(history);
+      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(fullHistory, variant));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 JSON');
     } finally {
@@ -874,9 +882,10 @@
     }
   }
 
-  async function exportGroupingHistoryExcel(history: SavedGrouping) {
+  async function exportGroupingHistoryExcel(history: HistoryListItem) {
     if (historyExporting) return;
-    const historicalResult = historyResult(history);
+    const fullHistory = await loadGroupingHistory(history);
+    const historicalResult = historyResult(fullHistory);
     if (!historicalResult) {
       historyError = '这条历史记录内容不完整';
       return;
@@ -884,7 +893,7 @@
     historyExporting = { id: history.id, format: 'excel' };
     historyError = '';
     try {
-      await downloadExcel(groupingHistoryTitle(history) || '分组结果', groupingExcelRows(historicalResult));
+      await downloadExcel(history.displayName || '分组结果', groupingExcelRows(historicalResult));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 Excel');
     } finally {
@@ -1080,7 +1089,8 @@
       if (target.kind === 'current') {
         loaded = await loadBattleTmpState(true);
       } else {
-        const snapshot = parseBattleTmpSnapshot(structuredClone(target.history.snapshot), variant);
+        const fullHistory = await loadBattleHistory(target.history);
+        const snapshot = parseBattleTmpSnapshot(structuredClone(fullHistory.snapshot), variant);
         const current = await readBattleTmpState();
         battleTmpAvailable = current !== null;
         battleSyncStatus = 'saving';
@@ -1151,12 +1161,26 @@
     return pending.target.kind === 'current' ? '重新读取' : '覆盖并加载';
   }
 
-  async function viewBattleHistory(history: BattleHistory) {
+  async function loadBattleHistory(history: BattleHistoryListItem): Promise<BattleHistory> {
+    if (history.snapshot) {
+      return {
+        id: history.id,
+        createdAt: history.createdAt,
+        updatedAt: history.updatedAt ?? history.snapshot.updatedAt,
+        title: history.title ?? history.displayName,
+        snapshot: history.snapshot,
+      };
+    }
+    return invoke<BattleHistory>('load_battle_history', { variant, id: history.id });
+  }
+
+  async function viewBattleHistory(history: BattleHistoryListItem) {
+    const fullHistory = await loadBattleHistory(history);
     if (battleHistoryView === null) battleTitleBeforeHistoryView = battleTitle;
-    battleTitle = history.title ?? '';
+    battleTitle = fullHistory.title ?? history.displayName;
     battleHistoryView = {
-      ...history,
-      snapshot: structuredClone(history.snapshot),
+      ...fullHistory,
+      snapshot: structuredClone(fullHistory.snapshot),
     };
     await tick();
     focusGroupingResult();
@@ -1176,7 +1200,20 @@
     if (!battlePage) return;
     battleHistoryError = '';
     try {
-      battleHistories = await invoke<BattleHistory[]>('list_battle_histories', { variant });
+      const rows = await invoke<Array<BattleHistoryListItem | BattleHistory>>('list_battle_histories', { variant });
+      battleHistories = rows.map((history) => {
+        if ('snapshot' in history && history.snapshot) {
+          return {
+            id: history.id,
+            createdAt: history.createdAt,
+            displayName: battleHistoryTitle(history.snapshot, history.title),
+            snapshot: history.snapshot,
+            updatedAt: history.updatedAt,
+            title: history.title,
+          };
+        }
+        return history;
+      });
     } catch (reason) {
       battleHistories = [];
       battleHistoryError = messageFrom(reason, '无法读取对战历史数据库');
@@ -1187,13 +1224,18 @@
     snapshot: BattleTmpSnapshot,
     markCurrent = false,
     titleOverride?: string | null,
+    createdAtOverride?: number | null,
   ): Promise<boolean> {
-    const savedAt = Date.now();
+    const savedAt = createdAtOverride ?? Math.max(Date.now(), snapshot.updatedAt + 1);
+    if (!Number.isSafeInteger(savedAt) || savedAt <= snapshot.updatedAt) {
+      battleHistoryError = '历史保存时间必须晚于签表更新时间';
+      return false;
+    }
     const record: BattleHistory = {
       id: `battle-${savedAt}-${Math.random().toString(16).slice(2)}`,
       createdAt: savedAt,
       updatedAt: snapshot.updatedAt,
-      title: titleOverride === undefined ? (battleTitle.trim() || null) : (titleOverride?.trim() || null),
+      title: battleHistoryTitle(snapshot, titleOverride === undefined ? battleTitle : titleOverride),
       snapshot: structuredClone(snapshot),
     };
     try {
@@ -1232,7 +1274,7 @@
     try {
       const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
       const transfer = parseBattleHistoryTransferRecord(value, variant);
-      if (!await archiveBattleHistory(transfer.snapshot, false, transfer.title)) throw new Error(battleHistoryError);
+      if (!await archiveBattleHistory(transfer.snapshot, false, transfer.title, transfer.createdAt)) throw new Error(battleHistoryError);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));
     } finally {
@@ -1240,12 +1282,13 @@
     }
   }
 
-  async function exportBattleHistoryJson(history: BattleHistory) {
+  async function exportBattleHistoryJson(history: BattleHistoryListItem) {
     if (battleHistoryExporting) return;
     battleHistoryExporting = { id: history.id, format: 'json' };
     battleHistoryError = '';
     try {
-      await downloadFormattedJson(history.title || '对战历史', createBattleHistoryTransfer(history.snapshot, history.title));
+      const fullHistory = await loadBattleHistory(history);
+      await downloadFormattedJson(fullHistory.title || history.displayName, createBattleHistoryTransfer(fullHistory.snapshot, fullHistory.title, fullHistory.createdAt));
     } catch (reason) {
       battleHistoryError = messageFrom(reason, '无法导出对战历史 JSON');
     } finally {
@@ -1253,12 +1296,13 @@
     }
   }
 
-  async function exportBattleHistoryExcel(history: BattleHistory) {
+  async function exportBattleHistoryExcel(history: BattleHistoryListItem) {
     if (battleHistoryExporting) return;
     battleHistoryExporting = { id: history.id, format: 'excel' };
     battleHistoryError = '';
     try {
-      await downloadExcelBytes(history.title || '对战签表', await createBattleBracketWorkbook(history.snapshot));
+      const fullHistory = await loadBattleHistory(history);
+      await downloadExcelBytes(fullHistory.title || history.displayName, await createBattleBracketWorkbook(fullHistory.snapshot));
     } catch (reason) {
       battleHistoryError = messageFrom(reason, '无法导出对战历史 Excel');
     } finally {
@@ -1270,7 +1314,7 @@
     if (battleHistories.length > 0) battleHistoryDeleteConfirmation = 1;
   }
 
-  function requestDeleteBattleHistory(history: BattleHistory) {
+  function requestDeleteBattleHistory(history: BattleHistoryListItem) {
     pendingBattleHistoryDeletion = history;
   }
 
@@ -1313,7 +1357,17 @@
     historyLoading = true;
     historyError = '';
     try {
-      groupingHistories = await invoke<SavedGrouping[]>('list_grouping_histories', { variant });
+      const rows = await invoke<Array<HistoryListItem | SavedGrouping>>('list_grouping_histories', { variant });
+      groupingHistories = rows.map((history) => {
+        if ('input' in history && 'result' in history) {
+          return {
+            id: history.id,
+            createdAt: history.createdAt,
+            displayName: groupingHistoryTitle(history) ?? historySummary(history),
+          };
+        }
+        return history;
+      });
     } catch (reason) {
       historyError = messageFrom(reason, '无法读取分组历史');
     } finally {
@@ -1321,7 +1375,7 @@
     }
   }
 
-  function requestDeleteGroupingHistory(history: SavedGrouping) {
+  function requestDeleteGroupingHistory(history: HistoryListItem) {
     pendingGroupingHistoryDeletion = { kind: 'one', history };
   }
 
@@ -1607,10 +1661,13 @@
     historyImportStatus = '';
     try {
       const history = parseGroupingHistoryTransfer(await file.text());
-      groupingHistories = await invoke<SavedGrouping[]>('import_grouping_history', {
+      const rows = await invoke<Array<HistoryListItem | SavedGrouping>>('import_grouping_history', {
         variant,
         history,
       });
+      groupingHistories = rows.map((item) => 'input' in item
+        ? { id: item.id, createdAt: item.createdAt, displayName: groupingHistoryTitle(item) ?? historySummary(item) }
+        : item);
       historyImportStatus = '已导入 1 条';
     } catch (reason) {
       showImportError('分组历史导入失败', messageFrom(reason, '无法导入分组历史'));
@@ -1681,16 +1738,20 @@
     return message.startsWith('数据库文件错误：');
   }
 
-  async function viewHistory(history: SavedGrouping) {
-    const historicalResult = historyResult(history);
+  async function viewHistory(history: HistoryListItem) {
+    const fullHistory = await loadGroupingHistory(history);
+    const historicalResult = historyResult(fullHistory);
     if (!historicalResult) {
       historyError = '这条历史记录内容不完整';
       return;
     }
     result = historicalResult;
-    resultHistory = history;
-    groupingTitle = groupingHistoryTitle(history) ?? '';
-    const input = history.input as Partial<{
+    resultHistory = fullHistory;
+    groupingTitle = fullHistory.input && typeof fullHistory.input === 'object'
+      && typeof (fullHistory.input as { title?: unknown }).title === 'string'
+      ? (fullHistory.input as { title: string }).title
+      : '';
+    const input = fullHistory.input as Partial<{
       orderMode: GroupingOrderMode;
       orderedNames: unknown[];
       sourceNames: unknown[];
@@ -3411,7 +3472,7 @@
                     {#each visibleBattleHistories as history (history.id)}
                       <UiHistoryRow
                         eyebrow={formatHistoryDate(history.createdAt)}
-                        title={history.title ?? `${history.snapshot.participantCount} 人 · ${battleTmpFormatLabel(history.snapshot.format)}`}
+                        title={history.displayName}
                         hint="查看比赛 →"
                         active={battleHistoryView?.id === history.id}
                         on:select={() => viewBattleHistory(history)}
@@ -3447,7 +3508,7 @@
                   {#each visibleHistories as history (history.id)}
                     <UiHistoryRow
                       eyebrow={formatHistoryDate(history.createdAt)}
-                      title={groupingHistoryTitle(history) ?? historySummary(history)}
+                      title={history.displayName}
                       hint="查看分组 →"
                       on:select={() => viewHistory(history)}
                     >

@@ -102,6 +102,28 @@ export interface BattleHistory {
   snapshot: BattleTmpSnapshot;
 }
 
+export interface BattleHistoryListItem {
+  id: string;
+  createdAt: number;
+  displayName: string;
+  /** 仅兼容旧版运行时或测试 mock；正式列表接口不返回此字段。 */
+  snapshot?: BattleTmpSnapshot;
+  updatedAt?: number;
+  title?: string | null;
+}
+
+/** 生成历史列表名称；保存时写入 display_name，避免列表读取签表 JSON。 */
+export function battleHistoryTitle(snapshot: BattleTmpSnapshot, customTitle?: string | null): string {
+  const title = customTitle?.trim();
+  if (title) return title;
+  const format = snapshot.format === 'avoid-first-pair'
+    ? '同组不对战1对2'
+    : snapshot.format === 'single-elimination'
+      ? '单败'
+      : '双败';
+  return `${snapshot.participantCount} 人 · ${format}`;
+}
+
 export interface BattleTmpSlotOrigin {
   matchId: string;
   outcome: 'winner' | 'loser';
@@ -206,6 +228,9 @@ export function parseBattleTmpSnapshot(
     || !Array.isArray(value.participants)
     || !Array.isArray(value.matches)
   ) {
+    throw new Error('对战临时状态格式不正确');
+  }
+  if (value.createdAt > value.updatedAt) {
     throw new Error('对战临时状态格式不正确');
   }
 

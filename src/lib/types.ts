@@ -101,3 +101,10 @@ export interface SavedGrouping {
   input: unknown;
   result: unknown;
 }
+
+/** 历史列表只返回轻量元数据；完整内容在查看、编辑或导出时按 id 加载。 */
+export interface HistoryListItem {
+  id: string;
+  createdAt: number;
+  displayName: string;
+}

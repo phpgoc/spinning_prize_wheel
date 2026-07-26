@@ -25,9 +25,9 @@ function createSnapshot(variant: 'standard' | 'caimi' = 'standard'): BattleTmpSn
 describe('对战历史同步文件', () => {
   test('正式封装导出后可以完整读回签表', () => {
     const snapshot = createSnapshot();
-    const transfer = createBattleHistoryTransfer(snapshot);
+    const transfer = createBattleHistoryTransfer(snapshot, null, 456);
 
-    expect(transfer).toEqual({ kind: 'battle-history', version: 1, updatedAt: snapshot.updatedAt, snapshot });
+    expect(transfer).toEqual({ kind: 'battle-history', version: 1, createdAt: 456, updatedAt: snapshot.updatedAt, snapshot });
     expect(parseBattleHistoryTransfer(transfer, 'standard')).toEqual(snapshot);
   });
 
@@ -38,9 +38,10 @@ describe('对战历史同步文件', () => {
 
   test('导入正式文件时保留历史名称', () => {
     const snapshot = createSnapshot();
-    const transfer = createBattleHistoryTransfer(snapshot, '春季赛');
+    const transfer = createBattleHistoryTransfer(snapshot, '春季赛', 456);
     expect(parseBattleHistoryTransferRecord(transfer, 'standard')).toEqual({
       snapshot,
+      createdAt: 456,
       title: '春季赛',
     });
   });

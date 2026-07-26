@@ -65,6 +65,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE TABLE IF NOT EXISTS grouping_history (
            id TEXT PRIMARY KEY NOT NULL,
            created_at INTEGER NOT NULL,
+           display_name TEXT NOT NULL DEFAULT '',
            input_json TEXT NOT NULL,
            result_json TEXT NOT NULL,
            variant TEXT NOT NULL
@@ -72,6 +73,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE TABLE IF NOT EXISTS battle_history (
            id TEXT NOT NULL,
            created_at INTEGER NOT NULL,
+           display_name TEXT NOT NULL DEFAULT '',
            variant TEXT NOT NULL,
            payload_json TEXT NOT NULL,
            PRIMARY KEY (id, variant)
@@ -555,7 +557,115 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
             .map_err(|error| format!("无法提交数据库迁移 {version}：{error}"))?;
     }
 
+    ensure_history_display_name_columns(connection)?;
     validate_database_schema(connection)
+}
+
+fn ensure_history_display_name_columns(connection: &Connection) -> Result<(), String> {
+    for table in ["grouping_history", "battle_history"] {
+        let columns = connection
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| format!("无法读取数据库表 {table} 结构：{error}"))?
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| format!("无法读取数据库表 {table} 字段：{error}"))?
+            .collect::<Result<HashSet<_>, _>>()
+            .map_err(|error| format!("无法解析数据库表 {table} 结构：{error}"))?;
+        if !columns.contains("display_name") {
+            connection
+                .execute(
+                    &format!("ALTER TABLE {table} ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"),
+                    [],
+                )
+                .map_err(|error| format!("无法升级数据库表 {table}：{error}"))?;
+        }
+    }
+    backfill_history_display_names(connection)?;
+    Ok(())
+}
+
+/// 为升级前没有 display_name 的历史记录补齐列表名称。迁移阶段只做一次 JSON 解析，列表查询本身保持轻量。
+fn backfill_history_display_names(connection: &Connection) -> Result<(), String> {
+    let grouping_rows = {
+        let mut statement = connection
+            .prepare("SELECT id, created_at, input_json, result_json FROM grouping_history WHERE display_name = ''")
+            .map_err(|error| format!("无法读取旧分组历史：{error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|error| format!("无法查询旧分组历史：{error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法解析旧分组历史：{error}"))?;
+        rows
+    };
+    for (id, created_at, input_json, result_json) in grouping_rows {
+        let input = serde_json::from_str(&input_json)
+            .map_err(|error| format!("无法解析旧分组输入：{error}"))?;
+        let result = serde_json::from_str(&result_json)
+            .map_err(|error| format!("无法解析旧分组结果：{error}"))?;
+        let history = SavedGrouping {
+            id: id.clone(),
+            created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
+            title: None,
+            input,
+            result,
+        };
+        connection
+            .execute(
+                "UPDATE grouping_history SET display_name = ?1 WHERE id = ?2",
+                params![grouping_display_name(&history), id],
+            )
+            .map_err(|error| format!("无法更新分组历史名称：{error}"))?;
+    }
+
+    let battle_rows = {
+        let mut statement = connection
+            .prepare("SELECT id, variant, payload_json FROM battle_history WHERE display_name = ''")
+            .map_err(|error| format!("无法读取旧对战历史：{error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| format!("无法查询旧对战历史：{error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法解析旧对战历史：{error}"))?;
+        rows
+    };
+    for (id, variant, payload_json) in battle_rows {
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)
+            .map_err(|error| format!("无法解析旧对战签表：{error}"))?;
+        let snapshot: BattleTmpSnapshot = serde_json::from_value(
+            payload.get("snapshot").cloned().unwrap_or_else(|| payload.clone()),
+        )
+        .map_err(|error| format!("无法解析旧对战签表：{error}"))?;
+        let title = payload
+            .get("title")
+            .and_then(serde_json::Value::as_str)
+            .map(ToOwned::to_owned);
+        let history = BattleHistory {
+            id: id.clone(),
+            created_at: 1,
+            updated_at: snapshot.updated_at,
+            title,
+            snapshot,
+        };
+        connection
+            .execute(
+                "UPDATE battle_history SET display_name = ?1 WHERE id = ?2 AND variant = ?3",
+                params![battle_history_display_name(&history), id, variant],
+            )
+            .map_err(|error| format!("无法更新对战历史名称：{error}"))?;
+    }
+    Ok(())
 }
 
 fn validate_database_schema(connection: &Connection) -> Result<(), String> {
@@ -582,11 +692,15 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
         ("alias", &["id", "name", "user_id"][..]),
         (
             "grouping_history",
-            &["id", "created_at", "input_json", "result_json", "variant"][..],
+            &[
+                "id", "created_at", "display_name", "input_json", "result_json", "variant",
+            ][..],
         ),
         (
             "battle_history",
-            &["id", "created_at", "variant", "payload_json"][..],
+            &[
+                "id", "created_at", "display_name", "variant", "payload_json",
+            ][..],
         ),
         ("app_kv", &["key", "value_json"][..]),
     ] {
@@ -1405,19 +1519,46 @@ fn save_grouping_history_in(
         .map_err(|error| format!("无法序列化分组输入：{error}"))?;
     let result_json = serde_json::to_string(&grouping.result)
         .map_err(|error| format!("无法序列化分组结果：{error}"))?;
+    let display_name = grouping_display_name(grouping);
     connection
         .execute(
-            "INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO grouping_history (id, created_at, display_name, input_json, result_json, variant)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
+               display_name = excluded.display_name,
                input_json = excluded.input_json,
                result_json = excluded.result_json,
                variant = excluded.variant",
-            params![grouping.id, created_at, input_json, result_json, variant],
+            params![grouping.id, created_at, display_name, input_json, result_json, variant],
         )
         .map_err(|error| format!("无法保存分组记录：{error}"))?;
     Ok(())
+}
+
+fn grouping_display_name(grouping: &SavedGrouping) -> String {
+    let input = grouping.input.as_object();
+    let custom = grouping
+        .title
+        .as_deref()
+        .or_else(|| input.and_then(|value| value.get("title").and_then(serde_json::Value::as_str)))
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(custom) = custom {
+        return custom.to_string();
+    }
+    let people = input
+        .and_then(|value| value.get("sourceNames").and_then(serde_json::Value::as_array))
+        .map_or(0, Vec::len);
+    let groups = input
+        .and_then(|value| value.get("groupCount").and_then(serde_json::Value::as_u64))
+        .map_or_else(|| "—".to_string(), |value| value.to_string());
+    let mode = match input.and_then(|value| value.get("orderMode").and_then(serde_json::Value::as_str)) {
+        Some("input") => "输入顺序",
+        Some("random") => "全随机",
+        _ => "排名",
+    };
+    format!("{people} 项 · {groups} 组 · {mode}")
 }
 
 #[tauri::command]
@@ -1432,6 +1573,7 @@ fn save_grouping_history(
     })
 }
 
+#[cfg(test)]
 fn list_grouping_histories_in(
     connection: &Connection,
     variant: &str,
@@ -1476,9 +1618,75 @@ fn list_grouping_histories(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-) -> Result<Vec<SavedGrouping>, String> {
+) -> Result<Vec<HistoryListItem>, String> {
     with_app_database(&app, &database, |connection| {
-        list_grouping_histories_in(connection, &variant).map_err(database_file_error)
+        list_grouping_history_items_in(connection, &variant).map_err(database_file_error)
+    })
+}
+
+#[tauri::command]
+fn load_grouping_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    id: String,
+) -> Result<SavedGrouping, String> {
+    with_app_database(&app, &database, |connection| {
+        load_grouping_history_in(connection, &variant, &id).map_err(database_file_error)
+    })
+}
+
+fn list_grouping_history_items_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Vec<HistoryListItem>, String> {
+    let _variant = validate_variant(variant)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, created_at, display_name
+             FROM grouping_history ORDER BY created_at DESC",
+        )
+        .map_err(|error| format!("无法读取分组历史：{error}"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(HistoryListItem {
+                id: row.get(0)?,
+                created_at: u64::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
+                display_name: row.get(2)?,
+            })
+        })
+        .map_err(|error| format!("无法查询分组历史：{error}"))?;
+    rows.map(|row| row.map_err(|error| format!("无法解析分组历史：{error}")))
+        .collect()
+}
+
+fn load_grouping_history_in(
+    connection: &Connection,
+    variant: &str,
+    id: &str,
+) -> Result<SavedGrouping, String> {
+    let _variant = validate_variant(variant)?;
+    let (id, created_at, input_json, result_json) = connection
+        .query_row(
+            "SELECT id, created_at, input_json, result_json
+             FROM grouping_history WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|error| format!("无法读取分组历史：{error}"))?;
+    Ok(SavedGrouping {
+        id,
+        created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
+        title: None,
+        input: serde_json::from_str(&input_json).map_err(|error| format!("无法解析分组输入：{error}"))?,
+        result: serde_json::from_str(&result_json).map_err(|error| format!("无法解析分组结果：{error}"))?,
     })
 }
 
@@ -1486,9 +1694,9 @@ fn import_grouping_history_in(
     connection: &Connection,
     variant: &str,
     history: &SavedGrouping,
-) -> Result<Vec<SavedGrouping>, String> {
+) -> Result<Vec<HistoryListItem>, String> {
     save_grouping_history_in(connection, variant, history)?;
-    list_grouping_histories_in(connection, variant)
+    list_grouping_history_items_in(connection, variant)
 }
 
 #[tauri::command]
@@ -1497,7 +1705,7 @@ fn import_grouping_history(
     database: State<'_, DatabaseState>,
     variant: String,
     history: SavedGrouping,
-) -> Result<Vec<SavedGrouping>, String> {
+) -> Result<Vec<HistoryListItem>, String> {
     with_app_database(&app, &database, |connection| {
         import_grouping_history_in(connection, &variant, &history)
     })
@@ -1554,6 +1762,12 @@ fn save_battle_history_in(
     if history.updated_at != history.snapshot.updated_at {
         return Err("对战记录更新时间不一致".to_string());
     }
+    if history.snapshot.created_at > history.snapshot.updated_at {
+        return Err("对战签表时间顺序不正确".to_string());
+    }
+    if history.created_at <= history.snapshot.updated_at {
+        return Err("历史保存时间必须晚于签表更新时间".to_string());
+    }
     let transaction = connection
         .unchecked_transaction()
         .map_err(|error| format!("无法开始保存对战历史：{error}"))?;
@@ -1578,14 +1792,16 @@ fn save_battle_history_in(
         "snapshot": history.snapshot,
     }))
     .map_err(|error| format!("无法序列化对战记录：{error}"))?;
+    let display_name = battle_history_display_name(history);
     transaction
         .execute(
-            "INSERT INTO battle_history (id, created_at, variant, payload_json)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO battle_history (id, created_at, display_name, variant, payload_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id, variant) DO UPDATE SET
                created_at = excluded.created_at,
+               display_name = excluded.display_name,
                payload_json = excluded.payload_json",
-            params![history.id, created_at, variant, payload_json],
+            params![history.id, created_at, display_name, variant, payload_json],
         )
         .map_err(|error| format!("无法保存对战记录：{error}"))?;
     if mark_current {
@@ -1594,6 +1810,18 @@ fn save_battle_history_in(
     transaction
         .commit()
         .map_err(|error| format!("无法提交对战历史：{error}"))
+}
+
+fn battle_history_display_name(history: &BattleHistory) -> String {
+    if let Some(title) = history.title.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        return title.to_string();
+    }
+    let format = match history.snapshot.format.as_str() {
+        "avoid-first-pair" => "同组不对战1对2",
+        "single-elimination" => "单败",
+        _ => "双败",
+    };
+    format!("{} 人 · {format}", history.snapshot.participant_count)
 }
 
 #[tauri::command]
@@ -1622,11 +1850,11 @@ fn list_battle_histories_in(
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, payload_json
-             FROM battle_history ORDER BY created_at DESC",
+             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取对战历史：{error}"))?;
     let rows = statement
-        .query_map([], |row| {
+        .query_map(params![variant], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1655,9 +1883,15 @@ fn list_battle_histories_in(
         if updated_at != snapshot.updated_at {
             return Err("对战历史更新时间不一致".to_string());
         }
+        if snapshot.created_at > snapshot.updated_at {
+            return Err("对战签表时间顺序不正确".to_string());
+        }
         if payload.get("createdAt").and_then(serde_json::Value::as_u64) != Some(snapshot.created_at)
         {
             return Err("对战历史创建时间不一致".to_string());
+        }
+        if u64::try_from(created_at).unwrap_or_default() <= snapshot.updated_at {
+            return Err("历史保存时间必须晚于签表更新时间".to_string());
         }
         let title = payload
             .get("title")
@@ -1679,10 +1913,58 @@ fn list_battle_histories(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-) -> Result<Vec<BattleHistory>, String> {
+) -> Result<Vec<BattleHistoryListItem>, String> {
     with_app_database(&app, &database, |connection| {
-        list_battle_histories_in(connection, &variant).map_err(database_file_error)
+        list_battle_history_items_in(connection, &variant).map_err(database_file_error)
     })
+}
+
+#[tauri::command]
+fn load_battle_history(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    variant: String,
+    id: String,
+) -> Result<BattleHistory, String> {
+    with_app_database(&app, &database, |connection| {
+        load_battle_history_in(connection, &variant, &id).map_err(database_file_error)
+    })
+}
+
+fn list_battle_history_items_in(
+    connection: &Connection,
+    variant: &str,
+) -> Result<Vec<BattleHistoryListItem>, String> {
+    let _variant = validate_variant(variant)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, created_at, display_name
+             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
+        )
+        .map_err(|error| format!("无法读取对战历史：{error}"))?;
+    let rows = statement
+        .query_map(params![variant], |row| {
+            Ok(BattleHistoryListItem {
+                id: row.get(0)?,
+                created_at: u64::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
+                display_name: row.get(2)?,
+            })
+        })
+        .map_err(|error| format!("无法查询对战历史：{error}"))?;
+    rows.map(|row| row.map_err(|error| format!("无法解析对战历史：{error}")))
+        .collect()
+}
+
+fn load_battle_history_in(
+    connection: &Connection,
+    variant: &str,
+    id: &str,
+) -> Result<BattleHistory, String> {
+    let histories = list_battle_histories_in(connection, variant)?;
+    histories
+        .into_iter()
+        .find(|history| history.id == id)
+        .ok_or_else(|| "找不到对战历史".to_string())
 }
 
 #[tauri::command]
@@ -1749,11 +2031,13 @@ pub fn run() {
             resolve_grouping_names,
             save_grouping_history,
             list_grouping_histories,
+            load_grouping_history,
             import_grouping_history,
             delete_grouping_history,
             clear_grouping_histories,
             save_battle_history,
             list_battle_histories,
+            load_battle_history,
             delete_battle_history,
             clear_battle_histories,
             save_battle_tmp_state,
@@ -2485,7 +2769,7 @@ mod tests {
         save_battle_tmp_state_in(&connection, "standard", &snapshot).expect("保存对战临时状态");
         let history = BattleHistory {
             id: "battle-state-1".to_string(),
-            created_at: snapshot.updated_at,
+            created_at: snapshot.updated_at + 1,
             updated_at: snapshot.updated_at,
             title: None,
             snapshot: snapshot.clone(),

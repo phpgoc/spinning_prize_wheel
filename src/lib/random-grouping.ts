@@ -416,11 +416,11 @@ export function createGroupingRankingSnapshot(
   return snapshot;
 }
 
-export function filterGroupingHistories(
-  histories: readonly SavedGrouping[],
+export function filterGroupingHistories<T extends { createdAt: number }>(
+  histories: readonly T[],
   startDate = '',
   endDate = '',
-): SavedGrouping[] {
+): T[] {
   const startAt = dateBoundary(startDate) ?? Number.NEGATIVE_INFINITY;
   const endAt = dateBoundary(endDate) ?? Number.POSITIVE_INFINITY;
   return [...histories]

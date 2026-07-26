@@ -105,6 +105,14 @@ pub(super) struct SavedGrouping {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct HistoryListItem {
+    pub(super) id: String,
+    pub(super) created_at: u64,
+    pub(super) display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// 保存到 SQLite 的对战历史快照。
 pub(super) struct BattleHistory {
     pub(super) id: String,
@@ -113,6 +121,14 @@ pub(super) struct BattleHistory {
     #[serde(default)]
     pub(super) title: Option<String>,
     pub(super) snapshot: BattleTmpSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct BattleHistoryListItem {
+    pub(super) id: String,
+    pub(super) created_at: u64,
+    pub(super) display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
