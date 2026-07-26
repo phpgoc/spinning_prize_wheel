@@ -74,12 +74,11 @@ const MIGRATIONS: &[(i64, &str)] = &[
            id TEXT NOT NULL,
            created_at INTEGER NOT NULL,
            display_name TEXT NOT NULL DEFAULT '',
-           variant TEXT NOT NULL,
            payload_json TEXT NOT NULL,
-           PRIMARY KEY (id, variant)
+           PRIMARY KEY (id)
          );
-         CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
-         ON battle_history(variant, created_at DESC);
+         CREATE INDEX IF NOT EXISTS battle_history_created_at
+         ON battle_history(created_at DESC);
          CREATE TABLE IF NOT EXISTS app_kv (
            key TEXT PRIMARY KEY NOT NULL,
            value_json TEXT NOT NULL
@@ -557,8 +556,46 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
             .map_err(|error| format!("无法提交数据库迁移 {version}：{error}"))?;
     }
 
+    normalize_battle_history_schema(connection)?;
     ensure_history_display_name_columns(connection)?;
     validate_database_schema(connection)
+}
+
+/// 0.3.0 发布前结构曾用 (id, variant) 联合主键；启动时收敛为共享历史表。
+fn normalize_battle_history_schema(connection: &mut Connection) -> Result<(), String> {
+    let columns = connection
+        .prepare("PRAGMA table_info(battle_history)")
+        .map_err(|error| format!("无法读取对战历史表结构：{error}"))?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("无法查询对战历史表结构：{error}"))?
+        .collect::<Result<HashSet<_>, _>>()
+        .map_err(|error| format!("无法解析对战历史表结构：{error}"))?;
+    if !columns.contains("variant") {
+        return Ok(());
+    }
+
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("无法开始升级对战历史表：{error}"))?;
+    transaction
+        .execute_batch(
+            "ALTER TABLE battle_history RENAME TO battle_history_prerelease;
+             CREATE TABLE battle_history (
+               id TEXT PRIMARY KEY NOT NULL,
+               created_at INTEGER NOT NULL,
+               display_name TEXT NOT NULL DEFAULT '',
+               payload_json TEXT NOT NULL
+             );
+             INSERT OR REPLACE INTO battle_history (id, created_at, display_name, payload_json)
+             SELECT id, created_at, display_name, payload_json
+             FROM battle_history_prerelease ORDER BY created_at ASC;
+             DROP TABLE battle_history_prerelease;
+             CREATE INDEX battle_history_created_at ON battle_history(created_at DESC);",
+        )
+        .map_err(|error| format!("无法升级对战历史表：{error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("无法提交对战历史表升级：{error}"))
 }
 
 fn ensure_history_display_name_columns(connection: &Connection) -> Result<(), String> {
@@ -625,14 +662,13 @@ fn backfill_history_display_names(connection: &Connection) -> Result<(), String>
 
     let battle_rows = {
         let mut statement = connection
-            .prepare("SELECT id, variant, payload_json FROM battle_history WHERE display_name = ''")
+            .prepare("SELECT id, payload_json FROM battle_history WHERE display_name = ''")
             .map_err(|error| format!("无法读取旧对战历史：{error}"))?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
                 ))
             })
             .map_err(|error| format!("无法查询旧对战历史：{error}"))?
@@ -640,7 +676,7 @@ fn backfill_history_display_names(connection: &Connection) -> Result<(), String>
             .map_err(|error| format!("无法解析旧对战历史：{error}"))?;
         rows
     };
-    for (id, variant, payload_json) in battle_rows {
+    for (id, payload_json) in battle_rows {
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|error| format!("无法解析旧对战签表：{error}"))?;
         let snapshot: BattleTmpSnapshot = serde_json::from_value(
@@ -660,8 +696,8 @@ fn backfill_history_display_names(connection: &Connection) -> Result<(), String>
         };
         connection
             .execute(
-                "UPDATE battle_history SET display_name = ?1 WHERE id = ?2 AND variant = ?3",
-                params![battle_history_display_name(&history), id, variant],
+                "UPDATE battle_history SET display_name = ?1 WHERE id = ?2",
+                params![battle_history_display_name(&history), id],
             )
             .map_err(|error| format!("无法更新对战历史名称：{error}"))?;
     }
@@ -698,9 +734,7 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
         ),
         (
             "battle_history",
-            &[
-                "id", "created_at", "display_name", "variant", "payload_json",
-            ][..],
+            &["id", "created_at", "display_name", "payload_json"][..],
         ),
         ("app_kv", &["key", "value_json"][..]),
     ] {
@@ -1795,13 +1829,13 @@ fn save_battle_history_in(
     let display_name = battle_history_display_name(history);
     transaction
         .execute(
-            "INSERT INTO battle_history (id, created_at, display_name, variant, payload_json)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(id, variant) DO UPDATE SET
+            "INSERT INTO battle_history (id, created_at, display_name, payload_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
                display_name = excluded.display_name,
                payload_json = excluded.payload_json",
-            params![history.id, created_at, display_name, variant, payload_json],
+            params![history.id, created_at, display_name, payload_json],
         )
         .map_err(|error| format!("无法保存对战记录：{error}"))?;
     if mark_current {
@@ -2107,6 +2141,49 @@ mod tests {
 
         let error = migrate_database(&mut connection).expect_err("旧版数据库不能继续迁移");
         assert!(error.contains("数据库版本不兼容"));
+    }
+
+    #[test]
+    fn prerelease_battle_history_schema_drops_variant_without_losing_rows() {
+        let mut connection = Connection::open_in_memory().expect("创建内存数据库");
+        connection
+            .execute_batch(
+                "CREATE TABLE battle_history (
+                   id TEXT NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   display_name TEXT NOT NULL DEFAULT '',
+                   variant TEXT NOT NULL,
+                   payload_json TEXT NOT NULL,
+                   PRIMARY KEY (id, variant)
+                 );
+                 INSERT INTO battle_history
+                   (id, created_at, display_name, variant, payload_json)
+                 VALUES ('history-1', 2, '测试历史', 'standard', '{}');",
+            )
+            .expect("创建发布前对战历史表");
+
+        normalize_battle_history_schema(&mut connection).expect("移除对战历史变体字段");
+        let columns = connection
+            .prepare("PRAGMA table_info(battle_history)")
+            .expect("读取升级后字段")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("查询升级后字段")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("解析升级后字段");
+        assert_eq!(
+            columns,
+            vec!["id", "created_at", "display_name", "payload_json"]
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT display_name FROM battle_history WHERE id = 'history-1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("读取保留的历史"),
+            "测试历史"
+        );
     }
 
     #[test]

@@ -46,6 +46,10 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
       level INTEGER NOT NULL, position INTEGER NOT NULL, up INTEGER, down INTEGER,
       up_result INTEGER, down_result INTEGER, status TEXT NOT NULL
     );
+    CREATE TABLE battle_history (
+      id TEXT NOT NULL, created_at INTEGER NOT NULL, display_name TEXT NOT NULL,
+      variant TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY (id, variant)
+    );
   `);
   database.run(
     `INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
@@ -77,6 +81,16 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
         match.upResult, match.downResult, match.status],
     );
   }
+  database.run(
+    `INSERT INTO battle_history (id, created_at, display_name, variant, payload_json)
+     VALUES ('desktop-battle', ?, '桌面对战历史', 'standard', ?)`,
+    [snapshot.updatedAt + 1, JSON.stringify({
+      title: '桌面对战历史',
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt,
+      snapshot,
+    })],
+  );
   return Buffer.from(database.export());
 }
 
@@ -233,6 +247,14 @@ test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
   await page.getByRole('button', { name: '导出 SQLite' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^转盘数据库-\d{4}-\d{2}-\d{2}\.sqlite3$/u);
+  const backupPath = await download.path();
+  expect(backupPath).not.toBeNull();
+  const SQL = await initSqlJs({ locateFile: (file) => `node_modules/sql.js/dist/${file}` });
+  const database = new SQL.Database(await readFile(backupPath!));
+  const battleHistoryColumns = database.exec('PRAGMA table_info(battle_history)')[0]?.values
+    .map((row) => String(row[1])) ?? [];
+  expect(battleHistoryColumns).toEqual(['id', 'created_at', 'display_name', 'payload_json']);
+  database.close();
 });
 
 test('Web SQLite 不再读取旧版常用候选存储', async ({ page }) => {
@@ -294,4 +316,6 @@ test('Web SQLite 可以导入桌面版关系化数据库', async ({ page }) => {
   await expect(page.locator('.battle-config textarea')).toHaveValue('桌面甲\n桌面乙\n桌面丙\n桌面丁');
   await openRankingPanel(page);
   await expect(page.locator('.ranked-user-list').getByText('桌面排名', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
 });

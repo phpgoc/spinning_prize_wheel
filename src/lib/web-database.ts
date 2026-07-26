@@ -361,18 +361,17 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
       payload_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS battle_history (
-      id TEXT NOT NULL,
+      id TEXT PRIMARY KEY NOT NULL,
       created_at INTEGER NOT NULL,
       display_name TEXT NOT NULL DEFAULT '',
-      variant TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      PRIMARY KEY (id, variant)
+      payload_json TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
-      ON battle_history(variant, created_at DESC);
+    CREATE INDEX IF NOT EXISTS battle_history_created_at
+      ON battle_history(created_at DESC);
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${DATABASE_SCHEMA_VERSION}, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
+  normalizeBattleHistorySchema(db);
   ensureHistoryDisplayNameColumns(db);
 }
 
@@ -398,13 +397,18 @@ function backfillHistoryDisplayNames(db: Database) {
     );
   }
   const battleRows = db.exec(
-    "SELECT id, variant, payload_json FROM battle_history WHERE display_name = ''",
+    "SELECT id, payload_json FROM battle_history WHERE display_name = ''",
   )[0]?.values ?? [];
-  for (const [id, variant, payloadJson] of battleRows) {
+  for (const [id, payloadJson] of battleRows) {
     const payload = JSON.parse(String(payloadJson)) as Record<string, unknown>;
+    const rawSnapshot = payload.snapshot ?? payload;
+    const snapshotVariant = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot)
+      && (rawSnapshot as { variant?: unknown }).variant === 'caimi'
+      ? 'caimi'
+      : 'standard';
     const snapshot = parseBattleTmpSnapshot(
-      payload.snapshot ?? payload,
-      String(variant) as AppVariant,
+      rawSnapshot,
+      snapshotVariant,
     );
     const history = {
       id: String(id),
@@ -414,10 +418,36 @@ function backfillHistoryDisplayNames(db: Database) {
       snapshot,
     } satisfies BattleHistory;
     db.run(
-      'UPDATE battle_history SET display_name = ? WHERE id = ? AND variant = ?',
-      [battleHistoryDisplayName(history, snapshot), String(id), String(variant)],
+      'UPDATE battle_history SET display_name = ? WHERE id = ?',
+      [battleHistoryDisplayName(history, snapshot), String(id)],
     );
   }
+}
+
+/** 0.3.0 发布前结构曾用 (id, variant) 联合主键；初始化或导入时收敛为共享历史表。 */
+function normalizeBattleHistorySchema(db: Database) {
+  const columns = tableColumns(db, 'battle_history');
+  if (!columns.has('variant')) return;
+  const rows = db.exec(
+    'SELECT id, created_at, display_name, payload_json FROM battle_history ORDER BY created_at ASC',
+  )[0]?.values ?? [];
+  replaceTable(db, 'battle_history', `
+    CREATE TABLE battle_history (
+      id TEXT PRIMARY KEY NOT NULL,
+      created_at INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      payload_json TEXT NOT NULL
+    );
+    CREATE INDEX battle_history_created_at
+      ON battle_history(created_at DESC);
+  `, () => {
+    for (const [id, createdAt, displayName, payloadJson] of rows) {
+      db.run(
+        'INSERT OR REPLACE INTO battle_history (id, created_at, display_name, payload_json) VALUES (?, ?, ?, ?)',
+        [id, createdAt, displayName, payloadJson],
+      );
+    }
+  });
 }
 
 function assertDatabaseVersion(db: Database) {
@@ -589,7 +619,7 @@ function validateDatabaseSchema(db: Database) {
     alias: ['id', 'name', 'user_id'],
     grouping_history: ['id', 'created_at', 'display_name', 'variant', 'payload_json'],
     battle_tmp: ['variant', 'created_at', 'updated_at', 'history_saved', 'payload_json'],
-    battle_history: ['id', 'created_at', 'display_name', 'variant', 'payload_json'],
+    battle_history: ['id', 'created_at', 'display_name', 'payload_json'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const actual = tableColumns(db, table);
@@ -836,9 +866,9 @@ function saveBattleHistory(
       if (status?.historySaved) throw new Error('同一对战状态已经保存过历史');
     }
     db.run(
-      `INSERT OR REPLACE INTO battle_history (id, created_at, display_name, variant, payload_json)
-       VALUES (?, ?, ?, ?, ?)`,
-      [history.id, history.createdAt, battleHistoryDisplayName(history, snapshot), variant, JSON.stringify({
+      `INSERT OR REPLACE INTO battle_history (id, created_at, display_name, payload_json)
+       VALUES (?, ?, ?, ?)`,
+      [history.id, history.createdAt, battleHistoryDisplayName(history, snapshot), JSON.stringify({
         title: history.title ?? null,
         createdAt: snapshot.createdAt,
         updatedAt: history.updatedAt,
