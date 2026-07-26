@@ -204,6 +204,7 @@
   let clearGroupingConfirmation: 0 | 1 | 2 | 3 = 0;
   let clearingBattleTmp = false;
   let groupingResultElement: HTMLElement | null = null;
+  const titleFocusValues = new WeakMap<HTMLInputElement, string>();
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
   let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
   let pendingBattleScoreGroup: BattleScoreGroup | null = null;
@@ -1806,6 +1807,18 @@
     void cancelRankedUserEdit();
   }
 
+  function rememberTitleFocusValue(event: FocusEvent) {
+    const target = event.currentTarget;
+    if (target instanceof HTMLInputElement) titleFocusValues.set(target, target.value);
+  }
+
+  function cancelTitleEdit(target: HTMLInputElement) {
+    const previousValue = titleFocusValues.get(target) ?? '';
+    if (battlePage) battleTitle = previousValue;
+    else groupingTitle = previousValue;
+    target.blur();
+  }
+
   async function focusRankingAdd() {
     cancelKeyboardRankMove();
     resetUserForm();
@@ -2455,6 +2468,15 @@
       event.preventDefault();
       sourceText = confirmedSourceText;
       (target as HTMLTextAreaElement).blur();
+      return;
+    }
+    if (
+      target instanceof HTMLInputElement
+      && target.closest('.grouping-title-field')
+      && isTextEditCancel(event)
+    ) {
+      event.preventDefault();
+      cancelTitleEdit(target);
       return;
     }
     if (target instanceof HTMLInputElement && target.type === 'text' && isSingleLineTextConfirm(event)) {
@@ -3891,9 +3913,9 @@
       <label class="grouping-title-field">
         <span>{battlePage ? '对战名称（可选）' : '分组名称（可选）'}</span>
         {#if battlePage}
-          <input bind:value={battleTitle} maxlength="40" placeholder="例如：周五单败赛" />
+          <input bind:value={battleTitle} maxlength="40" placeholder="例如：周五单败赛" aria-keyshortcuts="Enter Escape" on:focus={rememberTitleFocusValue} />
         {:else}
-          <input bind:value={groupingTitle} maxlength="40" placeholder="例如：季度分组" />
+          <input bind:value={groupingTitle} maxlength="40" placeholder="例如：季度分组" aria-keyshortcuts="Enter Escape" on:focus={rememberTitleFocusValue} />
         {/if}
       </label>
       {#if !battlePage}

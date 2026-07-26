@@ -134,6 +134,36 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
   await expect(battleAreaShortcuts).toContainText('聚焦胜者组 / 败者组');
 });
 
+test('分组和对战名称使用回车确认并用 Esc 恢复编辑前内容', async ({ page }) => {
+  await openDesktopGrouping(page);
+  const groupingTitle = page.getByLabel('分组名称（可选）');
+  await groupingTitle.fill('临时分组名称');
+  await groupingTitle.press('Escape');
+  await expect(groupingTitle).toHaveValue('');
+  await expect(groupingTitle).not.toBeFocused();
+
+  await groupingTitle.fill('正式分组名称');
+  await groupingTitle.press('Enter');
+  await expect(groupingTitle).toHaveValue('正式分组名称');
+  await expect(groupingTitle).not.toBeFocused();
+  await groupingTitle.fill('错误分组名称');
+  await groupingTitle.press('Escape');
+  await expect(groupingTitle).toHaveValue('正式分组名称');
+
+  await openDesktopBattle(page);
+  const battleTitle = page.getByLabel('对战名称（可选）');
+  await battleTitle.fill('临时对战名称');
+  await battleTitle.press('Escape');
+  await expect(battleTitle).toHaveValue('');
+  await expect(battleTitle).not.toBeFocused();
+
+  await battleTitle.fill('正式对战名称');
+  await battleTitle.press('Enter');
+  await battleTitle.fill('错误对战名称');
+  await battleTitle.press('Escape');
+  await expect(battleTitle).toHaveValue('正式对战名称');
+});
+
 test('排名字号放大时排名框同步扩容', async ({ page }) => {
   await openDesktopGrouping(page);
   const normalNumber = page.locator('.ranked-user-list .rank-number').first();
