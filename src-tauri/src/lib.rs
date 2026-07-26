@@ -1850,11 +1850,11 @@ fn list_battle_histories_in(
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, payload_json
-             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
+             FROM battle_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取对战历史：{error}"))?;
     let rows = statement
-        .query_map(params![variant], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1939,11 +1939,11 @@ fn list_battle_history_items_in(
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, display_name
-             FROM battle_history WHERE variant = ?1 ORDER BY created_at DESC",
+             FROM battle_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取对战历史：{error}"))?;
     let rows = statement
-        .query_map(params![variant], |row| {
+        .query_map([], |row| {
             Ok(BattleHistoryListItem {
                 id: row.get(0)?,
                 created_at: u64::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
@@ -2794,6 +2794,29 @@ mod tests {
                 .expect("读取对战历史")
                 .len(),
             1
+        );
+
+        let caimi_snapshot = single_battle_tmp_test_snapshot("caimi");
+        let caimi_history = BattleHistory {
+            id: "battle-caimi-1".to_string(),
+            created_at: caimi_snapshot.updated_at + 2,
+            updated_at: caimi_snapshot.updated_at,
+            title: Some("猜蜜版历史".to_string()),
+            snapshot: caimi_snapshot,
+        };
+        save_battle_history_in(&mut connection, "caimi", &caimi_history, false)
+            .expect("保存猜蜜版对战历史");
+        assert_eq!(
+            list_battle_histories_in(&connection, "standard")
+                .expect("普通版读取共享对战历史")
+                .len(),
+            2
+        );
+        assert_eq!(
+            list_battle_history_items_in(&connection, "caimi")
+                .expect("猜蜜版读取共享对战历史列表")
+                .len(),
+            2
         );
 
         let updated_at = snapshot.updated_at + 1;

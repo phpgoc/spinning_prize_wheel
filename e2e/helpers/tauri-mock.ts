@@ -54,12 +54,20 @@ export async function installTauriMock(
         return null;
       }
     })();
+    const persistedBattleHistories = (() => {
+      try {
+        const raw = localStorage.getItem('battle-history-v1:standard');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })();
     const state = {
       rankedUsers,
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
       groupingHistories: structuredClone(data.groupingHistories ?? []) as unknown[],
-      battleHistories: structuredClone(data.battleHistories ?? []) as unknown[],
+      battleHistories: structuredClone(data.battleHistories ?? persistedBattleHistories ?? []) as unknown[],
       battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
       commandFailures: structuredClone(data.commandFailures ?? {}) as Record<string, string[]>,
       closeRequestedHandler: null as number | null,

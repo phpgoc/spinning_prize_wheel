@@ -140,6 +140,23 @@ test('Web SQLite 保存排名和分组历史并可在刷新后读取', async ({ 
   await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
 });
 
+test('Web 对战历史在普通版和猜蜜版之间共享', async ({ page }) => {
+  await page.goto('/battle');
+  const textarea = page.locator('.battle-config textarea');
+  await textarea.fill('甲\n乙\n丙\n丁');
+  await textarea.press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/u }).click();
+  await page.getByRole('button', { name: '保存历史' }).click();
+  await expect(page.getByRole('button', { name: '历史已保存' })).toBeDisabled();
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
+
+  await page.goto('/caimi/battle');
+  await page.getByRole('button', { name: /对战历史/u }).click();
+  await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
+});
+
 test('Web 排名区支持录入、关联、拖拽和键盘移动', async ({ page }) => {
   await page.goto('/grouping');
   await openRankingPanel(page);

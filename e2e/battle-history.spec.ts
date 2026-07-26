@@ -81,15 +81,15 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   });
 
   const exported = JSON.parse(exportedJson);
-  expect(exported).toEqual({
-    kind: 'battle-history',
-    version: 1,
-    updatedAt: expectedSnapshot.updatedAt,
-    snapshot: expectedSnapshot,
-  });
+  expect(exported.kind).toBe('battle-history');
+  expect(exported.version).toBe(1);
+  expect(exported.createdAt).toBeGreaterThan(expectedSnapshot.updatedAt);
+  expect(exported.updatedAt).toBe(expectedSnapshot.updatedAt);
+  expect(exported.title).toBe('4 人 · 单败');
+  expect(exported.snapshot).toEqual(expectedSnapshot);
 
   await historyCard.getByRole('button').first().click();
-  await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
+  await expect(page.locator('.battle-history-bracket')).toBeVisible();
   const viewedMatch = page.locator('.battle-history-bracket .battle-round').first().locator('.battle-match').first();
   await expect(viewedMatch.locator('.battle-side strong')).toHaveText(expectedNames);
   await expect(viewedMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
@@ -118,7 +118,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   expect(importedSnapshot).toEqual(expectedSnapshot);
 
   await historyCard.getByRole('button').first().click();
-  await expect(page.getByRole('heading', { name: '历史对战' })).toBeVisible();
+  await expect(page.locator('.battle-history-bracket')).toBeVisible();
   await expect(viewedMatch.locator('.battle-side strong')).toHaveText(expectedNames);
   await expect(viewedMatch.locator('input[type="number"]').nth(0)).toHaveValue('4');
   await expect(viewedMatch.locator('input[type="number"]').nth(1)).toHaveValue('1');

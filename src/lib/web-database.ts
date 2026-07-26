@@ -856,11 +856,10 @@ function battleHistoryDisplayName(history: BattleHistory, snapshot: BattleTmpSna
   return `${snapshot.participantCount} 人 · ${format}`;
 }
 
-function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[] {
+function listBattleHistories(db: Database, _variant: AppVariant): BattleHistory[] {
   const rows = db.exec(
     `SELECT id, created_at, payload_json FROM battle_history
-     WHERE variant = ? ORDER BY created_at DESC`,
-    [variant],
+     ORDER BY created_at DESC`,
   )[0]?.values ?? [];
   return rows.map(([id, createdAt, payload]) => {
     const payloadValue = JSON.parse(String(payload)) as unknown;
@@ -911,10 +910,9 @@ function loadGroupingHistory(db: Database, _variant: AppVariant, id: string): Sa
   return JSON.parse(String(rows[0][0])) as SavedGrouping;
 }
 
-function listBattleHistoryItems(db: Database, variant: AppVariant): BattleHistoryListItem[] {
+function listBattleHistoryItems(db: Database, _variant: AppVariant): BattleHistoryListItem[] {
   const rows = db.exec(
-    'SELECT id, created_at, display_name FROM battle_history WHERE variant = ? ORDER BY created_at DESC',
-    [variant],
+    'SELECT id, created_at, display_name FROM battle_history ORDER BY created_at DESC',
   )[0]?.values ?? [];
   return rows.map(([id, createdAt, displayName]) => ({
     id: String(id), createdAt: Number(createdAt), displayName: String(displayName),
