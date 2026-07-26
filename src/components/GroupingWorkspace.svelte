@@ -330,6 +330,7 @@
   $: groupingUnrankedCount = businessRuntime
     ? unrankedGroupingNameCount(names, resolvedNames)
     : 0;
+  $: groupingRankedCount = Math.max(0, names.length - groupingUnrankedCount);
   $: groupingUnresolvedCapacity = groupingLastTierSize(names.length, Number(groupCount));
   $: groupingUnresolvedOverflow = Math.max(0, groupingUnrankedCount - groupingUnresolvedCapacity);
   $: orderAvailability = groupingOrderAvailability(
@@ -347,6 +348,7 @@
   );
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
   $: canGenerateByRandom = !sourceTextDirty && names.length >= 2;
+  $: canSortGroupingPreviewByRank = !sourceTextDirty && !resolvingNames && groupingRankedCount > 0;
   $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailabilityState.rank;
   $: battleFixedOptions = battleFixedSeedOptions(names.length);
   $: if (battleFixedSeedCount !== 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
@@ -628,9 +630,12 @@
   }
 
   async function sortGroupingPreviewByRank() {
-    if (!canGenerateGroupingByRank) return;
+    if (!canSortGroupingPreviewByRank) return;
     cancelPreviewInsertion();
     try {
+      // 预览不要求全部有排名；重新核对后只排序已有排名项，其余项保持输入顺序置后。
+      await resolveNames();
+      if (resolvedNames.length !== names.length) throw new Error(rankingError || '名单排名核对不完整');
       await commitSourceNames(orderPartiallyResolvedGroupingNames(resolvedNames));
     } catch (reason) {
       error = messageFrom(reason, '排名预览失败');
@@ -3748,7 +3753,7 @@
         {#if !battlePage}
           <div class="grouping-actions" class:desktop-actions={desktopRuntime}>
             {#if businessRuntime}
-            <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
+            <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingRankedCount === 0 ? '没有可排序的排名项' : groupingUnrankedCount > 0 ? '有排名项按排名在前，未排名项按输入顺序置后' : '按排名预览'} disabled={!canSortGroupingPreviewByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
             <button type="button" class="input-order-button random-grouping-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>

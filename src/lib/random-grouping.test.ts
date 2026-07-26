@@ -315,6 +315,7 @@ describe('随机排阵', () => {
     expect(groupingOrderAvailability(15, true, false, 4, groupingLastTierSize(15, 4)).rank).toBeFalse();
     expect(groupingOrderAvailability(16, true, false, 4, groupingLastTierSize(16, 4)).rank).toBeTrue();
     expect(groupingOrderAvailability(24, true, false, 6, groupingLastTierSize(24, 6)).rank).toBeTrue();
+    expect(groupingOrderAvailability(24, true, false, 7, groupingLastTierSize(24, 6)).rank).toBeFalse();
     expect(groupingOrderAvailability(24, true, false, 1).rank).toBeFalse();
   });
 

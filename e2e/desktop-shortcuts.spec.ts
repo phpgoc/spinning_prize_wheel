@@ -513,7 +513,7 @@ test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ 
   await expect(page.locator('.grouping-result')).toBeFocused();
 });
 
-test('按排名分组允许末档未排名', async ({ page }) => {
+test('按排名预览只要求至少一项排名，未排名保持原序且正式分组仍限制末档', async ({ page }) => {
   await openDesktopGrouping(page);
   await page.locator('#grouping-group-count').fill('2');
   await confirmDesktopNames(page, ['乙', '甲', '未录入']);
@@ -535,9 +535,17 @@ test('按排名分组允许末档未排名', async ({ page }) => {
     )
   ))).toBe(true);
 
-  await confirmDesktopNames(page, ['甲', '未录入甲', '未录入乙']);
-  await expect(sortPreview).toBeDisabled();
+  await confirmDesktopNames(page, ['未录入甲', '甲', '未录入乙']);
+  await expect(sortPreview).toBeEnabled();
   await expect(groupByRank).toBeDisabled();
+  await sortPreview.click();
+  await expect.poll(() => page.locator('.preview-row input').evaluateAll((inputs) => (
+    inputs.map((input) => (input as HTMLInputElement).value)
+  ))).toEqual(['甲', '未录入甲', '未录入乙']);
+
+  await confirmDesktopNames(page, ['未录入乙', '未录入甲']);
+  await expect(sortPreview).toBeDisabled();
+  await expect(sortPreview).toHaveAttribute('title', '没有可排序的排名项');
 });
 
 test('全随机分组按钮位于按排名分组下方且尺寸一致', async ({ page }) => {
