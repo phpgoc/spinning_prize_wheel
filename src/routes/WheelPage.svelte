@@ -186,6 +186,7 @@
   let drawHistoryExporting: string | null = null;
   let statsExportError = '';
   let batchExportError = '';
+  let settingsError = '';
   let hydrated = false;
   let databaseSettingsLoaded = false;
   let persistedWheelSettings: Record<string, unknown> = {};
@@ -801,6 +802,15 @@
       await invoke('open_download_folder');
     } catch (reason) {
       drawHistoryError = reason instanceof Error ? reason.message : String(reason);
+    }
+  }
+
+  async function openDataFolder() {
+    settingsError = '';
+    try {
+      await invoke('open_database_folder');
+    } catch (reason) {
+      settingsError = reason instanceof Error ? reason.message : String(reason);
     }
   }
 
@@ -2138,6 +2148,13 @@
           style={`--range-progress: ${((fontScale - 1) / 2) * 100}%`}
         />
         <div class="range-labels"><span>标准</span><span>放大两倍</span><span>放大三倍</span></div>
+      </section>
+
+      <div class="section-divider"></div>
+
+      <section class="setting-block data-folder-setting">
+        {#if settingsError}<div class="common-error" role="alert">{settingsError}</div>{/if}
+        <UiButton fullWidth size="sm" on:click={openDataFolder}>打开数据文件夹</UiButton>
       </section>
       </div>
       {/if}
