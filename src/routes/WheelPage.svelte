@@ -2722,7 +2722,7 @@
       {#if activePanel === 'shortcuts'}
       <div class="accordion-content shortcuts-content">
         <section class="shortcut-group shortcut-general">
-          <h3>通用操作逻辑</h3>
+          <h3>通用</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>进入 / 返回应用全屏</span><kbd>H</kbd></div>
             <div><span>文本区确认</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
@@ -2732,8 +2732,16 @@
           </div>
         </section>
 
+        <section class="shortcut-group shortcut-confirm">
+          <h3>确认框</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>回车</kbd></div>
+            <div><span>取消</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
+          </div>
+        </section>
+
         <section class="shortcut-group shortcut-draw">
-          <h3>转盘</h3>
+          <h3>转盘页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>导出抽奖统计</span><kbd>E</kbd></div>
             <div><span>新抽奖并清空候选</span><kbd>R</kbd></div>
@@ -2747,7 +2755,7 @@
         </section>
 
         <section class="shortcut-group shortcut-common">
-          <h3>常用候选</h3>
+          <h3>常用候选区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>打开文本区域</span><kbd>W</kbd></div>
             <div><span>引入候选</span><kbd>F</kbd></div>
@@ -2755,7 +2763,7 @@
         </section>
 
         <section class="shortcut-group shortcut-candidates">
-          <h3>候选</h3>
+          <h3>候选区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>添加一项并编辑</span><kbd>N</kbd></div>
             <div><span>权重加 1</span><kbd>Alt</kbd><b>＋</b><kbd>↑</kbd></div>
@@ -2766,12 +2774,30 @@
         </section>
 
         <section class="shortcut-group shortcut-statistics">
-          <h3>统计</h3>
+          <h3>统计区</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>增减上限</span><kbd>Alt</kbd><b>＋</b><kbd>↑ / ↓</kbd></div>
             <div><span>开始连续抽奖</span><kbd>Alt</kbd><b>＋</b><kbd>回车</kbd></div>
           </div>
         </section>
+
+        {#if businessRuntime}
+        <section class="shortcut-group shortcut-ranking">
+          <h3>排名区</h3>
+          <div class="shortcut-list sidebar-shortcut-list">
+            <div><span>添加排名</span><kbd>N</kbd></div>
+            <div><span>添加新别名</span><kbd>S</kbd></div>
+            <div><span>删除当前项</span><kbd>D</kbd></div>
+            <div><span>删除全部别名</span><kbd>F</kbd></div>
+            <div><span>选中排序</span><kbd>空格</kbd></div>
+            <div><span>插入 / 替换</span><kbd>空格</kbd></div>
+            <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
+            <div><span>执行当前项操作</span><kbd>空格</kbd></div>
+            <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
+            <div><span>确认关联</span><kbd>空格</kbd></div>
+          </div>
+        </section>
+        {/if}
 
         <section class="shortcut-group shortcut-lineup">
           <h3>分组页</h3>
@@ -2802,32 +2828,6 @@
             <div><span>微调比分框上 / 下</span><kbd>G / B</kbd></div>
             <div><span>微调比分框左 / 右</span><kbd>V / N</kbd></div>
             <div><span>聚焦单败 / 败者未完成比分</span><kbd>S / L</kbd></div>
-          </div>
-        </section>
-
-        {#if businessRuntime}
-          <section class="shortcut-group shortcut-ranking">
-            <h3>排名</h3>
-            <div class="shortcut-list sidebar-shortcut-list">
-              <div><span>添加排名</span><kbd>N</kbd></div>
-              <div><span>添加新别名</span><kbd>S</kbd></div>
-              <div><span>删除当前项</span><kbd>D</kbd></div>
-              <div><span>删除全部别名</span><kbd>F</kbd></div>
-              <div><span>选中排序</span><kbd>空格</kbd></div>
-              <div><span>插入 / 替换</span><kbd>空格</kbd></div>
-              <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
-              <div><span>执行当前项操作</span><kbd>空格</kbd></div>
-              <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
-              <div><span>确认关联</span><kbd>空格</kbd></div>
-            </div>
-          </section>
-        {/if}
-
-        <section class="shortcut-group shortcut-confirm">
-          <h3>确认框</h3>
-          <div class="shortcut-list sidebar-shortcut-list">
-            <div><span>确认</span><kbd>Y</kbd><b>/</b><kbd>回车</kbd></div>
-            <div><span>取消</span><kbd>N</kbd><b>/</b><kbd>Esc</kbd></div>
           </div>
         </section>
 

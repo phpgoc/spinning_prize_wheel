@@ -589,13 +589,13 @@ test('A/F 管理常用候选，Z 切换快捷键，数字设置可确认或取�
   await expect(page.locator('[data-prize-id]')).toHaveCount(2);
 
   await page.keyboard.press('z');
-  await expect(page.getByRole('heading', { name: '通用操作逻辑' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '通用' })).toBeVisible();
   const generalShortcuts = page.locator('.shortcut-general');
   await expect(generalShortcuts.getByText('增大 / 减小界面字号')).toBeVisible();
   await expect(page.locator('.shortcut-settings')).toHaveCount(0);
   await expect(page.getByText('切换自动保存历史')).toHaveCount(0);
   await page.keyboard.press('z');
-  await expect(page.getByRole('heading', { name: '通用操作逻辑' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: '通用' })).toBeHidden();
 
   await page.keyboard.press('m');
   const reward = page.getByLabel('奖励金额');

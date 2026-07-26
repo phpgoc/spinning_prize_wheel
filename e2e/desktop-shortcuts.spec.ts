@@ -92,6 +92,24 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
   await openDesktopWheel(page);
   await page.keyboard.press('z');
 
+  const shortcutHeadings = page.locator('.shortcuts-content .shortcut-group h3');
+  await expect(shortcutHeadings).toHaveText([
+    '通用',
+    '确认框',
+    '转盘页',
+    '常用候选区',
+    '候选区',
+    '统计区',
+    '排名区',
+    '分组页',
+    '对战页',
+    '对战区',
+  ]);
+  const shortcutColors = await shortcutHeadings.evaluateAll((headings) => headings.map((heading) => getComputedStyle(heading).getPropertyValue('--shortcut-heading-color').trim()));
+  expect(shortcutColors).toHaveLength(10);
+  expect(shortcutColors.every(Boolean)).toBe(true);
+  expect(new Set(shortcutColors).size).toBe(10);
+
   const battleShortcuts = page.locator('.shortcut-battle');
   await expect(battleShortcuts.getByRole('heading', { name: '对战页' })).toBeVisible();
   await expect(battleShortcuts.locator('.sidebar-shortcut-list > div')).toHaveCount(3);
@@ -105,7 +123,6 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
   await expect(battleAreaShortcuts).toContainText('进入 / 返回全屏');
   await expect(battleAreaShortcuts).toContainText('微调比分框上 / 下');
   await expect(battleAreaShortcuts).toContainText('微调比分框左 / 右');
-  await expect(battleAreaShortcuts).toContainText('聚焦单败未完成比分');
   await expect(battleAreaShortcuts).toContainText('聚焦单败 / 败者未完成比分');
 });
 

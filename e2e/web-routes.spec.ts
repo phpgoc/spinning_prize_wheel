@@ -361,8 +361,8 @@ test('对战预览控件放大后逐行铺满且文字不溢出', async ({ page 
   }));
 
   await page.goto('/battle');
-  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L');
-  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
+  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L F G B V N');
+  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F G B V N L W S');
   await prepareSingleBattle();
   const normalGroups = await boxes('.battle-option-groups > fieldset');
   expect(normalGroups).toHaveLength(3);
