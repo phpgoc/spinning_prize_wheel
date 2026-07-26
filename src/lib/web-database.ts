@@ -22,6 +22,7 @@ const DATABASE_NAME = 'spinning-prize-wheel';
 const DATABASE_STORE = 'database';
 const DATABASE_KEY = 'main';
 const DATABASE_VERSION = 1;
+const DATABASE_SCHEMA_VERSION = 1;
 
 let databasePromise: Promise<Database> | null = null;
 let mutationQueue = Promise.resolve();
@@ -82,12 +83,13 @@ export async function importWebDatabase(bytes: Uint8Array): Promise<void> {
     if (!hasKnownDatabaseTable(imported)) {
       throw new Error('不是转盘 SQLite 数据库');
     }
+    assertDatabaseVersion(imported);
     const desktopBattleSnapshot = normalizeImportedSchema(imported);
     migrateDatabase(imported, SQL);
     if (desktopBattleSnapshot) {
       saveBattleTmpState(imported, desktopBattleSnapshot);
     }
-    validateImportedDatabase(imported);
+    validateDatabaseSchema(imported);
     await persistDatabase(imported);
     const previous = previousPromise ? await previousPromise : null;
     previous?.close();
@@ -273,9 +275,10 @@ async function createDatabase(): Promise<Database> {
     readPersistedDatabase(),
   ]);
   const db = saved ? new SQL.Database(saved) : new SQL.Database();
+  assertDatabaseVersion(db);
   migrateDatabase(db, SQL);
-  const migratedLegacyStorage = migrateLegacyBrowserStorage(db);
-  if (!saved || migratedLegacyStorage) await persistDatabase(db);
+  validateDatabaseSchema(db);
+  if (!saved) await persistDatabase(db);
   return db;
 }
 
@@ -306,6 +309,7 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
 }
 
 function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
+  assertDatabaseVersion(db);
   db.run(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -367,12 +371,17 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
       ON battle_history(variant, created_at DESC);
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
-      VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+      VALUES (${DATABASE_SCHEMA_VERSION}, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   `);
-  if (!tableColumns(db, 'battle_tmp').has('history_saved')) {
-    db.run('ALTER TABLE battle_tmp ADD COLUMN history_saved INTEGER NOT NULL DEFAULT 0');
+}
+
+function assertDatabaseVersion(db: Database) {
+  if (!tableColumns(db, 'schema_migrations').size) return;
+  const versions = db.exec('SELECT version FROM schema_migrations ORDER BY version')[0]?.values
+    .map(([version]) => Number(version)) ?? [];
+  if (versions.some((version) => version !== DATABASE_SCHEMA_VERSION)) {
+    throw new Error(`数据库版本不兼容：0.3.0 只支持数据库版本 ${DATABASE_SCHEMA_VERSION}，请手动卸载旧版本并清除旧数据库`);
   }
-  ensureBattleHistoryUpdatedAt(db);
 }
 
 function hasKnownDatabaseTable(db: Database): boolean {
@@ -383,39 +392,11 @@ function hasKnownDatabaseTable(db: Database): boolean {
   return Boolean(result?.values.length);
 }
 
-/** 将 Rust 版关系化表转换成浏览器版快照表，保持桌面备份可恢复。 */
+/** 将当前版本 Rust 版关系化表转换成浏览器版快照表，保持桌面备份可恢复。 */
 function normalizeImportedSchema(db: Database): BattleTmpSnapshot | null {
   normalizeImportedDrawHistory(db);
   normalizeImportedLineupHistory(db);
-  normalizeImportedBattleHistory(db);
   return normalizeImportedBattleState(db);
-}
-
-/** 将早期没有显式更新时间字段的对战历史转换为 0.2.0 表结构。 */
-function normalizeImportedBattleHistory(db: Database) {
-  if (!tableColumns(db, 'battle_history').size) return;
-  ensureBattleHistoryUpdatedAt(db);
-}
-
-function ensureBattleHistoryUpdatedAt(db: Database) {
-  const columns = tableColumns(db, 'battle_history');
-  if (!columns.size || columns.has('updated_at')) return;
-  db.run('ALTER TABLE battle_history ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
-  const rows = db.exec('SELECT id, variant, payload_json FROM battle_history')[0]?.values ?? [];
-  for (const [id, variant, payload] of rows) {
-    try {
-      const snapshot = parseBattleTmpSnapshot(
-        unwrapBattleHistorySnapshot(JSON.parse(String(payload))),
-        String(variant) as AppVariant,
-      );
-      db.run(
-        'UPDATE battle_history SET updated_at = ? WHERE id = ? AND variant = ?',
-        [snapshot.updatedAt, id, variant],
-      );
-    } catch {
-      // 导入校验阶段会报告损坏历史，迁移本身不应因单条坏记录中断数据库打开。
-    }
-  }
 }
 
 function normalizeImportedDrawHistory(db: Database) {
@@ -550,8 +531,8 @@ function replaceTable(db: Database, table: string, schema: string, fill: () => v
   db.run('PRAGMA foreign_keys = ON');
 }
 
-/** 替换浏览器数据库前检查表结构和 JSON 内容，避免损坏文件覆盖现有数据。 */
-function validateImportedDatabase(db: Database) {
+/** 打开或替换浏览器数据库前检查表结构和 JSON 内容。 */
+function validateDatabaseSchema(db: Database) {
   const requiredColumns: Record<string, readonly string[]> = {
     schema_migrations: ['version', 'applied_at'],
     common_selection: ['id', 'created_at', 'payload_json'],
@@ -579,110 +560,6 @@ function validateImportedDatabase(db: Database) {
   listRankedUsers(db);
   loadBattleTmpState(db, 'standard');
   loadBattleTmpState(db, 'caimi');
-}
-
-/** 把旧 Web 版的常用候选和对战历史一次性搬入 SQLite，迁移完成后不再读取旧键。 */
-function migrateLegacyBrowserStorage(db: Database): boolean {
-  const commonMigrated = Number(singleValue(
-    db,
-    'SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 2)',
-  ));
-  const battleMigrated = Number(singleValue(
-    db,
-    'SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 3)',
-  ));
-  if (commonMigrated && battleMigrated) return false;
-
-  transaction(db, () => {
-    if (!commonMigrated) {
-      const storageKeys = [
-        'wheel-common-selections-v1',
-        ['for', 'tuna-wheel-common-selections-v1'].join(''),
-      ];
-      for (const key of storageKeys) {
-        let raw: string | null = null;
-        try {
-          raw = localStorage.getItem(key);
-        } catch {
-          // 禁用浏览器存储时跳过旧数据迁移，不影响 SQLite 初始化。
-        }
-        if (!raw) continue;
-        let selections: unknown;
-        try {
-          selections = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-        if (!Array.isArray(selections)) continue;
-        for (const value of selections) {
-          if (!isLegacyCommonSelection(value)) continue;
-          db.run(
-            `INSERT OR IGNORE INTO common_selection (id, created_at, payload_json)
-             VALUES (?, ?, ?)`,
-            [value.id, value.createdAt, JSON.stringify(value)],
-          );
-        }
-      }
-      db.run(
-        `INSERT INTO schema_migrations (version, applied_at)
-         VALUES (2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
-      );
-    }
-    if (!battleMigrated) {
-      for (const variant of ['standard', 'caimi'] as const) {
-        let raw: string | null = null;
-        try {
-          raw = localStorage.getItem(`battle-history-v1:${variant}`);
-        } catch {
-          // 禁用浏览器存储时跳过旧对战历史迁移。
-        }
-        if (!raw) continue;
-        let histories: unknown;
-        try {
-          histories = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-        if (!Array.isArray(histories)) continue;
-        for (const value of histories) {
-          if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-          const record = value as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
-          if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) continue;
-          try {
-            const snapshot = parseBattleTmpSnapshot(record.snapshot, variant);
-            const history: BattleHistory = {
-              id: record.id,
-              createdAt: Number(record.createdAt),
-              updatedAt: snapshot.updatedAt,
-              snapshot,
-            };
-            db.run(
-              `INSERT OR IGNORE INTO battle_history (id, created_at, updated_at, variant, payload_json)
-               VALUES (?, ?, ?, ?, ?)`,
-              [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify(snapshot)],
-            );
-          } catch {
-            // 单条旧记录损坏时跳过，不影响其余历史和数据库启动。
-          }
-        }
-      }
-      db.run(
-        `INSERT INTO schema_migrations (version, applied_at)
-         VALUES (3, CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
-      );
-    }
-  });
-  return true;
-}
-
-function isLegacyCommonSelection(value: unknown): value is CommonSelection {
-  if (!value || typeof value !== 'object') return false;
-  const selection = value as Partial<CommonSelection>;
-  return selection.version === 1
-    && typeof selection.id === 'string'
-    && typeof selection.name === 'string'
-    && Number.isSafeInteger(selection.createdAt)
-    && Array.isArray(selection.prizes);
 }
 
 function listRankedUsers(db: Database): RankedUser[] {

@@ -23,7 +23,7 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
   ), Date.now());
   database.run(`
     CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER);
-    INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1), (2, 1), (3, 1), (4, 1);
+    INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1);
     CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, rank INTEGER NOT NULL);
     CREATE TABLE alias (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, user_id INTEGER NOT NULL);
     CREATE TABLE lineup_history (
@@ -149,7 +149,7 @@ test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
   expect(download.suggestedFilename()).toMatch(/^转盘数据库-\d{4}-\d{2}-\d{2}\.sqlite3$/u);
 });
 
-test('Web SQLite 会迁移旧版常用候选存储', async ({ page }) => {
+test('Web SQLite 不再读取旧版常用候选存储', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('wheel-common-selections-v1', JSON.stringify([{
       version: 1,
@@ -161,7 +161,7 @@ test('Web SQLite 会迁移旧版常用候选存储', async ({ page }) => {
   });
   await page.goto('/wheel');
   await page.locator('.common-panel .accordion-toggle').click();
-  await expect(page.getByRole('group', { name: '常用候选：旧名单' })).toBeVisible();
+  await expect(page.getByRole('group', { name: '常用候选：旧名单' })).toHaveCount(0);
 });
 
 test('Web SQLite 备份可以导入并恢复排名', async ({ page, browser }) => {

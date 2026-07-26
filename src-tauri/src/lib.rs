@@ -15,6 +15,7 @@ const UNRANKED_RANK: i64 = 10_000;
 const SHARED_DATA_DIRECTORY: &str = "com.phpgoc.wheel";
 const DATABASE_FILE_NAME: &str = "draw-history.sqlite3";
 const SQL_LOG_FILE_NAME: &str = "sql.log";
+const DATABASE_SCHEMA_VERSION: i64 = 1;
 
 static SQL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static SQL_TRACE_DEDUPLICATOR: OnceLock<Mutex<SqlTraceDeduplicator>> = OnceLock::new();
@@ -43,18 +44,14 @@ impl SqlTraceDeduplicator {
 /// 按版本顺序执行的数据库迁移，已应用版本记录在 `schema_migrations`。
 const MIGRATIONS: &[(i64, &str)] = &[
     (
-        1,
+        DATABASE_SCHEMA_VERSION,
         "CREATE TABLE IF NOT EXISTS draw_history (
            id TEXT PRIMARY KEY NOT NULL,
            created_at INTEGER NOT NULL,
-           payload_json TEXT NOT NULL
+           payload_json TEXT NOT NULL,
+           variant TEXT NOT NULL
          );
-         CREATE INDEX IF NOT EXISTS draw_history_created_at
-         ON draw_history(created_at DESC);",
-    ),
-    (
-        2,
-        "CREATE TABLE IF NOT EXISTS user (
+         CREATE TABLE IF NOT EXISTS user (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
            rank INTEGER NOT NULL DEFAULT 10000
@@ -69,37 +66,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
            id TEXT PRIMARY KEY NOT NULL,
            created_at INTEGER NOT NULL,
            input_json TEXT NOT NULL,
-           result_json TEXT NOT NULL
+           result_json TEXT NOT NULL,
+           variant TEXT NOT NULL
          );
-         CREATE INDEX IF NOT EXISTS lineup_history_created_at
-         ON lineup_history(created_at DESC);",
-    ),
-    (
-        3,
-        "WITH ordered AS (
-           SELECT id,
-                  ROW_NUMBER() OVER (ORDER BY rank ASC, name COLLATE NOCASE ASC) AS normalized_rank
-           FROM user
-           WHERE rank < 10000
-         )
-         UPDATE user
-         SET rank = (SELECT normalized_rank FROM ordered WHERE ordered.id = user.id)
-         WHERE id IN (SELECT id FROM ordered);",
-    ),
-    (
-        4,
-        "ALTER TABLE draw_history
-         ADD COLUMN variant TEXT NOT NULL DEFAULT 'standard';
-         CREATE INDEX IF NOT EXISTS draw_history_variant_created_at
-         ON draw_history(variant, created_at DESC);
-         ALTER TABLE lineup_history
-         ADD COLUMN variant TEXT NOT NULL DEFAULT 'standard';
-         CREATE INDEX IF NOT EXISTS lineup_history_variant_created_at
-         ON lineup_history(variant, created_at DESC);",
-    ),
-    (
-        5,
-        "CREATE TABLE IF NOT EXISTS battle_history (
+         CREATE TABLE IF NOT EXISTS battle_history (
            id TEXT NOT NULL,
            created_at INTEGER NOT NULL,
            updated_at INTEGER NOT NULL,
@@ -108,14 +78,53 @@ const MIGRATIONS: &[(i64, &str)] = &[
            PRIMARY KEY (id, variant)
          );
          CREATE INDEX IF NOT EXISTS battle_history_variant_created_at
-         ON battle_history(variant, created_at DESC);",
-    ),
-    (
-        6,
-        "CREATE TABLE IF NOT EXISTS app_kv (
+         ON battle_history(variant, created_at DESC);
+         CREATE TABLE IF NOT EXISTS app_kv (
            key TEXT PRIMARY KEY NOT NULL,
            value_json TEXT NOT NULL
-         );",
+         );
+         CREATE TABLE IF NOT EXISTS battle_tmp (
+           id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+           variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
+           rules_version INTEGER NOT NULL CHECK (rules_version = 1),
+           updated_at INTEGER NOT NULL CHECK (updated_at > 0),
+           history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1)),
+           format TEXT NOT NULL CHECK (format IN ('avoid-first-pair', 'single-elimination', 'double-elimination')),
+           order_mode TEXT NOT NULL CHECK (order_mode IN ('rank', 'input')),
+           participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
+           bracket_size INTEGER NOT NULL CHECK (bracket_size >= participant_count),
+           fixed_seed_count INTEGER NOT NULL CHECK (fixed_seed_count >= 0 AND fixed_seed_count <= participant_count)
+         );
+         CREATE TABLE IF NOT EXISTS battle_tmp_participant (
+           state_id INTEGER NOT NULL REFERENCES battle_tmp(id) ON DELETE CASCADE,
+           participant_id INTEGER NOT NULL CHECK (participant_id > 0),
+           name TEXT NOT NULL,
+           source_index INTEGER NOT NULL CHECK (source_index >= 0),
+           seed INTEGER NOT NULL CHECK (seed > 0),
+           group_index INTEGER CHECK (group_index >= 0),
+           group_rank INTEGER CHECK (group_rank IN (1, 2)),
+           PRIMARY KEY (state_id, participant_id)
+         );
+         CREATE TABLE IF NOT EXISTS battle_tmp_match (
+           state_id INTEGER NOT NULL REFERENCES battle_tmp(id) ON DELETE CASCADE,
+           match_id TEXT NOT NULL,
+           stage TEXT NOT NULL CHECK (stage IN ('pairing', 'single', 'winner', 'loser', 'final')),
+           level INTEGER NOT NULL CHECK (level > 0),
+           position INTEGER NOT NULL CHECK (position > 0),
+           up INTEGER,
+           down INTEGER,
+           up_result INTEGER CHECK (up_result IS NULL OR up_result >= 0),
+           down_result INTEGER CHECK (down_result IS NULL OR down_result >= 0),
+           status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'completed', 'skipped')),
+           PRIMARY KEY (state_id, match_id),
+           UNIQUE (state_id, stage, level, position),
+           FOREIGN KEY (state_id, up) REFERENCES battle_tmp_participant(state_id, participant_id),
+           FOREIGN KEY (state_id, down) REFERENCES battle_tmp_participant(state_id, participant_id)
+         );
+         CREATE INDEX IF NOT EXISTS draw_history_created_at
+         ON draw_history(variant, created_at DESC);
+         CREATE INDEX IF NOT EXISTS lineup_history_created_at
+         ON lineup_history(variant, created_at DESC);",
     ),
 ];
 
@@ -254,6 +263,11 @@ fn database_file_error(detail: String) -> String {
     if detail.starts_with("数据库文件错误：") {
         return detail;
     }
+    if detail.starts_with("数据库版本不兼容：") {
+        return format!(
+            "数据库文件错误：{detail}。0.3.0 不兼容 0.2.0、0.2.1 的数据库，请手动卸载旧版本并删除 {DATABASE_FILE_NAME} 后重新安装。"
+        );
+    }
     format!(
         "数据库文件错误：{detail}。请打开数据库文件夹，手动删除 {DATABASE_FILE_NAME}，然后重新打开应用以初始化数据库。"
     )
@@ -276,31 +290,7 @@ fn app_database_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .parent()
         .map(|parent| parent.join(SHARED_DATA_DIRECTORY))
         .unwrap_or(app_directory);
-    migrate_legacy_database_directory(&directory)?;
     Ok(directory)
-}
-
-fn migrate_legacy_database_directory(directory: &PathBuf) -> Result<(), String> {
-    let Some(parent) = directory.parent() else {
-        return Ok(());
-    };
-    // 旧目录名拆开拼接，只用于一次性迁移历史版本的数据。
-    let legacy_name = ["com.phpgoc.", "for", "tuna"].concat();
-    let legacy = parent.join(legacy_name);
-    if !legacy.is_dir() || legacy == *directory {
-        return Ok(());
-    }
-    fs::create_dir_all(directory).map_err(|error| format!("无法创建新的转盘数据目录：{error}"))?;
-    for suffix in ["", "-wal", "-shm"] {
-        let file_name = format!("{DATABASE_FILE_NAME}{suffix}");
-        let source = legacy.join(&file_name);
-        let target = directory.join(&file_name);
-        if source.is_file() && !target.exists() {
-            fs::copy(&source, &target)
-                .map_err(|error| format!("无法迁移旧数据库文件 {file_name}：{error}"))?;
-        }
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -478,7 +468,9 @@ fn load_app_setting(
             .optional()
             .map_err(|error| format!("无法读取应用配置：{error}"))?;
         value
-            .map(|raw| serde_json::from_str(&raw).map_err(|error| format!("应用配置格式错误：{error}")))
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|error| format!("应用配置格式错误：{error}"))
+            })
             .transpose()
     })
 }
@@ -491,7 +483,8 @@ fn save_app_setting(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let key = validate_app_key(&key)?.to_string();
-    let value_json = serde_json::to_string(&value).map_err(|error| format!("无法序列化应用配置：{error}"))?;
+    let value_json =
+        serde_json::to_string(&value).map_err(|error| format!("无法序列化应用配置：{error}"))?;
     with_app_database(&app, &database, |connection| {
         connection
             .execute(
@@ -515,6 +508,23 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
              );",
         )
         .map_err(|error| format!("无法初始化迁移记录：{error}"))?;
+
+    let existing_versions = connection
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .map_err(|error| format!("无法读取数据库版本：{error}"))?
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| format!("无法读取数据库版本：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法解析数据库版本：{error}"))?;
+    if existing_versions
+        .iter()
+        .any(|version| *version != DATABASE_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "数据库版本不兼容：发现迁移版本 {:?}，当前版本只支持数据库版本 {}",
+            existing_versions, DATABASE_SCHEMA_VERSION
+        ));
+    }
 
     for (version, sql) in MIGRATIONS {
         let applied = connection
@@ -545,81 +555,55 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
             .map_err(|error| format!("无法提交数据库迁移 {version}：{error}"))?;
     }
 
-    ensure_battle_history_updated_at(connection)?;
-
-    Ok(())
+    validate_database_schema(connection)
 }
 
-/// 兼容 0.2.0 开发期曾创建的旧对战历史表；正式迁移只保证 0.1.0 到 0.2.0。
-fn ensure_battle_history_updated_at(connection: &mut Connection) -> Result<(), String> {
-    let has_table = connection
-        .query_row(
-            "SELECT EXISTS(
-               SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'battle_history'
-             )",
-            [],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|error| format!("无法检查对战历史表：{error}"))?;
-    if !has_table {
-        return Ok(());
-    }
-    let has_updated_at = connection
-        .prepare("PRAGMA table_info(battle_history)")
-        .map_err(|error| format!("无法读取对战历史表结构：{error}"))?
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|error| format!("无法读取对战历史表字段：{error}"))?
+fn validate_database_schema(connection: &Connection) -> Result<(), String> {
+    let versions = connection
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .map_err(|error| format!("无法读取数据库版本：{error}"))?
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| format!("无法读取数据库版本：{error}"))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("无法解析对战历史表结构：{error}"))?
-        .iter()
-        .any(|column| column == "updated_at");
-    if has_updated_at {
-        return Ok(());
+        .map_err(|error| format!("无法解析数据库版本：{error}"))?;
+    if versions != vec![DATABASE_SCHEMA_VERSION] {
+        return Err(format!(
+            "数据库版本不兼容：迁移记录应为 [{}]，实际为 {:?}",
+            DATABASE_SCHEMA_VERSION, versions
+        ));
     }
 
-    connection
-        .execute(
-            "ALTER TABLE battle_history ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
-            [],
-        )
-        .map_err(|error| format!("无法升级对战历史更新时间字段：{error}"))?;
-    let rows = {
-        let mut statement = connection
-            .prepare("SELECT id, variant, payload_json FROM battle_history")
-            .map_err(|error| format!("无法读取旧对战历史：{error}"))?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| format!("无法读取旧对战历史：{error}"))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("无法解析旧对战历史：{error}"))?;
-        rows
-    };
-    let transaction = connection
-        .unchecked_transaction()
-        .map_err(|error| format!("无法开始升级对战历史：{error}"))?;
-    for (id, variant, payload_json) in rows {
-        let payload: serde_json::Value = serde_json::from_str(&payload_json)
-            .map_err(|error| format!("旧对战历史内容不合法：{error}"))?;
-        let snapshot: BattleTmpSnapshot = serde_json::from_value(
-            payload.get("snapshot").cloned().unwrap_or(payload),
-        )
-        .map_err(|error| format!("旧对战历史内容不合法：{error}"))?;
-        transaction
-            .execute(
-                "UPDATE battle_history SET updated_at = ?1 WHERE id = ?2 AND variant = ?3",
-                params![db_u64(snapshot.updated_at, "对战历史更新时间")?, id, variant],
-            )
-            .map_err(|error| format!("无法写入对战历史更新时间：{error}"))?;
+    for (table, columns) in [
+        (
+            "draw_history",
+            &["id", "created_at", "payload_json", "variant"][..],
+        ),
+        ("user", &["id", "name", "rank"][..]),
+        ("alias", &["id", "name", "user_id"][..]),
+        (
+            "lineup_history",
+            &["id", "created_at", "input_json", "result_json", "variant"][..],
+        ),
+        (
+            "battle_history",
+            &["id", "created_at", "updated_at", "variant", "payload_json"][..],
+        ),
+        ("app_kv", &["key", "value_json"][..]),
+    ] {
+        let actual = connection
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| format!("无法读取数据库表 {table} 结构：{error}"))?
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| format!("无法读取数据库表 {table} 字段：{error}"))?
+            .collect::<Result<HashSet<_>, _>>()
+            .map_err(|error| format!("无法解析数据库表 {table} 结构：{error}"))?;
+        if columns.iter().any(|column| !actual.contains(*column)) {
+            return Err(format!(
+                "数据库版本不兼容：数据库表 {table} 不是 0.3.0 结构"
+            ));
+        }
     }
-    transaction
-        .commit()
-        .map_err(|error| format!("无法提交对战历史升级：{error}"))
+    Ok(())
 }
 
 fn normalize_person_name(value: &str) -> Result<String, String> {
@@ -1061,9 +1045,7 @@ fn list_draw_histories_in(
 ) -> Result<Vec<SavedDraw>, String> {
     let _variant = validate_variant(variant)?;
     let mut statement = connection
-        .prepare(
-            "SELECT payload_json FROM draw_history ORDER BY created_at DESC",
-        )
+        .prepare("SELECT payload_json FROM draw_history ORDER BY created_at DESC")
         .map_err(|error| format!("无法读取历史数据库：{error}"))?;
     let rows = statement
         .query_map([], |row| row.get::<_, String>(0))
@@ -1103,10 +1085,7 @@ fn delete_draw_history(
     }
     with_app_database(&app, &database, |connection| {
         connection
-            .execute(
-                "DELETE FROM draw_history WHERE id = ?1",
-                params![id],
-            )
+            .execute("DELETE FROM draw_history WHERE id = ?1", params![id])
             .map_err(|error| format!("无法删除抽奖记录：{error}"))?;
         Ok(())
     })
@@ -1121,10 +1100,7 @@ fn clear_draw_histories(
     let _variant = validate_variant(&variant)?;
     with_app_database(&app, &database, |connection| {
         connection
-            .execute(
-                "DELETE FROM draw_history",
-                [],
-            )
+            .execute("DELETE FROM draw_history", [])
             .map_err(|error| format!("无法清空抽奖历史：{error}"))?;
         Ok(())
     })
@@ -1540,10 +1516,7 @@ fn delete_lineup_history(
     }
     with_app_database(&app, &database, |connection| {
         connection
-            .execute(
-                "DELETE FROM lineup_history WHERE id = ?1",
-                params![id],
-            )
+            .execute("DELETE FROM lineup_history WHERE id = ?1", params![id])
             .map_err(|error| format!("无法删除分组记录：{error}"))?;
         Ok(())
     })
@@ -1552,10 +1525,7 @@ fn delete_lineup_history(
 fn clear_lineup_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
     let _variant = validate_variant(variant)?;
     connection
-        .execute(
-            "DELETE FROM lineup_history",
-            [],
-        )
+        .execute("DELETE FROM lineup_history", [])
         .map_err(|error| format!("无法清空分组历史：{error}"))?;
     Ok(())
 }
@@ -1605,7 +1575,7 @@ fn save_battle_history_in(
         "title": history.title,
         "snapshot": history.snapshot,
     }))
-        .map_err(|error| format!("无法序列化对战记录：{error}"))?;
+    .map_err(|error| format!("无法序列化对战记录：{error}"))?;
     transaction
         .execute(
             "INSERT INTO battle_history (id, created_at, updated_at, variant, payload_json)
@@ -1640,7 +1610,12 @@ fn save_battle_history(
     mark_current: Option<bool>,
 ) -> Result<(), String> {
     with_app_database(&app, &database, |connection| {
-        save_battle_history_in(connection, &variant, &history, mark_current.unwrap_or(false))
+        save_battle_history_in(
+            connection,
+            &variant,
+            &history,
+            mark_current.unwrap_or(false),
+        )
     })
 }
 
@@ -1673,11 +1648,14 @@ fn list_battle_histories_in(
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|error| format!("无法解析对战签表：{error}"))?;
         let snapshot: BattleTmpSnapshot = serde_json::from_value(
-            payload.get("snapshot").cloned().unwrap_or_else(|| payload.clone()),
+            payload
+                .get("snapshot")
+                .cloned()
+                .unwrap_or_else(|| payload.clone()),
         )
         .map_err(|error| format!("无法解析对战签表：{error}"))?;
-        let updated_at = u64::try_from(updated_at)
-            .map_err(|_| "对战历史更新时间不合法".to_string())?;
+        let updated_at =
+            u64::try_from(updated_at).map_err(|_| "对战历史更新时间不合法".to_string())?;
         if updated_at != snapshot.updated_at {
             return Err("对战历史更新时间不一致".to_string());
         }
@@ -1687,8 +1665,7 @@ fn list_battle_histories_in(
             .map(ToOwned::to_owned);
         histories.push(BattleHistory {
             id,
-            created_at: u64::try_from(created_at)
-                .map_err(|_| "对战记录时间不合法".to_string())?,
+            created_at: u64::try_from(created_at).map_err(|_| "对战记录时间不合法".to_string())?,
             updated_at,
             title,
             snapshot,
@@ -1721,10 +1698,7 @@ fn delete_battle_history(
     }
     with_app_database(&app, &database, |connection| {
         connection
-            .execute(
-                "DELETE FROM battle_history WHERE id = ?1",
-                params![id],
-            )
+            .execute("DELETE FROM battle_history WHERE id = ?1", params![id])
             .map_err(|error| format!("无法删除对战记录：{error}"))?;
         Ok(())
     })
@@ -1733,10 +1707,7 @@ fn delete_battle_history(
 fn clear_battle_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
     let _variant = validate_variant(variant)?;
     connection
-        .execute(
-            "DELETE FROM battle_history",
-            [],
-        )
+        .execute("DELETE FROM battle_history", [])
         .map_err(|error| format!("无法清空对战历史：{error}"))?;
     Ok(())
 }
@@ -1811,18 +1782,8 @@ mod tests {
     }
 
     #[test]
-    fn migrations_upgrade_legacy_database_and_are_idempotent() {
+    fn migration_creates_fresh_schema_at_version_one_and_is_idempotent() {
         let mut connection = Connection::open_in_memory().expect("创建内存数据库");
-        connection
-            .execute_batch(
-                "CREATE TABLE draw_history (
-                   id TEXT PRIMARY KEY NOT NULL,
-                   created_at INTEGER NOT NULL,
-                   payload_json TEXT NOT NULL
-                 );",
-            )
-            .expect("创建旧版历史表");
-
         migrate_database(&mut connection).expect("第一次迁移");
         migrate_database(&mut connection).expect("重复迁移");
 
@@ -1842,9 +1803,26 @@ mod tests {
                 "lineup_history",
                 "battle_history",
                 "app_kv",
+                "battle_tmp",
+                "battle_tmp_participant",
+                "battle_tmp_match",
             ],
         );
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(versions, vec![DATABASE_SCHEMA_VERSION]);
+    }
+
+    #[test]
+    fn migration_rejects_old_database_versions() {
+        let mut connection = Connection::open_in_memory().expect("创建内存数据库");
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL, applied_at INTEGER NOT NULL);
+                 INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1), (2, 1);",
+            )
+            .expect("创建旧版迁移记录");
+
+        let error = migrate_database(&mut connection).expect_err("旧版数据库不能继续迁移");
+        assert!(error.contains("数据库版本不兼容"));
     }
 
     #[test]
@@ -2249,11 +2227,16 @@ mod tests {
             list_lineup_histories_in(&connection, "caimi").expect("读取猜蜜版排阵历史");
 
         assert_eq!(histories.len(), 2);
-        let standard_history = histories.iter().find(|history| history.id == lineup.id).expect("找到普通版历史");
+        let standard_history = histories
+            .iter()
+            .find(|history| history.id == lineup.id)
+            .expect("找到普通版历史");
         assert_eq!(standard_history.input, lineup.input);
         assert_eq!(standard_history.result, lineup.result);
         assert_eq!(caimi_histories.len(), 2);
-        assert!(caimi_histories.iter().any(|history| history.id == caimi_lineup.id));
+        assert!(caimi_histories
+            .iter()
+            .any(|history| history.id == caimi_lineup.id));
 
         clear_lineup_histories_in(&connection, "standard").expect("清空普通版分组历史");
         assert!(list_lineup_histories_in(&connection, "standard")
@@ -2401,7 +2384,7 @@ mod tests {
             .expect_err("重复参赛者编号必须被拒绝");
 
         assert_eq!(error, "对战临时状态参赛者不合法");
-        assert!(!battle_tmp_table_exists(&connection).unwrap());
+        assert!(battle_tmp_table_exists(&connection).unwrap());
     }
 
     #[test]
@@ -2419,13 +2402,13 @@ mod tests {
             .expect_err("等待上游的签位不能带比分");
 
         assert_eq!(error, "等待上游的签位不能填写比分");
-        assert!(!battle_tmp_table_exists(&connection).unwrap());
+        assert!(battle_tmp_table_exists(&connection).unwrap());
     }
 
     #[test]
-    fn battle_tmp_is_created_lazily_and_replaced_as_one_global_state() {
+    fn battle_tmp_tables_are_created_by_migration_and_replaced_as_one_global_state() {
         let connection = test_database();
-        assert!(!battle_tmp_table_exists(&connection).expect("检查对战临时表"));
+        assert!(battle_tmp_table_exists(&connection).expect("检查迁移创建的对战临时表"));
         assert_eq!(
             load_battle_tmp_state_in(&connection, "standard").expect("读取空对战状态"),
             None
@@ -2496,8 +2479,7 @@ mod tests {
     fn battle_history_marks_exact_tmp_state_and_score_change_reopens_saving() {
         let mut connection = test_database();
         let snapshot = single_battle_tmp_test_snapshot("standard");
-        save_battle_tmp_state_in(&connection, "standard", &snapshot)
-            .expect("保存对战临时状态");
+        save_battle_tmp_state_in(&connection, "standard", &snapshot).expect("保存对战临时状态");
         let history = BattleHistory {
             id: "battle-state-1".to_string(),
             created_at: snapshot.updated_at,
@@ -2771,14 +2753,19 @@ mod tests {
             list_draw_histories_in(&connection, "caimi").expect("读取猜蜜版抽奖历史");
 
         assert_eq!(histories.len(), 2);
-        let standard_history = histories.iter().find(|history| history.id == draw.id).expect("找到普通版历史");
+        let standard_history = histories
+            .iter()
+            .find(|history| history.id == draw.id)
+            .expect("找到普通版历史");
         assert_eq!(standard_history.created_at, draw.created_at);
         assert_eq!(standard_history.mode, draw.mode);
         assert_eq!(standard_history.reward_amount, draw.reward_amount);
         assert_eq!(standard_history.prizes, draw.prizes);
         assert_eq!(standard_history.records, draw.records);
         assert_eq!(caimi_histories.len(), 2);
-        assert!(caimi_histories.iter().any(|history| history.id == caimi_draw.id));
+        assert!(caimi_histories
+            .iter()
+            .any(|history| history.id == caimi_draw.id));
     }
 
     #[test]

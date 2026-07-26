@@ -1170,58 +1170,10 @@
     battleHistoryError = '';
     try {
       battleHistories = await invoke<BattleHistory[]>('list_battle_histories', { variant });
-      if (battleHistories.length === 0) {
-        battleHistories = await migrateLegacyBattleHistories();
-      }
     } catch (reason) {
       battleHistories = [];
       battleHistoryError = messageFrom(reason, '无法读取对战历史数据库');
     }
-  }
-
-  /** 将 0.2.0 之前保存在 localStorage 的历史迁移到关系化数据库。 */
-  async function migrateLegacyBattleHistories(): Promise<BattleHistory[]> {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(`battle-history-v1:${variant}`);
-    } catch {
-      return [];
-    }
-    if (!raw) return [];
-    let value: unknown;
-    try {
-      value = JSON.parse(raw);
-    } catch {
-      return [];
-    }
-    if (!Array.isArray(value)) return [];
-    const legacy = value.flatMap((entry): BattleHistory[] => {
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
-      const record = entry as { id?: unknown; createdAt?: unknown; snapshot?: unknown };
-      if (typeof record.id !== 'string' || !Number.isSafeInteger(record.createdAt)) return [];
-      try {
-        const snapshot = parseBattleTmpSnapshot(record.snapshot, variant);
-        return [{
-          id: record.id,
-          createdAt: Number(record.createdAt),
-          updatedAt: snapshot.updatedAt,
-          snapshot,
-        }];
-      } catch {
-        return [];
-      }
-    });
-    for (const history of legacy) {
-      await invoke('save_battle_history', { variant, history });
-    }
-    try {
-      localStorage.removeItem(`battle-history-v1:${variant}`);
-    } catch {
-      // 迁移成功后无法删除旧键时不影响数据库作为唯一数据源。
-    }
-    return legacy.length > 0
-      ? await invoke<BattleHistory[]>('list_battle_histories', { variant })
-      : [];
   }
 
   async function archiveBattleHistory(

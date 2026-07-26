@@ -3,7 +3,7 @@
 // 该文件通过 `include!` 引入 crate 根模块，以便 Tauri 命令保持原有路径，
 // 同时将高耦合的签表拓扑逻辑与排名、抽奖历史等数据库代码隔离。
 
-/// 检查临时表是否存在；首次进入非对战功能时不主动创建表。
+/// 检查迁移创建的对战临时表是否存在。
 fn battle_tmp_table_exists(connection: &Connection) -> Result<bool, String> {
     connection
         .query_row(
@@ -17,7 +17,7 @@ fn battle_tmp_table_exists(connection: &Connection) -> Result<bool, String> {
         .map_err(|error| format!("无法检查对战临时表：{error}"))
 }
 
-/// 按需创建对战主表、参赛者表和场次表。
+/// 确保对战主表、参赛者表和场次表存在；新数据库会在版本 1 迁移中统一创建。
 fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -61,26 +61,6 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
              );",
         )
         .map_err(|error| format!("无法创建关系化对战临时表：{error}"))
-        .and_then(|_| {
-            let has_history_saved = connection
-                .prepare("PRAGMA table_info(battle_tmp)")
-                .map_err(|error| format!("无法读取对战临时表结构：{error}"))?
-                .query_map([], |row| row.get::<_, String>(1))
-                .map_err(|error| format!("无法读取对战临时表字段：{error}"))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| format!("无法解析对战临时表字段：{error}"))?
-                .iter()
-                .any(|column| column == "history_saved");
-            if !has_history_saved {
-                connection
-                    .execute(
-                        "ALTER TABLE battle_tmp ADD COLUMN history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1))",
-                        [],
-                    )
-                    .map_err(|error| format!("无法升级对战临时表：{error}"))?;
-            }
-            Ok(())
-        })
 }
 
 /// 在写入数据库前完整校验前端快照，避免非法引用进入关系化表。

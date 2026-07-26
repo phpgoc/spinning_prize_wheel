@@ -78,9 +78,7 @@
   const nativeRuntime = isTauriRuntime();
 
   const STORAGE_KEY = 'wheel-settings-v1';
-  const COMMON_SELECTION_STORAGE_KEY = 'wheel-common-selections-v1';
   const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
-  const LEGACY_COMMON_SELECTION_STORAGE_KEY = ['for', 'tuna-wheel-common-selections-v1'].join('');
   const MAX_ROULETTE_ROUNDS = 5;
   const DRAW_HISTORY_DISPLAY_LIMIT = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
@@ -442,13 +440,7 @@
     commonSelectionLoading = true;
     commonSelectionError = '';
     try {
-      const loaded = businessRuntime
-        ? await invoke<unknown[]>('list_common_selections')
-        : JSON.parse(
-          localStorage.getItem(COMMON_SELECTION_STORAGE_KEY)
-            ?? localStorage.getItem(LEGACY_COMMON_SELECTION_STORAGE_KEY)
-            ?? '[]',
-        ) as unknown[];
+      const loaded = await invoke<unknown[]>('list_common_selections');
       commonSelections = Array.isArray(loaded)
         ? loaded.filter(isCommonSelection).sort((left, right) => right.createdAt - left.createdAt)
         : [];
@@ -457,10 +449,6 @@
     } finally {
       commonSelectionLoading = false;
     }
-  }
-
-  function saveCommonSelectionsToBrowser(next: CommonSelection[]) {
-    localStorage.setItem(COMMON_SELECTION_STORAGE_KEY, JSON.stringify(next));
   }
 
   async function openCommonSelectionSaver() {
@@ -492,11 +480,7 @@
     commonSelectionSaving = true;
     commonSelectionError = '';
     try {
-      if (businessRuntime) {
-        await invoke('save_common_selection', { selection });
-      } else {
-        saveCommonSelectionsToBrowser([selection, ...commonSelections]);
-      }
+      await invoke('save_common_selection', { selection });
       commonSelections = [selection, ...commonSelections];
       commonSelectionSaveOpen = false;
       commonSelectionName = '';
@@ -533,11 +517,7 @@
     if (commonSelectionSaving) return;
     commonSelectionError = '';
     try {
-      if (businessRuntime) {
-        await invoke('delete_common_selection', { id: selection.id });
-      } else {
-        saveCommonSelectionsToBrowser(commonSelections.filter((item) => item.id !== selection.id));
-      }
+      await invoke('delete_common_selection', { id: selection.id });
       commonSelections = commonSelections.filter((item) => item.id !== selection.id);
       if (selectedCommonId === selection.id) {
         selectedCommonId = commonSelections[0]?.id ?? null;
