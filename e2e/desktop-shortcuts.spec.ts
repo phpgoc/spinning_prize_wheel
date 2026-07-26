@@ -749,9 +749,9 @@ test('桌面对战历史编辑按临时表状态直接加载已保存记录并�
   const historyToggle = page
     .locator('.desktop-accordion-toggle')
     .filter({ hasText: '对战历史' });
-  await expect(historyToggle).toContainText('展开');
+  await expect(historyToggle).toContainText('+');
   await historyToggle.click();
-  await expect(historyToggle).toContainText('收起');
+  await expect(historyToggle).toContainText('−');
   await expect(page.locator('.history-panel .ui-history-footer').getByRole('button', { name: '加载当前' })).toBeEnabled();
   await historyToggle.click();
   await expect(loadCurrent).toHaveCSS('visibility', 'hidden');

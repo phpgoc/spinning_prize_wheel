@@ -3399,7 +3399,7 @@
           >
             <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage
               ? historyCountLabel(filteredBattleHistories.length, BATTLE_HISTORY_DISPLAY_LIMIT)
-              : historyCountLabel(filteredLineupHistories.length, LINEUP_HISTORY_DISPLAY_LIMIT)}</strong><i>{battlePage ? desktopPanel === 'history' ? '收起' : '展开' : desktopPanel === 'history' ? '−' : '+'}</i>
+              : historyCountLabel(filteredLineupHistories.length, LINEUP_HISTORY_DISPLAY_LIMIT)}</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
