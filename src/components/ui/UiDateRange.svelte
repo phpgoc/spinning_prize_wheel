@@ -8,20 +8,31 @@
 <div class="ui-date-range" role="group" aria-label="日期范围">
   <label>
     <span><i></i>{startLabel}</span>
-    <div><b aria-hidden="true">始</b><input type="date" bind:value={start} aria-label={startLabel} /></div>
+    <div>
+      <b aria-hidden="true">始</b>
+      <span class="date-input-shell">
+        <input class:empty={!start} type="date" bind:value={start} aria-label={startLabel} placeholder="YYYY / MM / DD" />
+        {#if !start}<span class="date-placeholder" aria-hidden="true">YYYY / MM / DD</span>{/if}
+      </span>
+    </div>
   </label>
   <label title="所选日期当天不计入结果">
     <span><i></i>{endLabel}</span>
-    <div><b aria-hidden="true">止</b><input type="date" bind:value={end} aria-label={endLabel} /></div>
+    <div>
+      <b aria-hidden="true">止</b>
+      <span class="date-input-shell">
+        <input class:empty={!end} type="date" bind:value={end} aria-label={endLabel} placeholder="YYYY / MM / DD" />
+        {#if !end}<span class="date-placeholder" aria-hidden="true">YYYY / MM / DD</span>{/if}
+      </span>
+    </div>
   </label>
 </div>
 
 <style>
   .ui-date-range {
-    --date-field-min-width: calc(80px + 62px * var(--font-scale, 1));
     display: grid;
     width: 100%;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--date-field-min-width)), 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: calc(7px * var(--app-component-scale, 1));
   }
 
@@ -90,6 +101,29 @@
     place-items: center;
   }
 
+  .date-input-shell {
+    position: relative;
+    display: block;
+    min-height: calc(42px * var(--app-component-scale, 1));
+    min-width: 0;
+  }
+
+  .date-placeholder {
+    position: absolute;
+    inset: 0 calc(29px * var(--app-component-scale, 1)) 0 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    color: var(--color-app-text);
+    font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Consolas, monospace);
+    font-size: calc(13px * var(--font-scale, 1));
+    font-weight: 750;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .date-input-shell:focus-within .date-placeholder { opacity: 0; }
+
   input {
     width: 100%;
     min-width: 0;
@@ -105,6 +139,9 @@
     font-weight: 750;
     color-scheme: light;
   }
+
+  input.empty { color: transparent; }
+  input.empty::-webkit-datetime-edit { color: transparent; }
 
   input::-webkit-calendar-picker-indicator {
     width: calc(18px * var(--app-component-scale, 1));

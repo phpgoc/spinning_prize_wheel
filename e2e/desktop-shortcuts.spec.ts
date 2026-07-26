@@ -179,23 +179,38 @@ test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page 
 });
 
 test('抽奖、分组和对战历史共用同一套日期、列表与底部操作组件', async ({ page }) => {
+  const expectDateRange = async () => {
+    const dateRange = page.locator('.ui-history-panel .ui-date-range');
+    await expect(dateRange.locator('.date-placeholder')).toHaveText(['YYYY / MM / DD', 'YYYY / MM / DD']);
+    const boxes = await dateRange.locator('label').evaluateAll((labels) => labels.map((label) => {
+      const rect = label.getBoundingClientRect();
+      return { x: rect.x, y: rect.y };
+    }));
+    expect(boxes).toHaveLength(2);
+    expect(Math.abs(boxes[0].x - boxes[1].x)).toBeLessThan(1);
+    expect(boxes[1].y).toBeGreaterThan(boxes[0].y);
+  };
+
   await openDesktopLineup(page);
 
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
   await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
   await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+  await expectDateRange();
 
   await page.goto('/battle', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '对战历史' }).click();
   await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
   await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+  await expectDateRange();
 
   await page.goto('/wheel', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible();
   await page.locator('.accordion-toggle').filter({ hasText: '历史' }).click();
   await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
   await expect(page.locator('.ui-history-panel .ui-history-footer')).toBeVisible();
+  await expectDateRange();
 });
 
 test('分组历史显示总数并按日期显示查询结果数量', async ({ page }) => {
