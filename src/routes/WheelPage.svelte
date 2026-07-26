@@ -1999,13 +1999,13 @@
       <div class="accordion-content settings-content">
       <div class="panel-heading">
         <div>
-          <h2>抽奖设置</h2>
+          <h2>设置</h2>
         </div>
       </div>
 
       <section class="setting-block">
         <h3>动画质感</h3>
-        <div class:roulette-mode={mode === 'roulette'} class="animation-options">
+        <div class="animation-options">
           <button
             type="button"
             class:active={animationStyle === 'simple'}

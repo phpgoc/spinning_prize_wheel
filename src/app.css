@@ -903,10 +903,6 @@ p {
   margin-top: 10px;
 }
 
-.animation-options.roulette-mode {
-  grid-template-columns: repeat(2, 1fr);
-}
-
 .animation-options button {
   display: flex;
   align-items: center;
