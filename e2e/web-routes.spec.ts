@@ -568,6 +568,35 @@ test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) 
   expect(await page.locator('.battle-result input:focus').getAttribute('data-battle-match-id')).not.toBe(firstId);
 });
 
+test('对战区 G B V N 使用平滑滚动且单次移动 72 像素', async ({ page }) => {
+  await page.goto('/battle');
+  await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
+  await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.getByRole('radio', { name: '单败' }).check();
+  await page.getByRole('button', { name: /^抽签/ }).click();
+  await page.evaluate(() => {
+    const result = document.querySelector<HTMLElement>('.battle-result')!;
+    const bracket = result.querySelector<HTMLElement>('.single-battle-bracket')!;
+    (window as any).__BATTLE_SCROLL_CALLS__ = [];
+    const recordVertical = (options: ScrollToOptions) => {
+      (window as any).__BATTLE_SCROLL_CALLS__.push({ axis: 'vertical', ...options });
+    };
+    result.scrollBy = recordVertical;
+    Object.defineProperty(window, 'scrollBy', { configurable: true, value: recordVertical });
+    bracket.scrollBy = (options: ScrollToOptions) => {
+      (window as any).__BATTLE_SCROLL_CALLS__.push({ axis: 'horizontal', ...options });
+    };
+  });
+  await page.locator('.battle-result').focus();
+  for (const key of ['g', 'b', 'v', 'n']) await page.keyboard.press(key);
+  expect(await page.evaluate(() => (window as any).__BATTLE_SCROLL_CALLS__)).toEqual([
+    { axis: 'vertical', top: -72, behavior: 'smooth' },
+    { axis: 'vertical', top: 72, behavior: 'smooth' },
+    { axis: 'horizontal', left: -72, behavior: 'smooth' },
+    { axis: 'horizontal', left: 72, behavior: 'smooth' },
+  ]);
+});
+
 test('对战会先显示固定签位，再生成单败和双败轮次', async ({ page }) => {
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill(

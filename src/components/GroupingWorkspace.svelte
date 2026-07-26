@@ -2676,13 +2676,20 @@
         '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
       );
       scroller?.scrollBy({
-        left: (key === 'v' ? -1 : 1) * 36,
+        left: (key === 'v' ? -1 : 1) * 72,
         behavior: 'smooth',
       });
       return;
     }
-    groupingResultElement.scrollBy({
-      top: (key === 'g' ? -1 : 1) * 36,
+    // 对战区全屏时由自身滚动；普通页面和整页全屏时，签表会撑开页面，应滚动窗口。
+    const resultStyle = getComputedStyle(groupingResultElement);
+    const resultCanScrollVertically = ['auto', 'scroll', 'overlay'].includes(resultStyle.overflowY)
+      && groupingResultElement.scrollHeight > groupingResultElement.clientHeight + 1;
+    const verticalScroller = resultCanScrollVertically
+      ? groupingResultElement
+      : window;
+    verticalScroller.scrollBy({
+      top: (key === 'g' ? -1 : 1) * 72,
       behavior: 'smooth',
     });
   }
