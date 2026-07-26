@@ -206,6 +206,7 @@
   let groupingResultElement: HTMLElement | null = null;
   const titleFocusValues = new WeakMap<HTMLInputElement, string>();
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
+  const suppressedBattleScoreChanges = new WeakSet<HTMLInputElement>();
   let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
   let pendingBattleScoreGroup: BattleScoreGroup | null = null;
   let slowRevealEnabled = true;
@@ -3020,8 +3021,24 @@
       [...document.querySelectorAll<HTMLInputElement>('.battle-result .battle-side input:not(:disabled)')],
       event.key,
     );
-    next?.focus({ preventScroll: true });
-    next?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    const fallback = target.closest<HTMLElement>('.battle-match');
+    const focusNext = () => {
+      const destination = next ?? fallback;
+      destination?.focus({ preventScroll: true });
+      destination?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    };
+    const previousValue = battleScoreFocusValues.get(target) ?? target.defaultValue;
+    lastConfirmedBattleScore = null;
+    if (target.value !== previousValue) {
+      // 方向键也确认已输入的比分；抑制失焦时自动派发的 change，避免重复保存。
+      suppressedBattleScoreChanges.add(target);
+      target.blur();
+      battleScoreFocusValues.set(target, target.value);
+      void updateBattleScore(match, side, event).finally(focusNext);
+      return;
+    }
+    target.blur();
+    focusNext();
   }
 
   function requestClearAll() {
@@ -3180,6 +3197,7 @@
     const target = event.target instanceof HTMLInputElement
       ? event.target
       : event.currentTarget as HTMLInputElement;
+    if (suppressedBattleScoreChanges.delete(target)) return;
     const score = target.value.trim() === '' ? null : Number(target.value);
     if (score !== null && (!Number.isSafeInteger(score) || score < 0)) {
       error = '对战比分必须是非负整数';

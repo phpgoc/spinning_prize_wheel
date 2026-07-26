@@ -830,8 +830,9 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await expect(firstInputs.nth(1)).toBeFocused();
   await firstInputs.nth(0).focus();
   await firstInputs.nth(0).fill('4');
+  await firstInputs.nth(0).press('ArrowDown');
   await expect(firstInputs.nth(0)).toHaveValue('4');
-  await firstInputs.nth(1).focus();
+  await expect(firstInputs.nth(1)).toBeFocused();
   await firstInputs.nth(1).fill('1');
   await firstInputs.nth(1).press('Enter');
   await expect(matches.nth(0).locator('.battle-side.winner')).toHaveCount(1);
