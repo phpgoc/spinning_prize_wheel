@@ -3645,7 +3645,7 @@
             <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
             <button type="button" class="input-order-button" title="忽略排名，按当前名单顺序分档" disabled={!canGenerateByInput} on:click={() => generate('input')}>按输入顺序分组</button>
-            <button type="button" class="input-order-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>
+            <button type="button" class="input-order-button random-grouping-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>
             {:else}
               <button type="button" class="generate-button" disabled={!canGenerateByInput} on:click={() => generate('input')}><span>开始分组</span><i>→</i></button>
               <button type="button" class="input-order-button" title="忽略排名和输入顺序，随机分组且各组人数最多相差 1 人" disabled={!canGenerateByRandom} on:click={() => generate('random')}>全随机分组</button>
@@ -3694,6 +3694,9 @@
               </div>
             </fieldset>
           </div>
+          {#if battleFullscreen}
+            <div class="battle-fullscreen-title" aria-label="对战名称">{battleTitle.trim() || '对战'}</div>
+          {/if}
             <div class="result-heading">
             <div><div><h2>{battleTitle.trim() || (battleHistoryView ? '历史对战' : '对战')}</h2></div></div>
             {#if battleHistoryView}
@@ -4359,6 +4362,16 @@
     overflow: auto;
   }
 
+  .battle-fullscreen-title {
+    margin: 0 auto calc(14px * var(--grouping-layout-scale, 1));
+    color: var(--battle-text-color);
+    font-size: calc(32px * var(--font-scale, 1));
+    font-weight: 900;
+    line-height: 1.15;
+    text-align: center;
+    text-wrap: balance;
+  }
+
   .battle-result-toolbar {
     display: flex;
     align-items: center;
@@ -4748,6 +4761,7 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
   }
   .battle-page .grouping-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .grouping-actions.desktop-actions .random-grouping-button { grid-column: 2; }
   .grouping-actions .generate-button {
     min-height: 48px;
     flex: 1;
@@ -5551,5 +5565,6 @@
     .battle-color-actions :global(button) { flex: 1; }
     .grouping-actions { flex-direction: column; }
     .grouping-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
+    .grouping-actions.desktop-actions .random-grouping-button { grid-column: auto; }
   }
 </style>

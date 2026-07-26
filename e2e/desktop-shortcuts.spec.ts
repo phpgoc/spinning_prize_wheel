@@ -505,6 +505,20 @@ test('按排名分组允许末档未排名', async ({ page }) => {
   await expect(groupByRank).toBeDisabled();
 });
 
+test('全随机分组按钮位于按排名分组下方且尺寸一致', async ({ page }) => {
+  await openDesktopGrouping(page);
+  const groupByRank = page.getByRole('button', { name: '按排名顺序分组' });
+  const randomGrouping = page.getByRole('button', { name: '全随机分组' });
+  const rankBox = await groupByRank.boundingBox();
+  const randomBox = await randomGrouping.boundingBox();
+  expect(rankBox).not.toBeNull();
+  expect(randomBox).not.toBeNull();
+  expect(randomBox!.y).toBeGreaterThan(rankBox!.y);
+  expect(randomBox!.x).toBeCloseTo(rankBox!.x, 0);
+  expect(randomBox!.width).toBeCloseTo(rankBox!.width, 0);
+  expect(randomBox!.height).toBeCloseTo(rankBox!.height, 0);
+});
+
 test('对战只要求固定人数有排名', async ({ page }) => {
   await openDesktopBattle(page);
   await confirmDesktopNames(page, ['丁', '未录入', '乙', '甲']);

@@ -783,6 +783,7 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
+  await page.locator('.grouping-title-field input').fill('周五单败赛');
   await page.getByRole('radio', { name: '单败' }).check();
   await page.getByRole('button', { name: /^抽签/ }).click();
 
@@ -835,7 +836,18 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await secondInputs.nth(1).fill('2');
   await secondInputs.nth(1).press('Escape');
   await expect(secondInputs.nth(1)).toHaveValue('0');
-  await expect(page.locator('.battle-result')).toHaveClass(/battle-fullscreen/u);
+  const fullscreenTitle = page.locator('.battle-fullscreen-title');
+  const battleResult = page.locator('.battle-result');
+  await expect(fullscreenTitle).toHaveText('周五单败赛');
+  await expect(battleResult).toHaveClass(/battle-fullscreen/u);
+  const [toolbarBox, titleBox, resultBox] = await Promise.all([
+    page.locator('.battle-result-toolbar').boundingBox(),
+    fullscreenTitle.boundingBox(),
+    battleResult.boundingBox(),
+  ]);
+  expect(titleBox!.y).toBeGreaterThanOrEqual(toolbarBox!.y + toolbarBox!.height);
+  expect(titleBox!.x + titleBox!.width / 2).toBeCloseTo(resultBox!.x + resultBox!.width / 2, 0);
+  expect(await fullscreenTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(32);
 });
 
 test('桌面对战可以修改赛果、传播下游并导出 JSON 和 Excel', async ({ page }) => {
