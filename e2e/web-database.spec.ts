@@ -140,6 +140,75 @@ test('Web SQLite 保存排名和分组历史并可在刷新后读取', async ({ 
   await expect(page.locator('.history-panel .ui-history-row')).toHaveCount(1);
 });
 
+test('Web 排名区支持录入、关联、拖拽和键盘移动', async ({ page }) => {
+  await page.goto('/grouping');
+  await openRankingPanel(page);
+
+  const form = page.locator('.rank-person-form');
+  const nameInput = form.locator('input');
+  const saveButton = form.getByRole('button', { name: '保存' });
+  for (const name of ['甲', '乙', '丙']) {
+    await nameInput.fill(name);
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+    // 保存完成后表单才允许下一次写入，避免把 UI 测试变成并发写入测试。
+    await expect(saveButton).toHaveText('保存');
+  }
+
+  const rankedZone = page.locator('[data-rank-zone="ranked"]');
+  const unrankedZone = page.locator('[data-rank-zone="unranked"]');
+  const dragFirstUnranked = async () => {
+    const source = unrankedZone.locator('[data-rank-user-id]').first();
+    const destination = rankedZone;
+    const sourceBox = await source.boundingBox();
+    const destinationBox = await destination.boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(destinationBox).not.toBeNull();
+    const from = sourceBox!;
+    const to = destinationBox!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + Math.max(4, to.height - 4), { steps: 12 });
+    await page.mouse.up();
+  };
+
+  await dragFirstUnranked();
+  await expect(rankedZone.locator('[data-rank-user-id]')).toHaveCount(1);
+  await dragFirstUnranked();
+  await expect(rankedZone.locator('[data-rank-user-id]')).toHaveCount(2);
+  await dragFirstUnranked();
+  await expect(rankedZone.locator('[data-rank-user-id]')).toHaveCount(3);
+  await expect(unrankedZone.locator('[data-rank-user-id]')).toHaveCount(0);
+
+  const rankedCards = rankedZone.locator('[data-rank-user-id]');
+  const orderBeforeKeyboardMove = await rankedZone.locator('.user-name').allTextContents();
+  await rankedCards.first().focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  await expect.poll(() => rankedZone.locator('.user-name').allTextContents()).toEqual([
+    orderBeforeKeyboardMove[1],
+    orderBeforeKeyboardMove[0],
+    orderBeforeKeyboardMove[2],
+  ]);
+
+  const names = page.locator('.names-field textarea');
+  await names.fill('甲\n神秘');
+  await names.press('Alt+Enter');
+  const unknownRow = page.locator('.preview-row.unknown').first();
+  await expect(unknownRow).toBeVisible();
+  await unknownRow.getByRole('button', { name: '关联' }).click();
+  await page.keyboard.press('Space');
+  await expect(page.locator('.alias-link-order')).toHaveCount(0);
+  await expect(page.locator('.preview-row.unknown')).toHaveCount(0);
+  await expect.poll(async () => (await rankedZone.locator('.ranked-user-aliases').allTextContents()).join(' ')).toContain('神秘');
+
+  await names.fill('新增');
+  await names.press('Alt+Enter');
+  await page.locator('.preview-row.unknown').first().getByRole('button', { name: '录入' }).click();
+  await expect(unrankedZone.locator('.user-name')).toContainText('新增');
+});
+
 test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
   await page.goto('/grouping');
   await openRankingPanel(page);
