@@ -2769,12 +2769,9 @@
             <div><span>添加新别名</span><kbd>S</kbd></div>
             <div><span>删除当前项</span><kbd>D</kbd></div>
             <div><span>删除全部别名</span><kbd>F</kbd></div>
-            <div><span>选中排序</span><kbd>空格</kbd></div>
-            <div><span>插入 / 替换</span><kbd>空格</kbd></div>
             <div><span>进入 / 退出当前项操作</span><kbd>→ / ←</kbd></div>
-            <div><span>执行当前项操作</span><kbd>空格</kbd></div>
             <div><span>输入排名跳转</span><kbd>数字 / 退格</kbd></div>
-            <div><span>确认关联</span><kbd>空格</kbd></div>
+            <div><span>选中排序 / 插入 / 替换 / 执行操作 / 确认关联</span><kbd>空格</kbd></div>
           </div>
         </section>
         {/if}
