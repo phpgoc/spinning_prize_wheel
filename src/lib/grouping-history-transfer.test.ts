@@ -21,8 +21,9 @@ const history: SavedGrouping = {
 
 describe('分组历史同步文件', () => {
   test('单条 JSON 可以完整导出并读回', () => {
-    const transfer = createGroupingHistoryTransfer(history, 'standard');
+    const transfer = createGroupingHistoryTransfer(history);
     expect(transfer.history).toEqual(history);
+    expect(transfer).not.toHaveProperty('variant');
     expect(parseGroupingHistoryTransfer(JSON.stringify(transfer))).toEqual(history);
   });
 

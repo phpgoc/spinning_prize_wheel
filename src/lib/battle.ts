@@ -80,7 +80,6 @@ export interface BattleTmpSnapshot {
   version: 1;
   rulesVersion: 1;
   kind: 'battle-tmp';
-  variant: AppVariant;
   createdAt: number;
   updatedAt: number;
   format: BattleFormat;
@@ -158,7 +157,7 @@ export interface SeededBattleOptions {
 }
 
 export function createBattleTmpSnapshot(
-  variant: AppVariant,
+  _variant: AppVariant,
   plan: BattlePlan,
   updatedAt = Date.now(),
 ): BattleTmpSnapshot {
@@ -180,7 +179,6 @@ export function createBattleTmpSnapshot(
     version: 1,
     rulesVersion: 1,
     kind: 'battle-tmp',
-    variant,
     createdAt: updatedAt,
     updatedAt,
     format: plan.format,
@@ -210,14 +208,13 @@ export function createBattleTmpSnapshot(
 
 export function parseBattleTmpSnapshot(
   value: unknown,
-  expectedVariant: AppVariant,
+  _expectedVariant?: AppVariant,
 ): BattleTmpSnapshot {
   if (
     !isRecord(value)
     || value.version !== 1
     || value.rulesVersion !== 1
     || value.kind !== 'battle-tmp'
-    || value.variant !== expectedVariant
     || !isSafeIntegerAtLeast(value.createdAt, 1)
     || !isSafeIntegerAtLeast(value.updatedAt, 1)
     || !['avoid-first-pair', 'single-elimination', 'double-elimination'].includes(String(value.format))

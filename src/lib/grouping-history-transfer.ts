@@ -1,21 +1,17 @@
-import type { AppVariant } from './app-variant';
 import type { SavedGrouping } from './types';
 
 export interface GroupingHistoryTransferFile {
   version: 2;
   kind: 'grouping-history';
-  variant: AppVariant;
   history: SavedGrouping;
 }
 
 export function createGroupingHistoryTransfer(
   history: SavedGrouping,
-  variant: AppVariant,
 ): GroupingHistoryTransferFile {
   return {
     version: 2,
     kind: 'grouping-history',
-    variant,
     history: { ...history },
   };
 }

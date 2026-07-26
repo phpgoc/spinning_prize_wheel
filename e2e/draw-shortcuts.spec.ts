@@ -98,9 +98,6 @@ test('转盘音乐与音效可关闭并持久化', async ({ page }) => {
   await expect(soundToggle).toHaveAttribute('aria-pressed', 'true');
   await soundToggle.click();
   await expect(page.getByRole('button', { name: '开启音乐与音效' })).toHaveAttribute('aria-pressed', 'false');
-  await expect.poll(() => page.evaluate(() => (
-    JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').soundEnabled
-  ))).toBe(false);
 
   await page.reload();
   await expect(page.getByRole('button', { name: '开启音乐与音效' })).toHaveAttribute('aria-pressed', 'false');
@@ -162,9 +159,6 @@ test('三套界面风格即时切换并跨页面持久化', async ({ page }) => 
   expect(workspaceRadii.size).toBe(3);
 
   await mist.click();
-  await expect.poll(() => page.evaluate(() => (
-    JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').uiTheme
-  ))).toBe('mist');
 
   await page.goto('/grouping');
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
@@ -197,11 +191,7 @@ test('三套界面风格即时切换并跨页面持久化', async ({ page }) => 
 });
 
 test('界面风格选择器在最大字号下自适应换行且不溢出', async ({ page }) => {
-  await page.evaluate(() => {
-    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
-    localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, fontScale: 3 }));
-  });
-  await page.reload();
+  for (let index = 0; index < 20; index += 1) await page.keyboard.press('Control+ArrowUp');
   const picker = page.locator('.ui-theme-picker');
   await expect(picker).toBeVisible();
   const layout = await picker.evaluate((element) => {
@@ -324,10 +314,6 @@ test('俄罗斯轮盘支持大富翁动画并持久化选择', async ({ page }) 
   expect(eliminatedName).toBeTruthy();
   await expect.poll(() => page.locator('.cell-label').allTextContents()).not.toContain(eliminatedName);
 
-  await expect.poll(() => page.evaluate(() => {
-    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
-    return `${settings.mode}:${settings.animationStyle}`;
-  })).toBe('roulette:threeD');
   await page.reload();
   await expect(page.getByRole('button', { name: '俄罗斯轮盘' })).toHaveClass(/active/u);
   await expect(page.getByRole('button', { name: '大富翁' })).toHaveClass(/active/u);
@@ -398,7 +384,6 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
   expect((await wheelPageButton.boundingBox())!.height).toBeGreaterThan(initialButtonHeight);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
   await page.goto('/grouping');
   const groupingPanel = page.locator('.grouping-config');
@@ -417,21 +402,15 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   }));
   expect(enlargedPanelMetrics.padding).toBeGreaterThan(initialPanelMetrics.padding);
   expect(enlargedPanelMetrics.radius).toBeGreaterThan(initialPanelMetrics.radius);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.2);
 
   await page.keyboard.press('Control+ArrowDown');
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.1');
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
   await page.goto('/wheel');
   await expect(page.locator('.wheel-page-host .workspace')).toBeVisible();
   await page.getByRole('button', { name: UI_THEME_CASES[1].buttonName }).click();
-  expect(await page.evaluate(() => {
-    const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
-    return { fontScale: settings.fontScale, uiTheme: settings.uiTheme };
-  })).toEqual({ fontScale: 1.1, uiTheme: 'mist' });
   await page.reload();
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
@@ -580,11 +559,13 @@ test('A/F 管理常用候选，Z 切换快捷键，数字设置可确认或取�
   const commonName = page.getByLabel('给这组候选起个名字');
   await commonName.fill('双人名单');
   await commonName.press('Enter');
+  await expect(commonName).toBeHidden();
 
   await page.keyboard.press('r');
   await expect(page.locator('[data-prize-id]')).toHaveCount(0);
   await page.keyboard.press('a');
   await expect(page.getByRole('heading', { name: '常用候选' })).toBeVisible();
+  await expect(page.getByRole('group', { name: '常用候选：双人名单' })).toBeVisible();
   await page.keyboard.press('f');
   await expect(page.locator('[data-prize-id]')).toHaveCount(2);
 

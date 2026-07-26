@@ -433,7 +433,8 @@ describe('对战签位', () => {
     ]);
     const state = createBattleTmpSnapshot('standard', plan, 1_700_000_000_000);
     expect(parseBattleTmpSnapshot(state, 'standard')).toEqual(state);
-    expect(() => parseBattleTmpSnapshot(state, 'caimi')).toThrow('格式不正确');
+    expect(parseBattleTmpSnapshot(state, 'caimi')).toEqual(state);
+    expect(state).not.toHaveProperty('variant');
     expect(state.matches.find((match) => match.matchId === 'GF-RESET-M1')).toMatchObject({
       status: 'pending',
     });

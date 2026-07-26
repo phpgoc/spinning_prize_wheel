@@ -87,6 +87,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   expect(exported.updatedAt).toBe(expectedSnapshot.updatedAt);
   expect(exported.title).toBe('4 人 · 单败');
   expect(exported.snapshot).toEqual(expectedSnapshot);
+  expect(exportedJson).not.toContain('"variant"');
 
   await historyCard.getByRole('button').first().click();
   await expect(page.locator('.battle-history-bracket')).toBeVisible();
@@ -224,10 +225,6 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
     ...validTransfer,
     version: 2,
   }, '不支持的对战历史版本');
-  await assertImportRejected('其他变体.json', {
-    ...validTransfer,
-    snapshot: { ...expectedSnapshot, variant: 'caimi' },
-  }, '对战临时状态格式不正确');
   await assertImportRejected('损坏参赛者.json', {
     ...validTransfer,
     snapshot: {
@@ -276,7 +273,8 @@ test('对战历史显示总数并按日期显示查询结果数量和二次确�
         snapshot: { ...structuredClone(currentSnapshot), updatedAt: createdAt },
       };
     });
-    localStorage.setItem('battle-history-v1:standard', JSON.stringify(records));
+    (window as any).__E2E_TAURI_STATE__.battleHistories = records;
+    sessionStorage.setItem('__E2E_TAURI_BATTLE_HISTORIES__', JSON.stringify(records));
   }, snapshot);
   await page.reload();
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });

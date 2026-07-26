@@ -12,6 +12,7 @@ export interface MockTauriInitialData {
   groupingHistories?: unknown[];
   battleHistories?: unknown[];
   battleTmpState?: unknown;
+  appSettings?: Record<string, unknown>;
   commandFailures?: Record<string, string[]>;
 }
 
@@ -56,7 +57,15 @@ export async function installTauriMock(
     })();
     const persistedBattleHistories = (() => {
       try {
-        const raw = localStorage.getItem('battle-history-v1:standard');
+        const raw = sessionStorage.getItem('__E2E_TAURI_BATTLE_HISTORIES__');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const persistedAppSettings = (() => {
+      try {
+        const raw = sessionStorage.getItem('__E2E_TAURI_APP_SETTINGS__');
         return raw ? JSON.parse(raw) : null;
       } catch {
         return null;
@@ -69,6 +78,7 @@ export async function installTauriMock(
       groupingHistories: structuredClone(data.groupingHistories ?? []) as unknown[],
       battleHistories: structuredClone(data.battleHistories ?? persistedBattleHistories ?? []) as unknown[],
       battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
+      appSettings: structuredClone(data.appSettings ?? persistedAppSettings ?? {}) as Record<string, unknown>,
       commandFailures: structuredClone(data.commandFailures ?? {}) as Record<string, string[]>,
       closeRequestedHandler: null as number | null,
       windowDestroyed: false,
@@ -79,6 +89,12 @@ export async function installTauriMock(
     const clone = <T>(value: T): T => structuredClone(value);
     const persistBattleState = () => {
       sessionStorage.setItem('__E2E_TAURI_BATTLE_TMP__', JSON.stringify(state.battleTmpState));
+    };
+    const persistBattleHistories = () => {
+      sessionStorage.setItem('__E2E_TAURI_BATTLE_HISTORIES__', JSON.stringify(state.battleHistories));
+    };
+    const persistAppSettings = () => {
+      sessionStorage.setItem('__E2E_TAURI_APP_SETTINGS__', JSON.stringify(state.appSettings));
     };
     const sortedUsers = () => [...state.rankedUsers].sort((left, right) => (
       left.rank - right.rank || left.name.localeCompare(right.name, 'zh-CN')
@@ -237,7 +253,11 @@ export async function installTauriMock(
     const invoke = async (cmd: string, args: Record<string, any> = {}) => {
       state.invocations.push({ cmd, args: clone(args) });
       const failure = state.commandFailures[cmd]?.shift();
-      if (failure) throw new Error(failure);
+      if (failure) {
+        // 留出一次渲染机会，才能验证真实 invoke 失败前的“处理中”状态。
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        throw new Error(failure);
+      }
       if (cmd === 'plugin:event|listen') {
         if (args.event === 'tauri://close-requested') state.closeRequestedHandler = args.handler;
         return 1;
@@ -274,6 +294,12 @@ export async function installTauriMock(
       }
       if (cmd === 'clear_draw_histories') {
         state.drawHistories = [];
+        return null;
+      }
+      if (cmd === 'load_app_setting') return clone(state.appSettings[String(args.key)] ?? null);
+      if (cmd === 'save_app_setting') {
+        state.appSettings[String(args.key)] = clone(args.value);
+        persistAppSettings();
         return null;
       }
       if (cmd === 'list_ranked_users') return clone(sortedUsers());
@@ -372,6 +398,11 @@ export async function installTauriMock(
         return clone(sortedUsers());
       }
       if (cmd === 'list_grouping_histories') return clone(state.groupingHistories);
+      if (cmd === 'load_grouping_history') {
+        const history = state.groupingHistories.find((item: any) => item.id === args.id);
+        if (!history) throw new Error('找不到分组历史');
+        return clone(history);
+      }
       if (cmd === 'save_grouping_history') {
         state.groupingHistories = [clone(args.grouping), ...state.groupingHistories.filter((item: any) => item.id !== args.grouping.id)];
         return null;
@@ -392,6 +423,11 @@ export async function installTauriMock(
         return null;
       }
       if (cmd === 'list_battle_histories') return clone(state.battleHistories);
+      if (cmd === 'load_battle_history') {
+        const history = state.battleHistories.find((item: any) => item.id === args.id);
+        if (!history) throw new Error('找不到对战历史');
+        return clone(history);
+      }
       if (cmd === 'save_battle_history') {
         if (args.markCurrent) {
           if ((state as any).battleHistorySaved) throw new Error('同一对战状态已经保存过历史');
@@ -404,22 +440,25 @@ export async function installTauriMock(
           clone(args.history),
           ...state.battleHistories.filter((item: any) => item.id !== (args.history as any).id),
         ];
+        persistBattleHistories();
         return null;
       }
       if (cmd === 'delete_battle_history') {
         state.battleHistories = state.battleHistories.filter((item: any) => item.id !== args.id);
+        persistBattleHistories();
         return null;
       }
       if (cmd === 'clear_battle_histories') {
         state.battleHistories = [];
+        persistBattleHistories();
         return null;
       }
       if (cmd === 'load_battle_tmp_history_status') {
-        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) return null;
+        if (!state.battleTmpState) return null;
         return { updatedAt: state.battleTmpState.updatedAt, historySaved: Boolean((state as any).battleHistorySaved) };
       }
       if (cmd === 'mark_battle_tmp_history_saved') {
-        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) throw new Error('当前没有可标记的对战临时状态');
+        if (!state.battleTmpState) throw new Error('当前没有可标记的对战临时状态');
         (state as any).battleHistorySaved = state.battleTmpState.updatedAt === args.updatedAt;
         return null;
       }
@@ -430,10 +469,10 @@ export async function installTauriMock(
         return null;
       }
       if (cmd === 'load_battle_tmp_state') {
-        return state.battleTmpState?.variant === args.variant ? clone(state.battleTmpState) : null;
+        return state.battleTmpState ? clone(state.battleTmpState) : null;
       }
       if (cmd === 'update_battle_tmp_result') {
-        if (!state.battleTmpState || state.battleTmpState.variant !== args.variant) {
+        if (!state.battleTmpState) {
           throw new Error('当前没有可更新的对战临时状态');
         }
         const snapshot = clone(state.battleTmpState);
@@ -448,7 +487,7 @@ export async function installTauriMock(
         return clone(state.battleTmpState);
       }
       if (cmd === 'clear_battle_tmp_state') {
-        if (state.battleTmpState?.variant === args.variant) state.battleTmpState = null;
+        state.battleTmpState = null;
         persistBattleState();
         return null;
       }

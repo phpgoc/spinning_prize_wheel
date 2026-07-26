@@ -77,8 +77,6 @@
 
   const nativeRuntime = isTauriRuntime();
 
-  const STORAGE_KEY = 'wheel-settings-v1';
-  const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
   const MAX_ROULETTE_ROUNDS = 5;
   const DRAW_HISTORY_DISPLAY_LIMIT = 5;
   const importPalette = ['#ff7657', '#e9b949', '#8ac86d', '#4ea59b', '#6574c4', '#b76a9d', '#e4884d'];
@@ -281,52 +279,6 @@
   }
 
   onMount(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as Partial<{
-          mode: DrawMode;
-          animationStyle: AnimationStyle;
-          durationSeconds: number;
-          soundEnabled: boolean;
-          rewardAmount: number;
-          retryEnabled: boolean;
-          retryWeight: number;
-          autoSaveHistory: boolean;
-          continuousTarget: number;
-          staySeconds: number;
-          continuousIntervalSeconds: number;
-          uiTheme: UiTheme;
-        }>;
-
-        if (parsed.mode === 'selected' || parsed.mode === 'roulette') mode = parsed.mode;
-        if (['simple', 'luxury', 'threeD'].includes(parsed.animationStyle ?? '')) {
-          animationStyle = parsed.animationStyle!;
-        }
-        if (typeof parsed.durationSeconds === 'number') {
-          durationSeconds = Math.min(10, Math.max(1, parsed.durationSeconds));
-        }
-        if (typeof parsed.soundEnabled === 'boolean') soundEnabled = parsed.soundEnabled;
-        if (typeof parsed.rewardAmount === 'number') {
-          rewardAmount = Math.max(0, parsed.rewardAmount);
-        }
-        if (typeof parsed.retryEnabled === 'boolean') retryEnabled = parsed.retryEnabled;
-        retryWeight = positiveNumberOrFallback(parsed.retryWeight, 0.65);
-        if (typeof parsed.autoSaveHistory === 'boolean') autoSaveHistory = parsed.autoSaveHistory;
-        if (typeof parsed.continuousTarget === 'number') {
-          continuousTarget = normalizeResultLimit(parsed.continuousTarget, 0);
-        }
-        // 旧版把统计栏的值直接持久化；迁移后只把它作为首次设置默认值。
-        staySeconds = normalizeStaySeconds(parsed.staySeconds ?? parsed.continuousIntervalSeconds);
-        uiTheme = normalizeUiTheme(parsed.uiTheme);
-      }
-    } catch {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // 浏览器禁用本地存储时继续使用默认设置。
-      }
-    }
     void loadCommonSelections();
     void loadDrawHistories();
     void loadWheelSettingsFromDatabase();
@@ -346,13 +298,6 @@
     void invoke('save_app_setting', { key: 'wheel-settings', value: saved }).catch(() => {
       // 数据库不可用时继续保留当前会话状态。
     });
-    try {
-      if (!databaseSettingsLoaded) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-      }
-    } catch {
-      // 禁用本地存储时仍允许数据库配置继续生效。
-    }
   }
 
   async function loadWheelSettingsFromDatabase() {
@@ -387,7 +332,7 @@
         uiTheme = normalizeUiTheme(parsed.uiTheme);
       }
     } catch {
-      // 首次运行或旧版本数据库没有配置时使用默认值和兼容迁移值。
+      // 首次运行或数据库没有配置时使用默认值。
     } finally {
       databaseSettingsLoaded = true;
     }

@@ -60,7 +60,7 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
     `INSERT INTO battle_tmp
       (id, variant, rules_version, created_at, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count)
       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [snapshot.variant, snapshot.rulesVersion, snapshot.createdAt, snapshot.updatedAt, snapshot.format, snapshot.orderMode,
+    ['standard', snapshot.rulesVersion, snapshot.createdAt, snapshot.updatedAt, snapshot.format, snapshot.orderMode,
       snapshot.participantCount, snapshot.bracketSize, snapshot.fixedSeedCount],
   );
   for (const participant of snapshot.participants) {
@@ -251,9 +251,19 @@ test('Web SQLite 可以导出浏览器数据库备份', async ({ page }) => {
   expect(backupPath).not.toBeNull();
   const SQL = await initSqlJs({ locateFile: (file) => `node_modules/sql.js/dist/${file}` });
   const database = new SQL.Database(await readFile(backupPath!));
-  const battleHistoryColumns = database.exec('PRAGMA table_info(battle_history)')[0]?.values
+  const columns = (table: string) => database.exec(`PRAGMA table_info(${table})`)[0]?.values
     .map((row) => String(row[1])) ?? [];
-  expect(battleHistoryColumns).toEqual(['id', 'created_at', 'display_name', 'payload_json']);
+  expect(columns('draw_history')).toEqual(['id', 'created_at', 'payload_json']);
+  expect(columns('grouping_history')).toEqual(['id', 'created_at', 'display_name', 'payload_json']);
+  expect(columns('battle_history')).toEqual(['id', 'created_at', 'display_name', 'payload_json']);
+  expect(columns('battle_tmp')).toEqual(['id', 'created_at', 'updated_at', 'history_saved', 'payload_json']);
+  const persistedJson = database.exec(
+    `SELECT payload_json FROM draw_history
+     UNION ALL SELECT payload_json FROM grouping_history
+     UNION ALL SELECT payload_json FROM battle_history
+     UNION ALL SELECT payload_json FROM battle_tmp`,
+  )[0]?.values.flat().map(String) ?? [];
+  expect(persistedJson.every((json) => !json.includes('"variant"'))).toBe(true);
   database.close();
 });
 

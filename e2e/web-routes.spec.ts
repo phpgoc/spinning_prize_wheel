@@ -1,6 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installTauriMock } from './helpers/tauri-mock';
 
+async function setMockAppSetting(page: Page, key: string, value: unknown) {
+  await page.evaluate(({ settingKey, settingValue }) => {
+    const state = (window as any).__E2E_TAURI_STATE__;
+    state.appSettings[settingKey] = settingValue;
+    sessionStorage.setItem('__E2E_TAURI_APP_SETTINGS__', JSON.stringify(state.appSettings));
+  }, { settingKey: key, settingValue: value });
+}
+
+async function readMockAppSetting<T>(page: Page, key: string): Promise<T> {
+  return page.evaluate((settingKey) => (window as any).__E2E_TAURI_STATE__.appSettings[settingKey], key);
+}
+
 async function clearDesktopBattle(page: Page) {
   await page.getByRole('button', { name: '清空对战' }).click();
   await page.keyboard.press('Enter');
@@ -132,10 +144,7 @@ test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({
     { id: 'sand', accent: '235 182 104', accentInk: 'rgb(102, 69, 30)', surface: 'rgb(241, 233, 223)' },
   ]) {
     await page.goto('/wheel');
-    await page.evaluate((uiTheme) => {
-      const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
-      localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, uiTheme }));
-    }, theme.id);
+    await setMockAppSetting(page, 'app-settings', { uiTheme: theme.id });
     await page.goto('/battle');
     const shellAccent = await page.locator('.app-shell').evaluate((element) => (
       getComputedStyle(element).getPropertyValue('--app-accent-rgb').trim()
@@ -209,7 +218,7 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await expect(page.getByLabel('文字颜色', { exact: true })).toHaveValue('#c0caf5');
   await expect(page.getByLabel('选手文字颜色')).toHaveValue('#7dcfff');
   await expect(page.getByLabel('对战框颜色')).toHaveValue('#414868');
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}'))).toEqual({
+  expect(await readMockAppSetting(page, 'battle-colors-v1')).toEqual({
     background: '#1a1b26',
     text: '#c0caf5',
     participant: '#7dcfff',
@@ -218,7 +227,7 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   });
   await savePalette.click();
   await expect(loadPalette).toBeEnabled();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-color-snapshot-v1:standard') ?? '{}'))).toEqual({
+  expect(await readMockAppSetting(page, 'battle-color-snapshot-v1')).toEqual({
     background: '#1a1b26',
     text: '#c0caf5',
     participant: '#7dcfff',
@@ -241,7 +250,7 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await page.getByLabel('文字颜色', { exact: true }).fill('#fedcba');
   await page.getByLabel('选手文字颜色').fill('#abcdef');
   await page.getByLabel('对战框颜色').fill('#654321');
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}'))).toEqual({
+  expect(await readMockAppSetting(page, 'battle-colors-v1')).toEqual({
     background: '#123456',
     text: '#fedcba',
     participant: '#abcdef',
@@ -276,21 +285,18 @@ test('对战可以全屏返回并持久化四类颜色和预设', async ({ page 
   await expect(page.getByLabel('选手文字颜色')).toHaveValue('#fabd2f');
 });
 
-test('对战配色预设按版本分别持久化', async ({ page }) => {
+test('对战配色预设在普通版和猜蜜版之间共享', async ({ page }) => {
   await page.goto('/battle');
   await page.getByRole('button', { name: 'Tokyo' }).click();
   await page.goto('/caimi/battle');
-  await expect(page.getByRole('button', { name: 'One Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Gruvbox' }).click();
 
-  expect(await page.evaluate(() => ({
-    standard: JSON.parse(localStorage.getItem('battle-colors-v1:standard') ?? '{}').preset,
-    caimi: JSON.parse(localStorage.getItem('battle-colors-v1:caimi') ?? '{}').preset,
-  }))).toEqual({ standard: 'ocean', caimi: 'sunset' });
+  expect(await readMockAppSetting<{ preset: string }>(page, 'battle-colors-v1')).toMatchObject({ preset: 'sunset' });
   await page.reload();
   await expect(page.getByRole('button', { name: 'Gruvbox' })).toHaveAttribute('aria-pressed', 'true');
   await page.goto('/battle');
-  await expect(page.getByRole('button', { name: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Gruvbox' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('对战赛制切换会保留单败和双败的配置', async ({ page }) => {
@@ -361,8 +367,8 @@ test('对战预览控件放大后逐行铺满且文字不溢出', async ({ page 
   }));
 
   await page.goto('/battle');
-  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L F G B V N');
-  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F G B V N L W S');
+  await expect(page.locator('main#battle')).toHaveAttribute('aria-keyshortcuts', 'A Z X W S L F U J H K');
+  await expect(page.locator('.battle-result')).toHaveAttribute('aria-keyshortcuts', 'F U J H K L W S');
   await prepareSingleBattle();
   const normalGroups = await boxes('.battle-option-groups > fieldset');
   expect(normalGroups).toHaveLength(3);
@@ -384,7 +390,7 @@ test('对战预览控件放大后逐行铺满且文字不溢出', async ({ page 
   ));
   expect(orderPositions[1]).toBeGreaterThan(orderPositions[0]);
 
-  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await setMockAppSetting(page, 'app-settings', { fontScale: 3 });
   await page.reload();
   await prepareSingleBattle();
   const largeGroups = await boxes('.battle-option-groups > fieldset');
@@ -459,7 +465,7 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
   expect(normalGap).toBeGreaterThanOrEqual(18);
   expect(normalColumnGap).toBeGreaterThanOrEqual(normalGap * 2);
 
-  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await setMockAppSetting(page, 'app-settings', { fontScale: 3 });
   await page.reload();
   await expect(page.locator('.single-battle-bracket')).toBeVisible();
   const largeColumn = page.locator('.single-bracket-side.left .battle-round:first-child > div');
@@ -481,7 +487,7 @@ test('字号放大时首轮间距和对战框同步扩张', async ({ page }) => 
 test('窄屏最大字号时单败右侧不覆盖，比分仍朝签表中心', async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 900 });
   await page.goto('/battle');
-  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
+  await setMockAppSetting(page, 'app-settings', { fontScale: 3 });
   await page.reload();
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
   await page.locator('.battle-config textarea').press('Alt+Enter');
@@ -533,8 +539,7 @@ test('悬念揭晓不会改变对战框高度，双败比分统一靠右', async
 
 test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   await page.goto('/grouping');
-  await page.evaluate(() => localStorage.setItem('wheel-settings-v1', JSON.stringify({ fontScale: 3 })));
-  await page.reload();
+  for (let index = 0; index < 20; index += 1) await page.keyboard.press('Control+ArrowUp');
   await page.locator('.names-field textarea').fill('甲\n乙\n丙\n丁\n戊\n己\n庚\n辛');
   await page.locator('.names-field textarea').press('Alt+Enter');
   const preview = page.locator('.preview-panel');
@@ -568,7 +573,7 @@ test('对战方向键在边缘也能绕行到其他比分框', async ({ page }) 
   expect(await page.locator('.battle-result input:focus').getAttribute('data-battle-match-id')).not.toBe(firstId);
 });
 
-test('对战区 G B V N 使用平滑滚动且单次移动 72 像素', async ({ page }) => {
+test('对战区 U J H K 使用平滑滚动且单次移动 72 像素', async ({ page }) => {
   await page.goto('/battle');
   await page.locator('.battle-config textarea').fill('甲\n乙\n丙\n丁');
   await page.locator('.battle-config textarea').press('Alt+Enter');
@@ -588,7 +593,7 @@ test('对战区 G B V N 使用平滑滚动且单次移动 72 像素', async ({ p
     };
   });
   await page.locator('.battle-result').focus();
-  for (const key of ['g', 'b', 'v', 'n']) await page.keyboard.press(key);
+  for (const key of ['u', 'j', 'h', 'k']) await page.keyboard.press(key);
   expect(await page.evaluate(() => (window as any).__BATTLE_SCROLL_CALLS__)).toEqual([
     { axis: 'vertical', top: -72, behavior: 'smooth' },
     { axis: 'vertical', top: 72, behavior: 'smooth' },
@@ -672,7 +677,7 @@ test('对战会先显示固定签位，再生成单败和双败轮次', async ({
     .toContainText('W1 P1');
   await doubleScroll.focus();
   const scrollBefore = await doubleScroll.evaluate((element) => element.scrollLeft);
-  await doubleScroll.press('n');
+  await doubleScroll.press('k');
   await expect.poll(() => doubleScroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(scrollBefore);
   const firstWinnerMatch = page.locator('[data-battle-stage="winner"][data-battle-level="1"][data-battle-position="1"]');
   await firstWinnerMatch.focus();

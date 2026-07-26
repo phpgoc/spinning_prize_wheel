@@ -239,7 +239,7 @@
   let battleFullscreen = false;
   let battleFullscreenChanging = false;
   let bodyOverflowBeforeBattleFullscreen = '';
-  let battleColorLoadedVariant: AppVariant | null = null;
+  let battleColorsLoaded = false;
   let battleColorPreset: BattleColorPresetSelection = 'classic';
   let battleColors: BattleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
   let battleColorSnapshotAvailable = false;
@@ -405,7 +405,7 @@
   $: if (mounted && businessRuntime && !desktopInitialized) {
     void initializeDesktop();
   }
-  $: if (mounted && battlePage && battleColorLoadedVariant !== variant) {
+  $: if (mounted && battlePage && !battleColorsLoaded) {
     void loadBattleColors();
   }
 
@@ -427,37 +427,22 @@
   });
 
   function battleColorStorageKey(): string {
-    return `battle-colors-v1:${variant}`;
+    return 'battle-colors-v1';
   }
 
   function battleColorSnapshotStorageKey(): string {
-    return `battle-color-snapshot-v1:${variant}`;
-  }
-
-  function readBattleColorSnapshot(): BattleColors | null {
-    try {
-      const stored = localStorage.getItem(battleColorSnapshotStorageKey());
-      if (stored === null) return null;
-      const value = JSON.parse(stored) as Partial<BattleColors>;
-      const colorNames: BattleColorName[] = ['background', 'text', 'participant', 'match'];
-      if (!colorNames.every((name) => typeof value[name] === 'string' && /^#[0-9a-f]{6}$/iu.test(value[name]!))) {
-        return null;
-      }
-      return Object.fromEntries(colorNames.map((name) => [name, value[name]])) as BattleColors;
-    } catch {
-      return null;
-    }
+    return 'battle-color-snapshot-v1';
   }
 
   async function loadBattleColors() {
-    battleColorLoadedVariant = variant;
+    battleColorsLoaded = true;
     battleColorPreset = 'classic';
     battleColors = { ...BATTLE_COLOR_PRESETS.classic.colors };
     try {
       const databaseSaved = await invoke<unknown>('load_app_setting', { key: battleColorStorageKey() });
       const saved = (databaseSaved && typeof databaseSaved === 'object' && !Array.isArray(databaseSaved)
         ? databaseSaved
-        : JSON.parse(localStorage.getItem(battleColorStorageKey()) ?? '{}')) as Partial<BattleColors> & {
+        : {}) as Partial<BattleColors> & {
         preset?: unknown;
       };
       const defaultColors = BATTLE_COLOR_PRESETS.classic.colors;
@@ -477,7 +462,7 @@
     }
     battleColorSnapshotAvailable = await invoke<unknown>('load_app_setting', { key: battleColorSnapshotStorageKey() })
       .then((value) => Boolean(value))
-      .catch(() => readBattleColorSnapshot() !== null);
+      .catch(() => false);
   }
 
   function matchingBattleColorPreset(colors: BattleColors): BattleColorPresetName | null {
@@ -513,7 +498,7 @@
     const stored = await invoke<unknown>('load_app_setting', { key: battleColorSnapshotStorageKey() }).catch(() => null);
     const saved = stored && typeof stored === 'object' && !Array.isArray(stored)
       ? stored as BattleColors
-      : readBattleColorSnapshot();
+      : null;
     if (!saved) {
       battleColorSnapshotAvailable = false;
       return;
@@ -832,7 +817,7 @@
     if (!resultHistory) return;
     error = '';
     try {
-      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(resultHistory, variant));
+      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(resultHistory));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 JSON');
     }
@@ -875,7 +860,7 @@
     historyError = '';
     try {
       const fullHistory = await loadGroupingHistory(history);
-      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(fullHistory, variant));
+      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(fullHistory));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 JSON');
     } finally {
@@ -885,15 +870,12 @@
 
   async function exportGroupingHistoryExcel(history: HistoryListItem) {
     if (historyExporting) return;
-    const fullHistory = await loadGroupingHistory(history);
-    const historicalResult = historyResult(fullHistory);
-    if (!historicalResult) {
-      historyError = '这条历史记录内容不完整';
-      return;
-    }
     historyExporting = { id: history.id, format: 'excel' };
     historyError = '';
     try {
+      const fullHistory = await loadGroupingHistory(history);
+      const historicalResult = historyResult(fullHistory);
+      if (!historicalResult) throw new Error('这条历史记录内容不完整');
       await downloadExcel(history.displayName || '分组结果', groupingExcelRows(historicalResult));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 Excel');
@@ -1274,7 +1256,7 @@
     battleHistoryImporting = true;
     try {
       const value = JSON.parse((await file.text()).replace(/^\uFEFF/u, '')) as unknown;
-      const transfer = parseBattleHistoryTransferRecord(value, variant);
+      const transfer = parseBattleHistoryTransferRecord(value);
       if (!await archiveBattleHistory(transfer.snapshot, false, transfer.title, transfer.createdAt)) throw new Error(battleHistoryError);
     } catch (reason) {
       showImportError('对战历史导入失败', messageFrom(reason, '无法读取对战历史'));

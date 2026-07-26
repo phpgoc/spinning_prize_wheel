@@ -19,6 +19,7 @@
     staticVariantHref,
   } from './lib/file-navigation';
   import {
+    DEFAULT_FONT_SCALE,
     DEFAULT_UI_THEME,
     normalizeFontScale,
     normalizeUiTheme,
@@ -31,9 +32,6 @@
   export let pathname = typeof window === 'undefined' ? '/' : window.location.pathname;
 
   type WheelPageComponent = (typeof import('./routes/WheelPage.svelte'))['default'];
-
-  const STORAGE_KEY = 'wheel-settings-v1';
-  const LEGACY_STORAGE_KEY = ['for', 'tuna-wheel-settings-v1'].join('');
 
   let logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
   let page: AppPage = pageFromPath(logicalPathname);
@@ -50,8 +48,8 @@
   let drawMode: DrawMode = 'selected';
   let wheelSpinning = false;
   let continuousRunning = false;
-  let fontScale = initialFontScale();
-  let uiTheme: UiTheme = initialUiTheme();
+  let fontScale = DEFAULT_FONT_SCALE;
+  let uiTheme: UiTheme = DEFAULT_UI_THEME;
   let removeCloseRequestedListener: (() => void) | null = null;
   let removeBeforeUnloadListener: (() => void) | null = null;
   let appUnmounted = false;
@@ -61,7 +59,6 @@
   let appFullscreenChanging = false;
   let persistedFontScale = fontScale;
   let persistedUiTheme = uiTheme;
-  let appSettingsDatabaseLoaded = false;
   const APP_PAGE_ORDER: AppPage[] = ['wheel', 'grouping', 'battle'];
 
   $: logicalPathname = logicalRouteFromHtmlPath(pathname) ?? pathname;
@@ -140,30 +137,6 @@
     }
   }
 
-  function initialFontScale(): number {
-    if (typeof window === 'undefined') return 1;
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
-      ) as { fontScale?: unknown };
-      return normalizeFontScale(saved.fontScale);
-    } catch {
-      return 1;
-    }
-  }
-
-  function initialUiTheme(): UiTheme {
-    if (typeof window === 'undefined') return DEFAULT_UI_THEME;
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
-      ) as { uiTheme?: unknown };
-      return normalizeUiTheme(saved.uiTheme);
-    } catch {
-      return DEFAULT_UI_THEME;
-    }
-  }
-
   function pageFromPath(pathname: string): AppPage {
     if (pathname.endsWith('/battle')) return 'battle';
     return pathname.endsWith('/grouping') ? 'grouping' : 'wheel';
@@ -215,24 +188,6 @@
   }
 
   function saveFontScale() {
-    let saved: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) ?? '{}',
-      ) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        saved = parsed as Record<string, unknown>;
-      }
-    } catch {
-      // 损坏的旧设置只保留本次有效字号。
-    }
-    if (!appSettingsDatabaseLoaded) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, fontScale }));
-      } catch {
-        // 禁用本地存储时字号仍在当前会话生效。
-      }
-    }
     void saveAppSettings({ fontScale });
   }
 
@@ -243,9 +198,7 @@
       fontScale = normalizeFontScale(saved.fontScale);
       uiTheme = normalizeUiTheme(saved.uiTheme);
     } catch {
-      // 数据库不可用时保留本地兼容配置。
-    } finally {
-      appSettingsDatabaseLoaded = true;
+      // 数据库不可用时保留当前会话默认值。
     }
   }
 

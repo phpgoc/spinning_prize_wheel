@@ -45,11 +45,10 @@ impl SqlTraceDeduplicator {
 const MIGRATIONS: &[(i64, &str)] = &[
     (
         DATABASE_SCHEMA_VERSION,
-        "CREATE TABLE IF NOT EXISTS draw_history (
+         "CREATE TABLE IF NOT EXISTS draw_history (
            id TEXT PRIMARY KEY NOT NULL,
            created_at INTEGER NOT NULL,
-           payload_json TEXT NOT NULL,
-           variant TEXT NOT NULL
+           payload_json TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS user (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,8 +66,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
            created_at INTEGER NOT NULL,
            display_name TEXT NOT NULL DEFAULT '',
            input_json TEXT NOT NULL,
-           result_json TEXT NOT NULL,
-           variant TEXT NOT NULL
+           result_json TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS battle_history (
            id TEXT NOT NULL,
@@ -85,7 +83,6 @@ const MIGRATIONS: &[(i64, &str)] = &[
          );
          CREATE TABLE IF NOT EXISTS battle_tmp (
            id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
-           variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
            rules_version INTEGER NOT NULL CHECK (rules_version = 1),
            created_at INTEGER NOT NULL CHECK (created_at > 0),
            updated_at INTEGER NOT NULL CHECK (updated_at > 0),
@@ -123,9 +120,9 @@ const MIGRATIONS: &[(i64, &str)] = &[
            FOREIGN KEY (state_id, down) REFERENCES battle_tmp_participant(state_id, participant_id)
          );
          CREATE INDEX IF NOT EXISTS draw_history_created_at
-         ON draw_history(variant, created_at DESC);
+         ON draw_history(created_at DESC);
          CREATE INDEX IF NOT EXISTS grouping_history_created_at
-         ON grouping_history(variant, created_at DESC);",
+         ON grouping_history(created_at DESC);",
     ),
 ];
 
@@ -556,20 +553,123 @@ fn migrate_database(connection: &mut Connection) -> Result<(), String> {
             .map_err(|error| format!("无法提交数据库迁移 {version}：{error}"))?;
     }
 
-    normalize_battle_history_schema(connection)?;
+    normalize_history_schemas(connection)?;
+    normalize_battle_tmp_schema(connection)?;
+    normalize_app_setting_keys(connection)?;
     ensure_history_display_name_columns(connection)?;
     validate_database_schema(connection)
 }
 
-/// 0.3.0 发布前结构曾用 (id, variant) 联合主键；启动时收敛为共享历史表。
-fn normalize_battle_history_schema(connection: &mut Connection) -> Result<(), String> {
-    let columns = connection
-        .prepare("PRAGMA table_info(battle_history)")
-        .map_err(|error| format!("无法读取对战历史表结构：{error}"))?
+/// 将发布前按普通版/猜蜜版拆分的配色配置合并为全局配置键。
+fn normalize_app_setting_keys(connection: &Connection) -> Result<(), String> {
+    for (target, standard, caimi) in [
+        (
+            "battle-colors-v1",
+            "battle-colors-v1:standard",
+            "battle-colors-v1:caimi",
+        ),
+        (
+            "battle-color-snapshot-v1",
+            "battle-color-snapshot-v1:standard",
+            "battle-color-snapshot-v1:caimi",
+        ),
+    ] {
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO app_kv (key, value_json)
+                 SELECT ?1, value_json FROM app_kv
+                 WHERE key IN (?2, ?3)
+                 ORDER BY CASE key WHEN ?2 THEN 0 ELSE 1 END LIMIT 1",
+                params![target, standard, caimi],
+            )
+            .map_err(|error| format!("无法合并旧配色配置：{error}"))?;
+        connection
+            .execute(
+                "DELETE FROM app_kv WHERE key IN (?1, ?2)",
+                params![standard, caimi],
+            )
+            .map_err(|error| format!("无法清理旧配色配置：{error}"))?;
+    }
+    Ok(())
+}
+
+/// 0.3.0 发布前历史结构曾带 variant；启动时收敛为三张共享历史表。
+fn normalize_history_schemas(connection: &mut Connection) -> Result<(), String> {
+    normalize_draw_history_schema(connection)?;
+    normalize_grouping_history_schema(connection)?;
+    normalize_battle_history_schema(connection)
+}
+
+fn table_columns(connection: &Connection, table: &str) -> Result<HashSet<String>, String> {
+    connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| format!("无法读取数据库表 {table} 结构：{error}"))?
         .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|error| format!("无法查询对战历史表结构：{error}"))?
+        .map_err(|error| format!("无法查询数据库表 {table} 结构：{error}"))?
         .collect::<Result<HashSet<_>, _>>()
-        .map_err(|error| format!("无法解析对战历史表结构：{error}"))?;
+        .map_err(|error| format!("无法解析数据库表 {table} 结构：{error}"))
+}
+
+fn normalize_draw_history_schema(connection: &mut Connection) -> Result<(), String> {
+    if !table_columns(connection, "draw_history")?.contains("variant") {
+        return Ok(());
+    }
+    connection
+        .execute_batch(
+            "ALTER TABLE draw_history RENAME TO draw_history_prerelease;
+         CREATE TABLE draw_history (
+           id TEXT PRIMARY KEY NOT NULL,
+           created_at INTEGER NOT NULL,
+           payload_json TEXT NOT NULL
+         );
+         INSERT OR REPLACE INTO draw_history (id, created_at, payload_json)
+         SELECT id, created_at, payload_json FROM draw_history_prerelease ORDER BY created_at ASC;
+         DROP TABLE draw_history_prerelease;
+         CREATE INDEX draw_history_created_at ON draw_history(created_at DESC);",
+        )
+        .map_err(|error| format!("无法升级抽奖历史表：{error}"))
+}
+
+fn normalize_grouping_history_schema(connection: &mut Connection) -> Result<(), String> {
+    if !table_columns(connection, "grouping_history")?.contains("variant") {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "ALTER TABLE grouping_history RENAME TO grouping_history_prerelease;
+         CREATE TABLE grouping_history (
+           id TEXT PRIMARY KEY NOT NULL,
+           created_at INTEGER NOT NULL,
+           display_name TEXT NOT NULL DEFAULT '',
+           input_json TEXT NOT NULL,
+           result_json TEXT NOT NULL
+         );
+         INSERT OR REPLACE INTO grouping_history (id, created_at, display_name, input_json, result_json)
+         SELECT id, created_at, display_name, input_json, result_json
+         FROM grouping_history_prerelease ORDER BY created_at ASC;
+         DROP TABLE grouping_history_prerelease;
+         CREATE INDEX grouping_history_created_at ON grouping_history(created_at DESC);"
+    ).map_err(|error| format!("无法升级分组历史表：{error}"))
+}
+
+/// 临时对战只保留全局一份；发布前数据允许清空后重建。
+fn normalize_battle_tmp_schema(connection: &mut Connection) -> Result<(), String> {
+    if !table_columns(connection, "battle_tmp")?.contains("variant") {
+        return Ok(());
+    }
+    connection
+        .execute_batch(
+            "PRAGMA foreign_keys = OFF;
+         DROP TABLE IF EXISTS battle_tmp_match;
+         DROP TABLE IF EXISTS battle_tmp_participant;
+         DROP TABLE IF EXISTS battle_tmp;
+         PRAGMA foreign_keys = ON;",
+        )
+        .map_err(|error| format!("无法升级对战临时表：{error}"))?;
+    ensure_battle_tmp_tables(connection)
+}
+
+fn normalize_battle_history_schema(connection: &mut Connection) -> Result<(), String> {
+    let columns = table_columns(connection, "battle_history")?;
     if !columns.contains("variant") {
         return Ok(());
     }
@@ -610,7 +710,9 @@ fn ensure_history_display_name_columns(connection: &Connection) -> Result<(), St
         if !columns.contains("display_name") {
             connection
                 .execute(
-                    &format!("ALTER TABLE {table} ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"),
+                    &format!(
+                        "ALTER TABLE {table} ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+                    ),
                     [],
                 )
                 .map_err(|error| format!("无法升级数据库表 {table}：{error}"))?;
@@ -666,10 +768,7 @@ fn backfill_history_display_names(connection: &Connection) -> Result<(), String>
             .map_err(|error| format!("无法读取旧对战历史：{error}"))?;
         let rows = statement
             .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                ))
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|error| format!("无法查询旧对战历史：{error}"))?
             .collect::<Result<Vec<_>, _>>()
@@ -680,7 +779,10 @@ fn backfill_history_display_names(connection: &Connection) -> Result<(), String>
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|error| format!("无法解析旧对战签表：{error}"))?;
         let snapshot: BattleTmpSnapshot = serde_json::from_value(
-            payload.get("snapshot").cloned().unwrap_or_else(|| payload.clone()),
+            payload
+                .get("snapshot")
+                .cloned()
+                .unwrap_or_else(|| payload.clone()),
         )
         .map_err(|error| format!("无法解析旧对战签表：{error}"))?;
         let title = payload
@@ -720,16 +822,17 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
     }
 
     for (table, columns) in [
-        (
-            "draw_history",
-            &["id", "created_at", "payload_json", "variant"][..],
-        ),
+        ("draw_history", &["id", "created_at", "payload_json"][..]),
         ("user", &["id", "name", "rank"][..]),
         ("alias", &["id", "name", "user_id"][..]),
         (
             "grouping_history",
             &[
-                "id", "created_at", "display_name", "input_json", "result_json", "variant",
+                "id",
+                "created_at",
+                "display_name",
+                "input_json",
+                "result_json",
             ][..],
         ),
         (
@@ -737,6 +840,21 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
             &["id", "created_at", "display_name", "payload_json"][..],
         ),
         ("app_kv", &["key", "value_json"][..]),
+        (
+            "battle_tmp",
+            &[
+                "id",
+                "rules_version",
+                "created_at",
+                "updated_at",
+                "history_saved",
+                "format",
+                "order_mode",
+                "participant_count",
+                "bracket_size",
+                "fixed_seed_count",
+            ][..],
+        ),
     ] {
         let actual = connection
             .prepare(&format!("PRAGMA table_info({table})"))
@@ -745,7 +863,11 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
             .map_err(|error| format!("无法读取数据库表 {table} 字段：{error}"))?
             .collect::<Result<HashSet<_>, _>>()
             .map_err(|error| format!("无法解析数据库表 {table} 结构：{error}"))?;
-        if columns.iter().any(|column| !actual.contains(*column)) {
+        let expected = columns
+            .iter()
+            .map(|column| (*column).to_string())
+            .collect::<HashSet<_>>();
+        if actual != expected {
             return Err(format!(
                 "数据库版本不兼容：数据库表 {table} 不是 0.3.0 结构"
             ));
@@ -1136,7 +1258,7 @@ fn save_draw_history_in(
     variant: &str,
     draw: &SavedDraw,
 ) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if !valid_selection_id(&draw.id) {
         return Err("抽奖记录编号不合法".to_string());
     }
@@ -1163,13 +1285,12 @@ fn save_draw_history_in(
         serde_json::to_string(&draw).map_err(|error| format!("无法序列化抽奖记录：{error}"))?;
     connection
         .execute(
-            "INSERT INTO draw_history (id, created_at, payload_json, variant)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO draw_history (id, created_at, payload_json)
+             VALUES (?1, ?2, ?3)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
-               payload_json = excluded.payload_json,
-               variant = excluded.variant",
-            params![draw.id, created_at, payload, variant],
+               payload_json = excluded.payload_json",
+            params![draw.id, created_at, payload],
         )
         .map_err(|error| format!("无法保存抽奖记录：{error}"))?;
     Ok(())
@@ -1540,7 +1661,7 @@ fn save_grouping_history_in(
     variant: &str,
     grouping: &SavedGrouping,
 ) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if !valid_selection_id(&grouping.id) {
         return Err("分组记录编号不合法".to_string());
     }
@@ -1556,15 +1677,20 @@ fn save_grouping_history_in(
     let display_name = grouping_display_name(grouping);
     connection
         .execute(
-            "INSERT INTO grouping_history (id, created_at, display_name, input_json, result_json, variant)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO grouping_history (id, created_at, display_name, input_json, result_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
                display_name = excluded.display_name,
                input_json = excluded.input_json,
-               result_json = excluded.result_json,
-               variant = excluded.variant",
-            params![grouping.id, created_at, display_name, input_json, result_json, variant],
+               result_json = excluded.result_json",
+            params![
+                grouping.id,
+                created_at,
+                display_name,
+                input_json,
+                result_json
+            ],
         )
         .map_err(|error| format!("无法保存分组记录：{error}"))?;
     Ok(())
@@ -1582,16 +1708,21 @@ fn grouping_display_name(grouping: &SavedGrouping) -> String {
         return custom.to_string();
     }
     let people = input
-        .and_then(|value| value.get("sourceNames").and_then(serde_json::Value::as_array))
+        .and_then(|value| {
+            value
+                .get("sourceNames")
+                .and_then(serde_json::Value::as_array)
+        })
         .map_or(0, Vec::len);
     let groups = input
         .and_then(|value| value.get("groupCount").and_then(serde_json::Value::as_u64))
         .map_or_else(|| "—".to_string(), |value| value.to_string());
-    let mode = match input.and_then(|value| value.get("orderMode").and_then(serde_json::Value::as_str)) {
-        Some("input") => "输入顺序",
-        Some("random") => "全随机",
-        _ => "排名",
-    };
+    let mode =
+        match input.and_then(|value| value.get("orderMode").and_then(serde_json::Value::as_str)) {
+            Some("input") => "输入顺序",
+            Some("random") => "全随机",
+            _ => "排名",
+        };
     format!("{people} 项 · {groups} 组 · {mode}")
 }
 
@@ -1719,8 +1850,10 @@ fn load_grouping_history_in(
         id,
         created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
         title: None,
-        input: serde_json::from_str(&input_json).map_err(|error| format!("无法解析分组输入：{error}"))?,
-        result: serde_json::from_str(&result_json).map_err(|error| format!("无法解析分组结果：{error}"))?,
+        input: serde_json::from_str(&input_json)
+            .map_err(|error| format!("无法解析分组输入：{error}"))?,
+        result: serde_json::from_str(&result_json)
+            .map_err(|error| format!("无法解析分组结果：{error}"))?,
     })
 }
 
@@ -1847,7 +1980,12 @@ fn save_battle_history_in(
 }
 
 fn battle_history_display_name(history: &BattleHistory) -> String {
-    if let Some(title) = history.title.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(title) = history
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         return title.to_string();
     }
     let format = match history.snapshot.format.as_str() {
@@ -2126,6 +2264,19 @@ mod tests {
                 "battle_tmp_match",
             ],
         );
+        for table in [
+            "draw_history",
+            "grouping_history",
+            "battle_history",
+            "battle_tmp",
+        ] {
+            assert!(
+                !table_columns(&connection, table)
+                    .expect("读取持久化表字段")
+                    .contains("variant"),
+                "{table} 不应保留 variant 字段"
+            );
+        }
         assert_eq!(versions, vec![DATABASE_SCHEMA_VERSION]);
     }
 
@@ -2141,6 +2292,39 @@ mod tests {
 
         let error = migrate_database(&mut connection).expect_err("旧版数据库不能继续迁移");
         assert!(error.contains("数据库版本不兼容"));
+    }
+
+    #[test]
+    fn migration_merges_variant_color_keys_into_global_settings() {
+        let mut connection = test_database();
+        connection
+            .execute(
+                "INSERT INTO app_kv (key, value_json) VALUES (?1, ?2)",
+                params!["battle-colors-v1:standard", r#"{"preset":"classic"}"#],
+            )
+            .expect("写入旧配色配置");
+
+        migrate_database(&mut connection).expect("再次迁移旧配色配置");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT value_json FROM app_kv WHERE key = 'battle-colors-v1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("读取全局配色配置"),
+            r#"{"preset":"classic"}"#
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM app_kv WHERE key LIKE 'battle-%:%'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("确认旧配色键已删除"),
+            0
+        );
     }
 
     #[test]
@@ -2685,13 +2869,12 @@ mod tests {
         }
     }
 
-    fn single_battle_tmp_test_snapshot(variant: &str) -> BattleTmpSnapshot {
+    fn single_battle_tmp_test_snapshot(_variant: &str) -> BattleTmpSnapshot {
         let final_match = battle_tmp_test_match("S2-M1", 2, 1, None, None);
         BattleTmpSnapshot {
             version: 1,
             rules_version: 1,
             kind: "battle-tmp".to_string(),
-            variant: variant.to_string(),
             created_at: 1_700_000_000_000,
             updated_at: 1_700_000_000_000,
             format: "single-elimination".to_string(),
@@ -2725,7 +2908,6 @@ mod tests {
             version: 1,
             rules_version: 1,
             kind: "battle-tmp".to_string(),
-            variant: "standard".to_string(),
             created_at: 1_700_000_000_000,
             updated_at: 1_700_000_000_000,
             format: "double-elimination".to_string(),
@@ -2793,6 +2975,7 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("解析对战临时表字段");
         assert!(!columns.iter().any(|column| column == "state_json"));
+        assert!(!columns.iter().any(|column| column == "variant"));
         let match_columns = connection
             .prepare("PRAGMA table_info(battle_tmp_match)")
             .expect("读取对战场次表结构")
@@ -2821,18 +3004,18 @@ mod tests {
         save_battle_tmp_state_in(&connection, "caimi", &caimi).expect("保存猜蜜版对战状态");
         assert_eq!(
             load_battle_tmp_state_in(&connection, "standard").expect("确认旧状态已被替换"),
-            None
+            Some(caimi.clone())
         );
         assert_eq!(
             load_battle_tmp_state_in(&connection, "caimi").expect("确认当前状态存在"),
             Some(caimi.clone())
         );
-        clear_battle_tmp_state_in(&connection, "standard").expect("其他版本不能误删当前状态");
+        clear_battle_tmp_state_in(&connection, "standard").expect("任一版本入口都清空共享状态");
         assert_eq!(
             load_battle_tmp_state_in(&connection, "caimi").unwrap(),
-            Some(caimi)
+            None
         );
-        clear_battle_tmp_state_in(&connection, "caimi").expect("清空当前对战状态");
+        clear_battle_tmp_state_in(&connection, "caimi").expect("重复清空当前对战状态");
         assert_eq!(
             load_battle_tmp_state_in(&connection, "caimi").unwrap(),
             None
@@ -3186,8 +3369,8 @@ mod tests {
         let connection = test_database();
         connection
             .execute(
-                "INSERT INTO draw_history (id, created_at, payload_json, variant)
-                 VALUES ('broken', 1, '{broken json', 'standard')",
+                "INSERT INTO draw_history (id, created_at, payload_json)
+                 VALUES ('broken', 1, '{broken json')",
                 [],
             )
             .expect("写入损坏测试数据");
@@ -3219,8 +3402,8 @@ mod tests {
         let connection = test_database();
         connection
             .execute(
-                "INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
-                 VALUES ('broken', 1, '{broken json', '{}', 'standard')",
+                "INSERT INTO grouping_history (id, created_at, input_json, result_json)
+                 VALUES ('broken', 1, '{broken json', '{}')",
                 [],
             )
             .expect("写入损坏测试数据");

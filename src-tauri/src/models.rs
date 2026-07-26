@@ -138,7 +138,6 @@ pub(super) struct BattleTmpSnapshot {
     pub(super) version: u8,
     pub(super) rules_version: u8,
     pub(super) kind: String,
-    pub(super) variant: String,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
     pub(super) format: String,

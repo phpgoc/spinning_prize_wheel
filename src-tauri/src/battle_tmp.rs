@@ -23,7 +23,6 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS battle_tmp (
                id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
-               variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
                rules_version INTEGER NOT NULL CHECK (rules_version = 1),
                created_at INTEGER NOT NULL CHECK (created_at > 0),
                updated_at INTEGER NOT NULL CHECK (updated_at > 0),
@@ -65,11 +64,10 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
 }
 
 /// 在写入数据库前完整校验前端快照，避免非法引用进入关系化表。
-fn validate_battle_tmp_snapshot(variant: &str, state: &BattleTmpSnapshot) -> Result<(), String> {
+fn validate_battle_tmp_snapshot(state: &BattleTmpSnapshot) -> Result<(), String> {
     if state.kind != "battle-tmp"
         || state.version != 1
         || state.rules_version != 1
-        || state.variant != variant
         || state.created_at == 0
         || state.updated_at == 0
         || !matches!(
@@ -183,8 +181,8 @@ fn save_battle_tmp_state_with_history_in(
     state: &BattleTmpSnapshot,
     history_saved: bool,
 ) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
-    validate_battle_tmp_snapshot(variant, state)?;
+    let _variant = validate_variant(variant)?;
+    validate_battle_tmp_snapshot(state)?;
     ensure_battle_tmp_tables(connection)?;
     let transaction = connection
         .unchecked_transaction()
@@ -195,11 +193,10 @@ fn save_battle_tmp_state_with_history_in(
     transaction
         .execute(
             "INSERT INTO battle_tmp (
-               id, variant, rules_version, created_at, updated_at, format, order_mode,
+               id, rules_version, created_at, updated_at, format, order_mode,
                history_saved, participant_count, bracket_size, fixed_seed_count
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
-                variant,
                 state.rules_version,
                 db_u64(state.created_at, "对战临时状态创建时间")?,
                 db_u64(state.updated_at, "对战临时状态更新时间")?,
@@ -273,15 +270,15 @@ fn load_battle_tmp_state_in(
     connection: &Connection,
     variant: &str,
 ) -> Result<Option<BattleTmpSnapshot>, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if !battle_tmp_table_exists(connection)? {
         return Ok(None);
     }
     let metadata = connection
         .query_row(
             "SELECT rules_version, created_at, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count
-             FROM battle_tmp WHERE id = 1 AND variant = ?1",
-            params![variant],
+             FROM battle_tmp WHERE id = 1",
+            [],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -317,7 +314,6 @@ fn load_battle_tmp_state_in(
         rules_version: u8::try_from(rules_version)
             .map_err(|_| "对战临时状态规则版本不合法".to_string())?,
         kind: "battle-tmp".to_string(),
-        variant: variant.to_string(),
         created_at: u64::try_from(created_at)
             .map_err(|_| "对战临时状态创建时间不合法".to_string())?,
         updated_at: u64::try_from(updated_at).map_err(|_| "对战临时状态时间不合法".to_string())?,
@@ -820,17 +816,16 @@ fn update_battle_tmp_result_in(
     down_result: Option<usize>,
     updated_at: u64,
 ) -> Result<BattleTmpSnapshot, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if updated_at == 0 || !battle_tmp_table_exists(connection)? {
         return Err("当前没有可更新的对战临时状态".to_string());
     }
-    let current_variant = connection
-        .query_row("SELECT variant FROM battle_tmp WHERE id = 1", [], |row| {
-            row.get::<_, String>(0)
+    let state_exists = connection
+        .query_row("SELECT EXISTS(SELECT 1 FROM battle_tmp WHERE id = 1)", [], |row| {
+            row.get::<_, bool>(0)
         })
-        .optional()
-        .map_err(|error| format!("无法读取对战临时状态版本：{error}"))?;
-    if current_variant.as_deref() != Some(variant) {
+        .map_err(|error| format!("无法读取对战临时状态：{error}"))?;
+    if !state_exists {
         return Err("当前没有可更新的对战临时状态".to_string());
     }
 
@@ -907,14 +902,14 @@ fn battle_tmp_history_status_in(
     connection: &Connection,
     variant: &str,
 ) -> Result<Option<(u64, bool)>, String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if !battle_tmp_table_exists(connection)? {
         return Ok(None);
     }
     connection
         .query_row(
-            "SELECT updated_at, history_saved FROM battle_tmp WHERE id = 1 AND variant = ?1",
-            params![variant],
+            "SELECT updated_at, history_saved FROM battle_tmp WHERE id = 1",
+            [],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -938,12 +933,12 @@ fn mark_battle_tmp_history_saved_in(
     variant: &str,
     updated_at: u64,
 ) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     let changed = connection
         .execute(
             "UPDATE battle_tmp SET history_saved = 1
-             WHERE id = 1 AND variant = ?1 AND updated_at = ?2",
-            params![variant, db_u64(updated_at, "对战临时状态时间")?],
+             WHERE id = 1 AND updated_at = ?1",
+            params![db_u64(updated_at, "对战临时状态时间")?],
         )
         .map_err(|error| format!("无法标记对战历史保存状态：{error}"))?;
     if changed == 0 {
@@ -953,15 +948,12 @@ fn mark_battle_tmp_history_saved_in(
 }
 
 fn clear_battle_tmp_state_in(connection: &Connection, variant: &str) -> Result<(), String> {
-    let variant = validate_variant(variant)?;
+    let _variant = validate_variant(variant)?;
     if !battle_tmp_table_exists(connection)? {
         return Ok(());
     }
     connection
-        .execute(
-            "DELETE FROM battle_tmp WHERE id = 1 AND variant = ?1",
-            params![variant],
-        )
+        .execute("DELETE FROM battle_tmp WHERE id = 1", [])
         .map_err(|error| format!("无法清空对战临时状态：{error}"))?;
     Ok(())
 }
