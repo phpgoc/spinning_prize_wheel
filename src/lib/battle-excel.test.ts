@@ -24,7 +24,9 @@ describe('对战签表 Excel', () => {
     const workbook = await loadWorkbook(await createBattleBracketWorkbook(snapshot));
     const worksheet = workbook.getWorksheet('对战签表')!;
     expect(worksheet.getCell('A1').value).toBe('单败对战签表');
-    expect(String(worksheet.getCell('A2').value)).toContain('updated_at：');
+    expect(String(worksheet.getCell('A2').value)).toMatch(
+      /^创建时间：\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} · 更新时间：\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} · 8 人 · 8 签位 · 按输入顺序 · 规则 v1$/u,
+    );
     expect(worksheet.getCell('A5').value).toBe('1/4');
     expect(worksheet.getCell('D5').value).toBe('半决赛');
     expect(worksheet.getCell('G5').value).toBe('决赛');

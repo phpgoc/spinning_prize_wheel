@@ -2382,6 +2382,16 @@
       focusBattleScoreGroup('loser');
       return;
     }
+    // 比分输入框按 Esc 后先聚焦当前对战框；再次按 Esc 才回到整个对战区。
+    // 全屏对战区也保留这一级返回操作，避免只能用鼠标重新选择对战区。
+    const focusedBattleMatch = target instanceof Element
+      ? target.closest<HTMLElement>('.battle-match')
+      : null;
+    if (battlePage && event.key === 'Escape' && focusedBattleMatch) {
+      event.preventDefault();
+      groupingResultElement?.focus({ preventScroll: true });
+      return;
+    }
     if (battleFullscreen && battleFocusActive) return;
     if (target === sourceTextarea && isMultilineTextConfirm(event)) {
       event.preventDefault();
@@ -2533,17 +2543,6 @@
         event.preventDefault();
         updateAliasLinkRankShortcut(event.key);
       }
-      return;
-    }
-
-    // 比分输入框按 Esc 后先聚焦当前对战框；再次按 Esc 才回到整个对战区。
-    // 这样方向键仍由对战框接管，Ctrl+↑/↓ 则可交给全局字号快捷键。
-    const focusedBattleMatch = target instanceof Element
-      ? target.closest<HTMLElement>('.battle-match')
-      : null;
-    if (battlePage && event.key === 'Escape' && focusedBattleMatch) {
-      event.preventDefault();
-      groupingResultElement?.focus({ preventScroll: true });
       return;
     }
 
@@ -2732,6 +2731,10 @@
   function handleBattleMatchKeydown(event: KeyboardEvent) {
     if (
       !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+      || event.ctrlKey
+      || event.metaKey
+      || event.altKey
+      || event.shiftKey
       || isTextEditingTarget(event.target)
     ) return;
     const current = event.currentTarget as HTMLElement;

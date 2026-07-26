@@ -815,6 +815,21 @@ test('对战比分方向键移动、Alt 调整、Enter 录入零分且 Esc 取�
   await secondInputs.nth(1).press('Alt+ArrowDown');
   await expect(secondInputs.nth(1)).toHaveValue('0');
 
+  await secondInputs.nth(1).focus();
+  await secondInputs.nth(1).fill('2');
+  await secondInputs.nth(1).press('Escape');
+  await expect(secondInputs.nth(1)).toHaveValue('0');
+  await expect(matches.nth(1)).toBeFocused();
+  await matches.nth(1).press('Escape');
+  await expect(page.locator('.battle-result')).toBeFocused();
+  const fontScaleBeforeBattleAreaShortcut = await page.locator('.app-shell').evaluate((element) => (
+    Number.parseFloat(getComputedStyle(element).getPropertyValue('--font-scale'))
+  ));
+  await page.keyboard.press('Control+ArrowUp');
+  await expect.poll(() => page.locator('.app-shell').evaluate((element) => (
+    Number.parseFloat(getComputedStyle(element).getPropertyValue('--font-scale'))
+  ))).toBeCloseTo(fontScaleBeforeBattleAreaShortcut + 0.1, 6);
+
   await page.getByRole('button', { name: '全屏' }).click();
   await secondInputs.nth(1).focus();
   await secondInputs.nth(1).fill('2');

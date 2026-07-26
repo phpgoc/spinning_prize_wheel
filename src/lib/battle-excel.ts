@@ -62,26 +62,21 @@ export async function createBattleBracketWorkbook(snapshot: BattleTmpSnapshot): 
 
   worksheet.mergeCells(2, 1, 2, lastColumn);
   const metadataCell = worksheet.getCell(2, 1);
-  metadataCell.value = [
-    `${snapshot.participantCount} 人`,
-    `${snapshot.bracketSize} 签位`,
-    snapshot.orderMode === 'rank' ? '按排名' : '按输入顺序',
-    `规则 v${snapshot.rulesVersion}`,
-    new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(snapshot.updatedAt)),
-  ].join(' · ');
-  metadataCell.value = `updated_at：${new Intl.DateTimeFormat('zh-CN', {
+  const formatDateTime = (timestamp: number) => new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(snapshot.updatedAt))} · ${metadataCell.value}`;
+  }).format(new Date(timestamp));
+  metadataCell.value = [
+    `创建时间：${formatDateTime(snapshot.createdAt)}`,
+    `更新时间：${formatDateTime(snapshot.updatedAt)}`,
+    `${snapshot.participantCount} 人`,
+    `${snapshot.bracketSize} 签位`,
+    snapshot.orderMode === 'rank' ? '按排名' : '按输入顺序',
+    `规则 v${snapshot.rulesVersion}`,
+  ].join(' · ');
   metadataCell.font = { size: 10, color: { argb: 'FF59604E' } };
   metadataCell.alignment = { vertical: 'middle', horizontal: 'center' };
   worksheet.getRow(2).height = 22;
