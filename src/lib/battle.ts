@@ -81,6 +81,7 @@ export interface BattleTmpSnapshot {
   rulesVersion: 1;
   kind: 'battle-tmp';
   variant: AppVariant;
+  createdAt: number;
   updatedAt: number;
   format: BattleFormat;
   orderMode: BattleOrderMode;
@@ -95,7 +96,7 @@ export interface BattleTmpSnapshot {
 export interface BattleHistory {
   id: string;
   createdAt: number;
-  /** 生成这条历史时临时签表的更新时间；与数据库 battle_history.updated_at 一致。 */
+  /** 保存历史时临时签表的更新时间，存放在历史 payload 中。 */
   updatedAt: number;
   title?: string | null;
   snapshot: BattleTmpSnapshot;
@@ -158,6 +159,7 @@ export function createBattleTmpSnapshot(
     rulesVersion: 1,
     kind: 'battle-tmp',
     variant,
+    createdAt: updatedAt,
     updatedAt,
     format: plan.format,
     orderMode: plan.orderMode,
@@ -194,6 +196,7 @@ export function parseBattleTmpSnapshot(
     || value.rulesVersion !== 1
     || value.kind !== 'battle-tmp'
     || value.variant !== expectedVariant
+    || !isSafeIntegerAtLeast(value.createdAt, 1)
     || !isSafeIntegerAtLeast(value.updatedAt, 1)
     || !['avoid-first-pair', 'single-elimination', 'double-elimination'].includes(String(value.format))
     || !['rank', 'input'].includes(String(value.orderMode))

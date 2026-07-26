@@ -15,7 +15,7 @@ import {
   updateBattleTmpResult,
 } from './battle';
 import { battleRoundGrowth, createBattleBracketLayout } from './battle-bracket-layout';
-import { orderCaimiBattleNamesByFixedRank } from './random-lineup';
+import { orderCaimiBattleNamesByFixedRank } from './random-grouping';
 
 const names = (count: number) => Array.from({ length: count }, (_, index) => `选手${index + 1}`);
 

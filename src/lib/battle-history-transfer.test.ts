@@ -49,7 +49,7 @@ describe('对战历史同步文件', () => {
     const snapshot = createSnapshot();
 
     expect(() => parseBattleHistoryTransfer({
-      kind: 'lineup-history',
+      kind: 'grouping-history',
       version: 1,
       snapshot,
     }, 'standard')).toThrow('不是对战历史 JSON');

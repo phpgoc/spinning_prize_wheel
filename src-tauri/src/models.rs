@@ -83,7 +83,7 @@ pub(super) enum RankedUserDropTargetInput {
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 /// 分组名单名称与排名库的解析结果。
-pub(super) struct ResolvedLineupName {
+pub(super) struct ResolvedGroupingName {
     pub(super) input_name: String,
     pub(super) known: bool,
     pub(super) user_id: Option<i64>,
@@ -94,7 +94,7 @@ pub(super) struct ResolvedLineupName {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// 可导入、导出的分组历史快照。
-pub(super) struct SavedLineup {
+pub(super) struct SavedGrouping {
     pub(super) id: String,
     pub(super) created_at: u64,
     #[serde(default)]
@@ -123,6 +123,7 @@ pub(super) struct BattleTmpSnapshot {
     pub(super) rules_version: u8,
     pub(super) kind: String,
     pub(super) variant: String,
+    pub(super) created_at: u64,
     pub(super) updated_at: u64,
     pub(super) format: String,
     pub(super) order_mode: String,

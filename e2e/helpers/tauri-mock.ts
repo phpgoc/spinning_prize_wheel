@@ -9,7 +9,7 @@ export interface MockRankedUserInput {
 
 export interface MockTauriInitialData {
   drawHistories?: unknown[];
-  lineupHistories?: unknown[];
+  groupingHistories?: unknown[];
   battleHistories?: unknown[];
   battleTmpState?: unknown;
   commandFailures?: Record<string, string[]>;
@@ -58,7 +58,7 @@ export async function installTauriMock(
       rankedUsers,
       commonSelections: [] as unknown[],
       drawHistories: structuredClone(data.drawHistories ?? []) as unknown[],
-      lineupHistories: structuredClone(data.lineupHistories ?? []) as unknown[],
+      groupingHistories: structuredClone(data.groupingHistories ?? []) as unknown[],
       battleHistories: structuredClone(data.battleHistories ?? []) as unknown[],
       battleTmpState: persistedBattleState ?? (data.battleTmpState ? structuredClone(data.battleTmpState) as any : null as any),
       commandFailures: structuredClone(data.commandFailures ?? {}) as Record<string, string[]>,
@@ -269,7 +269,7 @@ export async function installTauriMock(
         return null;
       }
       if (cmd === 'list_ranked_users') return clone(sortedUsers());
-      if (cmd === 'resolve_lineup_names') {
+      if (cmd === 'resolve_grouping_names') {
         return clone((args.names as string[]).map((inputName) => {
           const key = inputName.toLocaleLowerCase('zh-CN');
           const user = state.rankedUsers.find((candidate) => (
@@ -363,24 +363,24 @@ export async function installTauriMock(
         }
         return clone(sortedUsers());
       }
-      if (cmd === 'list_lineup_histories') return clone(state.lineupHistories);
-      if (cmd === 'save_lineup_history') {
-        state.lineupHistories = [clone(args.lineup), ...state.lineupHistories.filter((item: any) => item.id !== args.lineup.id)];
+      if (cmd === 'list_grouping_histories') return clone(state.groupingHistories);
+      if (cmd === 'save_grouping_history') {
+        state.groupingHistories = [clone(args.grouping), ...state.groupingHistories.filter((item: any) => item.id !== args.grouping.id)];
         return null;
       }
-      if (cmd === 'import_lineup_history') {
-        state.lineupHistories = [
+      if (cmd === 'import_grouping_history') {
+        state.groupingHistories = [
           clone(args.history),
-          ...state.lineupHistories.filter((item: any) => item.id !== args.history.id),
+          ...state.groupingHistories.filter((item: any) => item.id !== args.history.id),
         ];
-        return clone(state.lineupHistories);
+        return clone(state.groupingHistories);
       }
-      if (cmd === 'delete_lineup_history') {
-        state.lineupHistories = state.lineupHistories.filter((item: any) => item.id !== args.id);
+      if (cmd === 'delete_grouping_history') {
+        state.groupingHistories = state.groupingHistories.filter((item: any) => item.id !== args.id);
         return null;
       }
-      if (cmd === 'clear_lineup_histories') {
-        state.lineupHistories = [];
+      if (cmd === 'clear_grouping_histories') {
+        state.groupingHistories = [];
         return null;
       }
       if (cmd === 'list_battle_histories') return clone(state.battleHistories);

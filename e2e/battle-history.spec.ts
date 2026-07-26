@@ -34,7 +34,7 @@ async function enterScore(match: Locator, up: number, down: number) {
 }
 
 async function importBattleHistory(page: Page, name: string, value: unknown) {
-  await page.locator('.lineup-file-input').setInputFiles({
+  await page.locator('.grouping-file-input').setInputFiles({
     name,
     mimeType: name.endsWith('.json') ? 'application/json' : 'text/plain',
     buffer: Buffer.from(JSON.stringify(value)),
@@ -106,7 +106,7 @@ test('对战历史 JSON 导出导入可完整复现并能从查看切回当前',
   await page.keyboard.press('Enter');
   await expect(historyCard).toHaveCount(0);
 
-  await page.locator('.lineup-file-input').setInputFiles({
+  await page.locator('.grouping-file-input').setInputFiles({
     name: '对战历史.json',
     mimeType: 'application/json',
     buffer: Buffer.from(exportedJson),
@@ -218,7 +218,7 @@ test('对战历史导入拒绝伪造封装并兼容旧版裸快照', async ({ pa
 
   await assertImportRejected('错误格式.json', {
     ...validTransfer,
-    kind: 'lineup-history',
+    kind: 'grouping-history',
   }, '不是对战历史 JSON');
   await assertImportRejected('未来版本.json', {
     ...validTransfer,

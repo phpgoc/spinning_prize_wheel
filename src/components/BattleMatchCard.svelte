@@ -174,7 +174,7 @@
     gap: 4px 7px;
     min-height: calc(14px * var(--font-scale, 1) * var(--battle-round-growth, 1));
     margin-bottom: calc(6px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1));
-    color: color-mix(in srgb, var(--battle-text-color, var(--lineup-dim-on-dark)) 38%, transparent);
+    color: color-mix(in srgb, var(--battle-text-color, var(--grouping-dim-on-dark)) 38%, transparent);
     font-family: var(--font-mono);
     font-size: calc(9px * var(--font-scale, 1) * var(--battle-round-growth, 1));
   }
@@ -217,7 +217,7 @@
 
   .battle-match > div + div { margin-top: calc(5px * var(--battle-layout-scale, 1) * var(--battle-round-growth, 1)); }
   .battle-side.seed-fixed { --battle-side-border: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  .battle-side.waiting { color: var(--lineup-dim-on-dark); }
+  .battle-side.waiting { color: var(--grouping-dim-on-dark); }
   .battle-side.winner {
     --battle-side-border: var(--accent);
     background: color-mix(in srgb, var(--accent) 18%, transparent);

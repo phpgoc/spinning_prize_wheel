@@ -62,7 +62,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
            user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE
          );
          CREATE INDEX IF NOT EXISTS alias_user_id ON alias(user_id);
-         CREATE TABLE IF NOT EXISTS lineup_history (
+         CREATE TABLE IF NOT EXISTS grouping_history (
            id TEXT PRIMARY KEY NOT NULL,
            created_at INTEGER NOT NULL,
            input_json TEXT NOT NULL,
@@ -72,7 +72,6 @@ const MIGRATIONS: &[(i64, &str)] = &[
          CREATE TABLE IF NOT EXISTS battle_history (
            id TEXT NOT NULL,
            created_at INTEGER NOT NULL,
-           updated_at INTEGER NOT NULL,
            variant TEXT NOT NULL,
            payload_json TEXT NOT NULL,
            PRIMARY KEY (id, variant)
@@ -87,6 +86,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
            id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
            variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
            rules_version INTEGER NOT NULL CHECK (rules_version = 1),
+           created_at INTEGER NOT NULL CHECK (created_at > 0),
            updated_at INTEGER NOT NULL CHECK (updated_at > 0),
            history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1)),
            format TEXT NOT NULL CHECK (format IN ('avoid-first-pair', 'single-elimination', 'double-elimination')),
@@ -123,8 +123,8 @@ const MIGRATIONS: &[(i64, &str)] = &[
          );
          CREATE INDEX IF NOT EXISTS draw_history_created_at
          ON draw_history(variant, created_at DESC);
-         CREATE INDEX IF NOT EXISTS lineup_history_created_at
-         ON lineup_history(variant, created_at DESC);",
+         CREATE INDEX IF NOT EXISTS grouping_history_created_at
+         ON grouping_history(variant, created_at DESC);",
     ),
 ];
 
@@ -581,12 +581,12 @@ fn validate_database_schema(connection: &Connection) -> Result<(), String> {
         ("user", &["id", "name", "rank"][..]),
         ("alias", &["id", "name", "user_id"][..]),
         (
-            "lineup_history",
+            "grouping_history",
             &["id", "created_at", "input_json", "result_json", "variant"][..],
         ),
         (
             "battle_history",
-            &["id", "created_at", "updated_at", "variant", "payload_json"][..],
+            &["id", "created_at", "variant", "payload_json"][..],
         ),
         ("app_kv", &["key", "value_json"][..]),
     ] {
@@ -1331,10 +1331,10 @@ fn delete_ranked_user(
     })
 }
 
-fn resolve_lineup_names_in(
+fn resolve_grouping_names_in(
     connection: &Connection,
     names: Vec<String>,
-) -> Result<Vec<ResolvedLineupName>, String> {
+) -> Result<Vec<ResolvedGroupingName>, String> {
     let mut statement = connection
         .prepare(
             "SELECT user.id, user.name, user.rank
@@ -1357,14 +1357,14 @@ fn resolve_lineup_names_in(
                 .optional()
                 .map_err(|error| format!("无法解析名称“{input_name}”：{error}"))?;
             Ok(match matched {
-                Some((user_id, canonical_name, rank)) => ResolvedLineupName {
+                Some((user_id, canonical_name, rank)) => ResolvedGroupingName {
                     input_name,
                     known: true,
                     user_id: Some(user_id),
                     canonical_name: Some(canonical_name),
                     rank: Some(rank),
                 },
-                None => ResolvedLineupName {
+                None => ResolvedGroupingName {
                     input_name,
                     known: false,
                     user_id: None,
@@ -1377,70 +1377,70 @@ fn resolve_lineup_names_in(
 }
 
 #[tauri::command]
-fn resolve_lineup_names(
+fn resolve_grouping_names(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     names: Vec<String>,
-) -> Result<Vec<ResolvedLineupName>, String> {
+) -> Result<Vec<ResolvedGroupingName>, String> {
     with_app_database(&app, &database, |connection| {
-        resolve_lineup_names_in(connection, names)
+        resolve_grouping_names_in(connection, names)
     })
 }
 
-fn save_lineup_history_in(
+fn save_grouping_history_in(
     connection: &Connection,
     variant: &str,
-    lineup: &SavedLineup,
+    grouping: &SavedGrouping,
 ) -> Result<(), String> {
     let variant = validate_variant(variant)?;
-    if !valid_selection_id(&lineup.id) {
+    if !valid_selection_id(&grouping.id) {
         return Err("分组记录编号不合法".to_string());
     }
-    if lineup.input.is_null() || lineup.result.is_null() {
+    if grouping.input.is_null() || grouping.result.is_null() {
         return Err("分组记录内容不合法".to_string());
     }
     let created_at =
-        i64::try_from(lineup.created_at).map_err(|_| "分组记录时间不合法".to_string())?;
-    let input_json = serde_json::to_string(&lineup.input)
+        i64::try_from(grouping.created_at).map_err(|_| "分组记录时间不合法".to_string())?;
+    let input_json = serde_json::to_string(&grouping.input)
         .map_err(|error| format!("无法序列化分组输入：{error}"))?;
-    let result_json = serde_json::to_string(&lineup.result)
+    let result_json = serde_json::to_string(&grouping.result)
         .map_err(|error| format!("无法序列化分组结果：{error}"))?;
     connection
         .execute(
-            "INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
+            "INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
                created_at = excluded.created_at,
                input_json = excluded.input_json,
                result_json = excluded.result_json,
                variant = excluded.variant",
-            params![lineup.id, created_at, input_json, result_json, variant],
+            params![grouping.id, created_at, input_json, result_json, variant],
         )
         .map_err(|error| format!("无法保存分组记录：{error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn save_lineup_history(
+fn save_grouping_history(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-    lineup: SavedLineup,
+    grouping: SavedGrouping,
 ) -> Result<(), String> {
     with_app_database(&app, &database, |connection| {
-        save_lineup_history_in(connection, &variant, &lineup)
+        save_grouping_history_in(connection, &variant, &grouping)
     })
 }
 
-fn list_lineup_histories_in(
+fn list_grouping_histories_in(
     connection: &Connection,
     variant: &str,
-) -> Result<Vec<SavedLineup>, String> {
+) -> Result<Vec<SavedGrouping>, String> {
     let _variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
             "SELECT id, created_at, input_json, result_json
-             FROM lineup_history ORDER BY created_at DESC",
+             FROM grouping_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取分组历史：{error}"))?;
     let rows = statement
@@ -1458,7 +1458,7 @@ fn list_lineup_histories_in(
     for row in rows {
         let (id, created_at, input_json, result_json) =
             row.map_err(|error| format!("无法解析分组历史：{error}"))?;
-        histories.push(SavedLineup {
+        histories.push(SavedGrouping {
             id,
             created_at: u64::try_from(created_at).map_err(|_| "分组记录时间不合法".to_string())?,
             title: None,
@@ -1472,39 +1472,39 @@ fn list_lineup_histories_in(
 }
 
 #[tauri::command]
-fn list_lineup_histories(
+fn list_grouping_histories(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-) -> Result<Vec<SavedLineup>, String> {
+) -> Result<Vec<SavedGrouping>, String> {
     with_app_database(&app, &database, |connection| {
-        list_lineup_histories_in(connection, &variant).map_err(database_file_error)
+        list_grouping_histories_in(connection, &variant).map_err(database_file_error)
     })
 }
 
-fn import_lineup_history_in(
+fn import_grouping_history_in(
     connection: &Connection,
     variant: &str,
-    history: &SavedLineup,
-) -> Result<Vec<SavedLineup>, String> {
-    save_lineup_history_in(connection, variant, history)?;
-    list_lineup_histories_in(connection, variant)
+    history: &SavedGrouping,
+) -> Result<Vec<SavedGrouping>, String> {
+    save_grouping_history_in(connection, variant, history)?;
+    list_grouping_histories_in(connection, variant)
 }
 
 #[tauri::command]
-fn import_lineup_history(
+fn import_grouping_history(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
-    history: SavedLineup,
-) -> Result<Vec<SavedLineup>, String> {
+    history: SavedGrouping,
+) -> Result<Vec<SavedGrouping>, String> {
     with_app_database(&app, &database, |connection| {
-        import_lineup_history_in(connection, &variant, &history)
+        import_grouping_history_in(connection, &variant, &history)
     })
 }
 
 #[tauri::command]
-fn delete_lineup_history(
+fn delete_grouping_history(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
@@ -1516,28 +1516,28 @@ fn delete_lineup_history(
     }
     with_app_database(&app, &database, |connection| {
         connection
-            .execute("DELETE FROM lineup_history WHERE id = ?1", params![id])
+            .execute("DELETE FROM grouping_history WHERE id = ?1", params![id])
             .map_err(|error| format!("无法删除分组记录：{error}"))?;
         Ok(())
     })
 }
 
-fn clear_lineup_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
+fn clear_grouping_histories_in(connection: &Connection, variant: &str) -> Result<(), String> {
     let _variant = validate_variant(variant)?;
     connection
-        .execute("DELETE FROM lineup_history", [])
+        .execute("DELETE FROM grouping_history", [])
         .map_err(|error| format!("无法清空分组历史：{error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn clear_lineup_histories(
+fn clear_grouping_histories(
     app: AppHandle,
     database: State<'_, DatabaseState>,
     variant: String,
 ) -> Result<(), String> {
     with_app_database(&app, &database, |connection| {
-        clear_lineup_histories_in(connection, &variant)
+        clear_grouping_histories_in(connection, &variant)
     })
 }
 
@@ -1573,24 +1573,19 @@ fn save_battle_history_in(
         i64::try_from(history.created_at).map_err(|_| "对战记录时间不合法".to_string())?;
     let payload_json = serde_json::to_string(&serde_json::json!({
         "title": history.title,
+        "createdAt": history.snapshot.created_at,
+        "updatedAt": history.updated_at,
         "snapshot": history.snapshot,
     }))
     .map_err(|error| format!("无法序列化对战记录：{error}"))?;
     transaction
         .execute(
-            "INSERT INTO battle_history (id, created_at, updated_at, variant, payload_json)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO battle_history (id, created_at, variant, payload_json)
+             VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(id, variant) DO UPDATE SET
                created_at = excluded.created_at,
-               updated_at = excluded.updated_at,
                payload_json = excluded.payload_json",
-            params![
-                history.id,
-                created_at,
-                db_u64(history.updated_at, "对战历史更新时间")?,
-                variant,
-                payload_json,
-            ],
+            params![history.id, created_at, variant, payload_json],
         )
         .map_err(|error| format!("无法保存对战记录：{error}"))?;
     if mark_current {
@@ -1626,7 +1621,7 @@ fn list_battle_histories_in(
     let _variant = validate_variant(variant)?;
     let mut statement = connection
         .prepare(
-            "SELECT id, created_at, updated_at, payload_json
+            "SELECT id, created_at, payload_json
              FROM battle_history ORDER BY created_at DESC",
         )
         .map_err(|error| format!("无法读取对战历史：{error}"))?;
@@ -1635,15 +1630,14 @@ fn list_battle_histories_in(
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, String>(2)?,
             ))
         })
         .map_err(|error| format!("无法查询对战历史：{error}"))?;
 
     let mut histories = Vec::new();
     for row in rows {
-        let (id, created_at, updated_at, payload_json) =
+        let (id, created_at, payload_json) =
             row.map_err(|error| format!("无法解析对战历史：{error}"))?;
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|error| format!("无法解析对战签表：{error}"))?;
@@ -1654,10 +1648,16 @@ fn list_battle_histories_in(
                 .unwrap_or_else(|| payload.clone()),
         )
         .map_err(|error| format!("无法解析对战签表：{error}"))?;
-        let updated_at =
-            u64::try_from(updated_at).map_err(|_| "对战历史更新时间不合法".to_string())?;
+        let updated_at = payload
+            .get("updatedAt")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "对战历史更新时间不合法".to_string())?;
         if updated_at != snapshot.updated_at {
             return Err("对战历史更新时间不一致".to_string());
+        }
+        if payload.get("createdAt").and_then(serde_json::Value::as_u64) != Some(snapshot.created_at)
+        {
+            return Err("对战历史创建时间不一致".to_string());
         }
         let title = payload
             .get("title")
@@ -1746,12 +1746,12 @@ pub fn run() {
             list_ranked_users,
             move_ranked_user,
             delete_ranked_user,
-            resolve_lineup_names,
-            save_lineup_history,
-            list_lineup_histories,
-            import_lineup_history,
-            delete_lineup_history,
-            clear_lineup_histories,
+            resolve_grouping_names,
+            save_grouping_history,
+            list_grouping_histories,
+            import_grouping_history,
+            delete_grouping_history,
+            clear_grouping_histories,
             save_battle_history,
             list_battle_histories,
             delete_battle_history,
@@ -1800,7 +1800,7 @@ mod tests {
                 "draw_history",
                 "user",
                 "alias",
-                "lineup_history",
+                "grouping_history",
                 "battle_history",
                 "app_kv",
                 "battle_tmp",
@@ -1934,7 +1934,7 @@ mod tests {
         );
 
         let resolved =
-            resolve_lineup_names_in(&connection, vec!["小星".to_string(), "陌生人".to_string()])
+            resolve_grouping_names_in(&connection, vec!["小星".to_string(), "陌生人".to_string()])
                 .expect("解析别名");
         assert!(resolved[0].known);
         assert_eq!(resolved[0].canonical_name.as_deref(), Some("星河"));
@@ -2202,85 +2202,86 @@ mod tests {
     }
 
     #[test]
-    fn lineup_history_round_trips_json() {
+    fn grouping_history_round_trips_json() {
         let connection = test_database();
-        let lineup = SavedLineup {
-            id: "lineup-1".to_string(),
+        let grouping = SavedGrouping {
+            id: "grouping-1".to_string(),
             created_at: 1_700_000_000_000,
             title: None,
             input: serde_json::json!({"names": ["甲", "乙"], "groupCount": 2}),
             result: serde_json::json!({"tiers": [["甲", "乙"]]}),
         };
 
-        let caimi_lineup = SavedLineup {
-            id: "lineup-caimi".to_string(),
-            created_at: lineup.created_at + 1,
+        let caimi_grouping = SavedGrouping {
+            id: "grouping-caimi".to_string(),
+            created_at: grouping.created_at + 1,
             title: None,
-            input: lineup.input.clone(),
-            result: lineup.result.clone(),
+            input: grouping.input.clone(),
+            result: grouping.result.clone(),
         };
-        save_lineup_history_in(&connection, "standard", &lineup).expect("保存普通版排阵历史");
-        save_lineup_history_in(&connection, "caimi", &caimi_lineup).expect("保存猜蜜版排阵历史");
+        save_grouping_history_in(&connection, "standard", &grouping).expect("保存普通版排阵历史");
+        save_grouping_history_in(&connection, "caimi", &caimi_grouping)
+            .expect("保存猜蜜版排阵历史");
         let histories =
-            list_lineup_histories_in(&connection, "standard").expect("读取普通版排阵历史");
+            list_grouping_histories_in(&connection, "standard").expect("读取普通版排阵历史");
         let caimi_histories =
-            list_lineup_histories_in(&connection, "caimi").expect("读取猜蜜版排阵历史");
+            list_grouping_histories_in(&connection, "caimi").expect("读取猜蜜版排阵历史");
 
         assert_eq!(histories.len(), 2);
         let standard_history = histories
             .iter()
-            .find(|history| history.id == lineup.id)
+            .find(|history| history.id == grouping.id)
             .expect("找到普通版历史");
-        assert_eq!(standard_history.input, lineup.input);
-        assert_eq!(standard_history.result, lineup.result);
+        assert_eq!(standard_history.input, grouping.input);
+        assert_eq!(standard_history.result, grouping.result);
         assert_eq!(caimi_histories.len(), 2);
         assert!(caimi_histories
             .iter()
-            .any(|history| history.id == caimi_lineup.id));
+            .any(|history| history.id == caimi_grouping.id));
 
-        clear_lineup_histories_in(&connection, "standard").expect("清空普通版分组历史");
-        assert!(list_lineup_histories_in(&connection, "standard")
+        clear_grouping_histories_in(&connection, "standard").expect("清空普通版分组历史");
+        assert!(list_grouping_histories_in(&connection, "standard")
             .expect("读取已清空的共享分组历史")
             .is_empty());
-        assert!(list_lineup_histories_in(&connection, "caimi")
+        assert!(list_grouping_histories_in(&connection, "caimi")
             .expect("确认猜蜜版也使用共享分组历史")
             .is_empty());
     }
 
     #[test]
-    fn importing_one_lineup_history_preserves_existing_records() {
+    fn importing_one_grouping_history_preserves_existing_records() {
         let connection = test_database();
-        let old = SavedLineup {
-            id: "lineup-old".to_string(),
+        let old = SavedGrouping {
+            id: "grouping-old".to_string(),
             created_at: 1_700_000_000_000,
             title: None,
             input: serde_json::json!({"names": ["旧"]}),
             result: serde_json::json!({"tiers": [["旧"]]}),
         };
-        save_lineup_history_in(&connection, "standard", &old).expect("保存旧分组历史");
+        save_grouping_history_in(&connection, "standard", &old).expect("保存旧分组历史");
 
-        let valid = SavedLineup {
-            id: "lineup-new".to_string(),
+        let valid = SavedGrouping {
+            id: "grouping-new".to_string(),
             created_at: old.created_at + 1,
             title: None,
             input: serde_json::json!({"names": ["新"]}),
             result: serde_json::json!({"tiers": [["新"]]}),
         };
-        import_lineup_history_in(&connection, "standard", &valid).expect("导入单条分组历史");
-        let histories = list_lineup_histories_in(&connection, "standard").expect("读取分组历史");
+        import_grouping_history_in(&connection, "standard", &valid).expect("导入单条分组历史");
+        let histories = list_grouping_histories_in(&connection, "standard").expect("读取分组历史");
         assert_eq!(histories.len(), 2);
 
-        let invalid = SavedLineup {
+        let invalid = SavedGrouping {
             id: "非法 编号".to_string(),
             created_at: old.created_at + 2,
             title: None,
             input: valid.input.clone(),
             result: valid.result.clone(),
         };
-        import_lineup_history_in(&connection, "standard", &invalid)
+        import_grouping_history_in(&connection, "standard", &invalid)
             .expect_err("非法单条历史不能导入");
 
-        let histories = list_lineup_histories_in(&connection, "standard").expect("读取分组历史");
+        let histories = list_grouping_histories_in(&connection, "standard").expect("读取分组历史");
         assert_eq!(histories.len(), 2);
         assert!(histories.iter().any(|history| history.id == old.id));
         assert!(histories.iter().any(|history| history.id == valid.id));
@@ -2330,6 +2331,7 @@ mod tests {
             rules_version: 1,
             kind: "battle-tmp".to_string(),
             variant: variant.to_string(),
+            created_at: 1_700_000_000_000,
             updated_at: 1_700_000_000_000,
             format: "single-elimination".to_string(),
             order_mode: "input".to_string(),
@@ -2363,6 +2365,7 @@ mod tests {
             rules_version: 1,
             kind: "battle-tmp".to_string(),
             variant: "standard".to_string(),
+            created_at: 1_700_000_000_000,
             updated_at: 1_700_000_000_000,
             format: "double-elimination".to_string(),
             order_mode: "input".to_string(),
@@ -2828,17 +2831,17 @@ mod tests {
     }
 
     #[test]
-    fn corrupted_lineup_history_reports_database_recovery_steps() {
+    fn corrupted_grouping_history_reports_database_recovery_steps() {
         let connection = test_database();
         connection
             .execute(
-                "INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
+                "INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
                  VALUES ('broken', 1, '{broken json', '{}', 'standard')",
                 [],
             )
             .expect("写入损坏测试数据");
 
-        let error = list_lineup_histories_in(&connection, "standard")
+        let error = list_grouping_histories_in(&connection, "standard")
             .expect_err("损坏的分组历史不能被静默忽略");
         let message = database_file_error(error);
         assert!(message.contains("数据库文件错误"));

@@ -168,14 +168,14 @@ test('三套界面风格即时切换并跨页面持久化', async ({ page }) => 
 
   await page.goto('/grouping');
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
-  await expect.poll(() => page.locator('.lineup-page').evaluate((element) => (
+  await expect.poll(() => page.locator('.grouping-page').evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--color-app-workspace').trim()
   ))).toBe('#192630');
-  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+  await expect(page.locator('.grouping-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
 
   await page.goto('/caimi/grouping');
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
-  await expect(page.locator('.lineup-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
+  await expect(page.locator('.grouping-config')).toHaveCSS('background-color', 'rgb(232, 238, 242)');
 
   await page.goto('/caimi/wheel');
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'mist');
@@ -189,8 +189,8 @@ test('三套界面风格即时切换并跨页面持久化', async ({ page }) => 
   await expect(page.locator('.app-shell')).toHaveAttribute('data-ui-theme', 'sand');
 
   await page.goto('/grouping');
-  await page.locator('.lineup-config textarea').fill('主题确认项');
-  await page.locator('.lineup-config textarea').press('Alt+Enter');
+  await page.locator('.grouping-config textarea').fill('主题确认项');
+  await page.locator('.grouping-config textarea').press('Alt+Enter');
   await page.getByRole('button', { name: '清空', exact: true }).click();
   await expect(page.locator('.ui-confirm-dialog')).toHaveCSS('background-color', 'rgb(251, 247, 241)');
   await expect(page.locator('.ui-confirm-dialog')).toHaveCSS('color', 'rgb(51, 40, 32)');
@@ -401,9 +401,9 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}').fontScale)).toBe(1.1);
 
   await page.goto('/grouping');
-  const lineupPanel = page.locator('.lineup-config');
-  await expect(lineupPanel).toBeVisible();
-  const initialPanelMetrics = await lineupPanel.evaluate((element) => ({
+  const groupingPanel = page.locator('.grouping-config');
+  await expect(groupingPanel).toBeVisible();
+  const initialPanelMetrics = await groupingPanel.evaluate((element) => ({
     padding: Number.parseFloat(getComputedStyle(element).paddingTop),
     radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
   }));
@@ -411,7 +411,7 @@ test('Ctrl 加方向键在两个页面调整字号并立即保存', async ({ pag
   await expect.poll(() => shell.evaluate((element) => (
     getComputedStyle(element).getPropertyValue('--font-scale').trim()
   ))).toBe('1.2');
-  const enlargedPanelMetrics = await lineupPanel.evaluate((element) => ({
+  const enlargedPanelMetrics = await groupingPanel.evaluate((element) => ({
     padding: Number.parseFloat(getComputedStyle(element).paddingTop),
     radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
   }));

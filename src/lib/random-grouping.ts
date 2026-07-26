@@ -1,7 +1,7 @@
-import type { ResolvedLineupName, SavedLineup } from './types';
+import type { ResolvedGroupingName, SavedGrouping } from './types';
 import { isCaimiFavoredName } from './caimi';
 
-export interface LineupEntry {
+export interface GroupingEntry {
   name: string;
   sourceIndex: number;
   tierIndex: number;
@@ -16,19 +16,19 @@ export interface CaimiSwap {
   toGroupIndex: number;
 }
 
-export interface RandomLineup {
+export interface RandomGrouping {
   groupNames: string[];
-  tiers: Array<Array<LineupEntry | null>>;
+  tiers: Array<Array<GroupingEntry | null>>;
   peopleCount: number;
   groupCount: number;
 }
 
-export interface LineupOrderAvailability {
+export interface GroupingOrderAvailability {
   input: boolean;
   rank: boolean;
 }
 
-export interface LineupRankingSnapshotEntry {
+export interface GroupingRankingSnapshotEntry {
   inputName: string;
   name: string;
   rank: number;
@@ -100,13 +100,13 @@ export function rankedUserKeyboardDropPoints(
 }
 
 /** 红名只锁定数据库排名排阵；输入顺序仍可使用。 */
-export function lineupOrderAvailability(
+export function groupingOrderAvailability(
   nameCount: number,
   desktopRuntime: boolean,
   resolvingNames: boolean,
   unresolvedCount: number,
   allowedUnresolvedCount = 0,
-): LineupOrderAvailability {
+): GroupingOrderAvailability {
   const input = Math.max(0, Math.floor(Number(nameCount) || 0)) >= 2
     && (!desktopRuntime || !resolvingNames);
   const unresolved = Math.max(0, Math.floor(Number(unresolvedCount) || 0));
@@ -118,7 +118,7 @@ export function lineupOrderAvailability(
 }
 
 /** 最后一档按实际人数计算；整除时最后一档人数等于组数。 */
-export function lineupLastTierSize(peopleCount: number, groupCount: number): number {
+export function groupingLastTierSize(peopleCount: number, groupCount: number): number {
   const rawTotal = Number(peopleCount);
   const rawGroupCount = Number(groupCount);
   const total = Number.isFinite(rawTotal) ? Math.max(0, Math.floor(rawTotal)) : 0;
@@ -126,9 +126,9 @@ export function lineupLastTierSize(peopleCount: number, groupCount: number): num
   return total === 0 ? 0 : ((total - 1) % groups) + 1;
 }
 
-function hasLineupRank(
-  person: ResolvedLineupName | null | undefined,
-): person is ResolvedLineupName & { canonicalName: string; rank: number } {
+function hasGroupingRank(
+  person: ResolvedGroupingName | null | undefined,
+): person is ResolvedGroupingName & { canonicalName: string; rank: number } {
   return Boolean(
     person?.known
     && person.canonicalName !== null
@@ -138,46 +138,46 @@ function hasLineupRank(
 }
 
 /** 预览项只有和当前输入逐项对应、且具备本名与排名时，才不显示红名。 */
-export function isResolvedLineupName(
+export function isResolvedGroupingName(
   inputName: string,
-  person: ResolvedLineupName | null | undefined,
-): person is ResolvedLineupName {
+  person: ResolvedGroupingName | null | undefined,
+): person is ResolvedGroupingName {
   return person?.inputName === inputName
     && person.known
     && person.canonicalName !== null
     && person.rank !== null;
 }
 
-export function unresolvedLineupNameCount(
+export function unresolvedGroupingNameCount(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
 ): number {
   return names.reduce(
-    (count, name, index) => count + (isResolvedLineupName(name, people[index]) ? 0 : 1),
+    (count, name, index) => count + (isResolvedGroupingName(name, people[index]) ? 0 : 1),
     0,
   );
 }
 
 /** 分组按排名时，未录入、未关联和数据库中的未排名项都计入最后一档。 */
-export function unrankedLineupNameCount(
+export function unrankedGroupingNameCount(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
 ): number {
   return names.reduce((count, name, index) => {
     const person = people[index];
-    return count + (person?.inputName === name && hasLineupRank(person) ? 0 : 1);
+    return count + (person?.inputName === name && hasGroupingRank(person) ? 0 : 1);
   }, 0);
 }
 
 /** 返回每一档在预览名单中的起始下标，用于强制换行和绘制分隔线。 */
-export function lineupPreviewTierStarts(peopleCount: number, groupCount: number): number[] {
+export function groupingPreviewTierStarts(peopleCount: number, groupCount: number): number[] {
   const total = Math.max(0, Math.floor(Number(peopleCount) || 0));
   const size = Math.max(2, Math.floor(Number(groupCount) || 2));
   return Array.from({ length: Math.ceil(total / size) }, (_, index) => index * size);
 }
 
 /** 在预览名单的指定位置插入一个姓名。 */
-export function insertLineupPreviewName(
+export function insertGroupingPreviewName(
   names: readonly string[],
   index: number,
   value: string,
@@ -197,7 +197,7 @@ export function insertLineupPreviewName(
 }
 
 /** 文本导入按首次出现保留名称，大小写不同也视为重复。 */
-export function uniqueLineupNames(names: readonly string[]): string[] {
+export function uniqueGroupingNames(names: readonly string[]): string[] {
   const seen = new Set<string>();
   return names.filter((name) => {
     const key = name.trim().toLocaleLowerCase('zh-CN');
@@ -208,9 +208,9 @@ export function uniqueLineupNames(names: readonly string[]): string[] {
 }
 
 /** 同一排名项即使使用多个别名也只保留首次出现的预览名称。 */
-export function uniqueResolvedLineupPeople(
-  people: readonly ResolvedLineupName[],
-): ResolvedLineupName[] {
+export function uniqueResolvedGroupingPeople(
+  people: readonly ResolvedGroupingName[],
+): ResolvedGroupingName[] {
   const seenUsers = new Set<number>();
   const seenUnknownNames = new Set<string>();
   return people.filter((person) => {
@@ -255,12 +255,12 @@ export function groupName(index: number): string {
   return name;
 }
 
-export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]): string[] {
+export function orderResolvedGroupingNames(people: readonly ResolvedGroupingName[]): string[] {
   if (people.some((person) => !person.known || person.canonicalName === null || person.rank === null)) {
     throw new Error('排名名单中存在未识别选项');
   }
 
-  return uniqueResolvedLineupPeople(people)
+  return uniqueResolvedGroupingPeople(people)
     .sort((left, right) => (
       left.rank! - right.rank!
       || left.canonicalName!.localeCompare(right.canonicalName!, 'zh-CN')
@@ -269,35 +269,35 @@ export function orderResolvedLineupNames(people: readonly ResolvedLineupName[]):
 }
 
 /** 分组时已排名项在前面按排名排序，未排名项按原输入顺序进入最后一档。 */
-export function orderPartiallyResolvedLineupNames(
-  people: readonly ResolvedLineupName[],
+export function orderPartiallyResolvedGroupingNames(
+  people: readonly ResolvedGroupingName[],
 ): string[] {
-  const uniquePeople = uniqueResolvedLineupPeople(people);
+  const uniquePeople = uniqueResolvedGroupingPeople(people);
   const ranked = uniquePeople
-    .filter(hasLineupRank)
+    .filter(hasGroupingRank)
     .sort((left, right) => (
       left.rank - right.rank
       || left.canonicalName.localeCompare(right.canonicalName, 'zh-CN')
     ));
-  const unranked = uniquePeople.filter((person) => !hasLineupRank(person));
+  const unranked = uniquePeople.filter((person) => !hasGroupingRank(person));
   return [...ranked, ...unranked].map((person) => person.inputName);
 }
 
 /** 对战固定前 N 时只要求 N 个参赛者已有有效排名，其余参赛者继续保留名单顺序。 */
-export function rankedBattleLineupNameCount(
+export function rankedBattleGroupingNameCount(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
 ): number {
-  return rankedBattleLineupEntries(names, people).length;
+  return rankedBattleGroupingEntries(names, people).length;
 }
 
 export function orderBattleNamesByFixedRank(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
   fixedCount: number,
 ): string[] {
   const required = Math.max(0, Math.floor(Number(fixedCount) || 0));
-  const rankedEntries = rankedBattleLineupEntries(names, people);
+  const rankedEntries = rankedBattleGroupingEntries(names, people);
   if (rankedEntries.length < required) {
     throw new Error(`固定前 ${required} 名，现 ${rankedEntries.length} 个排名`);
   }
@@ -321,14 +321,14 @@ export function orderBattleNamesByFixedRank(
  */
 export function orderCaimiBattleNamesByFixedRank(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
   fixedCount: number,
 ): string[] {
   const required = Math.max(0, Math.floor(Number(fixedCount) || 0));
   const ordered = orderBattleNamesByFixedRank(names, people, required);
   if (required === 0) return ordered;
 
-  const rankedEntries = rankedBattleLineupEntries(names, people)
+  const rankedEntries = rankedBattleGroupingEntries(names, people)
     .sort((left, right) => (
       left.person.rank! - right.person.rank!
       || left.person.canonicalName!.localeCompare(right.person.canonicalName!, 'zh-CN')
@@ -340,9 +340,9 @@ export function orderCaimiBattleNamesByFixedRank(
   if (favoredNames.length === 0) return ordered;
 
   const fixedNames = ordered.slice(0, required);
-  const fixedKeys = new Set(fixedNames.map(normalizedLineupName));
+  const fixedKeys = new Set(fixedNames.map(normalizedGroupingName));
   for (const favoredName of favoredNames) {
-    const favoredKey = normalizedLineupName(favoredName);
+    const favoredKey = normalizedGroupingName(favoredName);
     if (fixedKeys.has(favoredKey)) continue;
     let replaceIndex = -1;
     for (let index = fixedNames.length - 1; index >= 0; index -= 1) {
@@ -352,7 +352,7 @@ export function orderCaimiBattleNamesByFixedRank(
       }
     }
     if (replaceIndex < 0) break;
-    fixedKeys.delete(normalizedLineupName(fixedNames[replaceIndex]));
+    fixedKeys.delete(normalizedGroupingName(fixedNames[replaceIndex]));
     fixedNames[replaceIndex] = favoredName;
     fixedKeys.add(favoredKey);
   }
@@ -360,21 +360,21 @@ export function orderCaimiBattleNamesByFixedRank(
   const regularFixed = fixedNames.filter((name) => !isCaimiFavoredName(name));
   const favoredFixed = fixedNames.filter(isCaimiFavoredName);
   const privilegedFixed = [...regularFixed, ...favoredFixed];
-  const privilegedKeys = new Set(privilegedFixed.map(normalizedLineupName));
+  const privilegedKeys = new Set(privilegedFixed.map(normalizedGroupingName));
   return [
     ...privilegedFixed,
-    ...ordered.filter((name) => !privilegedKeys.has(normalizedLineupName(name))),
+    ...ordered.filter((name) => !privilegedKeys.has(normalizedGroupingName(name))),
   ];
 }
 
-function normalizedLineupName(name: string): string {
+function normalizedGroupingName(name: string): string {
   return name.toLocaleLowerCase('zh-CN');
 }
 
-function rankedBattleLineupEntries(
+function rankedBattleGroupingEntries(
   names: readonly string[],
-  people: readonly ResolvedLineupName[],
-): Array<{ index: number; name: string; person: ResolvedLineupName }> {
+  people: readonly ResolvedGroupingName[],
+): Array<{ index: number; name: string; person: ResolvedGroupingName }> {
   const peopleByInputName = new Map(
     people.map((person) => [person.inputName.toLocaleLowerCase('zh-CN'), person] as const),
   );
@@ -395,32 +395,32 @@ function rankedBattleLineupEntries(
 }
 
 /** 保存排名分组当时使用的本名和排名，只作为历史 JSON 元数据。 */
-export function createLineupRankingSnapshot(
+export function createGroupingRankingSnapshot(
   orderedNames: readonly string[],
-  people: readonly ResolvedLineupName[],
+  people: readonly ResolvedGroupingName[],
   skipUnranked = false,
-): LineupRankingSnapshotEntry[] {
+): GroupingRankingSnapshotEntry[] {
   const byInputName = new Map(
     people.map((person) => [person.inputName.toLocaleLowerCase('zh-CN'), person] as const),
   );
-  const snapshot: LineupRankingSnapshotEntry[] = [];
+  const snapshot: GroupingRankingSnapshotEntry[] = [];
   orderedNames.forEach((inputName) => {
     const person = byInputName.get(inputName.toLocaleLowerCase('zh-CN'));
     if (!person?.known || person.canonicalName === null || person.rank === null) {
       if (skipUnranked) return;
       throw new Error(`无法记录“${inputName}”的排名快照`);
     }
-    if (skipUnranked && !hasLineupRank(person)) return;
+    if (skipUnranked && !hasGroupingRank(person)) return;
     snapshot.push({ inputName, name: person.canonicalName, rank: person.rank });
   });
   return snapshot;
 }
 
-export function filterLineupHistories(
-  histories: readonly SavedLineup[],
+export function filterGroupingHistories(
+  histories: readonly SavedGrouping[],
   startDate = '',
   endDate = '',
-): SavedLineup[] {
+): SavedGrouping[] {
   const startAt = dateBoundary(startDate) ?? Number.NEGATIVE_INFINITY;
   const endAt = dateBoundary(endDate) ?? Number.POSITIVE_INFINITY;
   return [...histories]
@@ -459,7 +459,7 @@ function shuffledGroupIndexes(groupCount: number, random: () => number): number[
 }
 
 /** 全随机分组先打乱名单，完全不使用排名或输入顺序。 */
-export function shuffleLineupNames(
+export function shuffleGroupingNames(
   names: readonly string[],
   random: () => number = secureRandom,
 ): string[] {
@@ -475,11 +475,11 @@ export function shuffleLineupNames(
 /**
  * 按输入顺序每 groupCount 项划为一档，再把同档成员随机放入不同组。
  */
-export function createRandomLineup(
+export function createRandomGrouping(
   names: readonly string[],
   groupCount: number,
   random: () => number = secureRandom,
-): RandomLineup {
+): RandomGrouping {
   const normalizedNames = names.map((name) => name.trim()).filter(Boolean);
   const normalizedGroupCount = Math.floor(Number(groupCount));
 
@@ -493,12 +493,12 @@ export function createRandomLineup(
     throw new Error('人数不能少于组数');
   }
 
-  const tiers: Array<Array<LineupEntry | null>> = [];
+  const tiers: Array<Array<GroupingEntry | null>> = [];
   for (let tierIndex = 0; tierIndex * normalizedGroupCount < normalizedNames.length; tierIndex += 1) {
     const start = tierIndex * normalizedGroupCount;
     const tierNames = normalizedNames.slice(start, start + normalizedGroupCount);
     const groupIndexes = shuffledGroupIndexes(normalizedGroupCount, random);
-    const row: Array<LineupEntry | null> = Array.from({ length: normalizedGroupCount }, () => null);
+    const row: Array<GroupingEntry | null> = Array.from({ length: normalizedGroupCount }, () => null);
 
     tierNames.forEach((name, offset) => {
       const groupIndex = groupIndexes[offset];
@@ -521,11 +521,11 @@ export function createRandomLineup(
 }
 
 function caimiGroupScores(
-  lineup: RandomLineup,
+  grouping: RandomGrouping,
   rankScores: readonly number[],
 ): number[] {
-  const scores = Array.from({ length: lineup.groupCount }, () => 0);
-  for (const tier of lineup.tiers) {
+  const scores = Array.from({ length: grouping.groupCount }, () => 0);
+  for (const tier of grouping.tiers) {
     for (const entry of tier) {
       if (!entry) continue;
       const score = Number(rankScores[entry.sourceIndex]);
@@ -536,12 +536,12 @@ function caimiGroupScores(
 }
 
 /** 猜蜜版把含“猜”“本”或 cai 的项换进当前总 rank 最高的最弱组，并保留正义调度标记。 */
-export function applyCaimiLineupSwap(
-  lineup: RandomLineup,
+export function applyCaimiGroupingSwap(
+  grouping: RandomGrouping,
   rankScores: readonly number[] = [],
-): RandomLineup {
-  const tiers = lineup.tiers.map((tier) => tier.map((entry) => (entry ? { ...entry } : null)));
-  const result: RandomLineup = { ...lineup, tiers };
+): RandomGrouping {
+  const tiers = grouping.tiers.map((tier) => tier.map((entry) => (entry ? { ...entry } : null)));
+  const result: RandomGrouping = { ...grouping, tiers };
   const favoredSourceIndexes = new Set(
     tiers.flat().flatMap((entry) => (
       entry && isCaimiFavoredName(entry.name) ? [entry.sourceIndex] : []
@@ -550,7 +550,7 @@ export function applyCaimiLineupSwap(
   const usedPartners = new Set<number>();
 
   for (const sourceIndex of favoredSourceIndexes) {
-    let favored: LineupEntry | null = null;
+    let favored: GroupingEntry | null = null;
     for (const tier of tiers) {
       favored = tier.find((entry) => entry?.sourceIndex === sourceIndex) ?? null;
       if (favored) break;

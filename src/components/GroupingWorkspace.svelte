@@ -4,7 +4,7 @@
   import type { AppVariant } from '../lib/app-variant';
   import BattleBracketEditor from './BattleBracketEditor.svelte';
   import BattleBracketViewer from './BattleBracketViewer.svelte';
-  import LineupPreviewRow from './LineupPreviewRow.svelte';
+  import GroupingPreviewRow from './GroupingPreviewRow.svelte';
   import UiButton from './ui/UiButton.svelte';
   import UiCheckbox from './ui/UiCheckbox.svelte';
   import UiColorPalette from './ui/UiColorPalette.svelte';
@@ -34,9 +34,9 @@
   } from '../lib/battle-history-transfer';
   import { downloadExcel, downloadExcelBytes, downloadFormattedJson } from '../lib/file-export';
   import {
-    createLineupHistoryTransfer,
-    parseLineupHistoryTransfer,
-  } from '../lib/lineup-history-transfer';
+    createGroupingHistoryTransfer,
+    parseGroupingHistoryTransfer,
+  } from '../lib/grouping-history-transfer';
   import { parseOptionText } from '../lib/parse-options';
   import {
     createRankingTransfer,
@@ -44,34 +44,34 @@
     type RankedUserTransfer,
   } from '../lib/ranking-transfer';
   import {
-    applyCaimiLineupSwap,
-    createLineupRankingSnapshot,
-    createRandomLineup,
-    insertLineupPreviewName,
-    isResolvedLineupName,
-    lineupLastTierSize,
-    lineupOrderAvailability,
-    lineupPreviewTierStarts,
+    applyCaimiGroupingSwap,
+    createGroupingRankingSnapshot,
+    createRandomGrouping,
+    insertGroupingPreviewName,
+    isResolvedGroupingName,
+    groupingLastTierSize,
+    groupingOrderAvailability,
+    groupingPreviewTierStarts,
     nextRankedUserActionIndex,
     orderBattleNamesByFixedRank,
     orderCaimiBattleNamesByFixedRank,
-    orderPartiallyResolvedLineupNames,
-    rankedBattleLineupNameCount,
+    orderPartiallyResolvedGroupingNames,
+    rankedBattleGroupingNameCount,
     rankedUserIdAtShortcut,
     rankedUserDropTargetForCard,
     rankedUserKeyboardDropPoints,
-    filterLineupHistories,
-    shuffleLineupNames,
-    unrankedLineupNameCount,
-    unresolvedLineupNameCount,
-    uniqueLineupNames,
-    uniqueResolvedLineupPeople,
+    filterGroupingHistories,
+    shuffleGroupingNames,
+    unrankedGroupingNameCount,
+    unresolvedGroupingNameCount,
+    uniqueGroupingNames,
+    uniqueResolvedGroupingPeople,
     updateRankShortcutInput,
     type RankedUserDropTarget,
-    type RandomLineup,
-  } from '../lib/random-lineup';
+    type RandomGrouping,
+  } from '../lib/random-grouping';
   import { isMultilineTextConfirm, isSingleLineTextConfirm, isTextEditCancel } from '../lib/text-shortcuts';
-  import type { RankedUser, ResolvedLineupName, SavedLineup } from '../lib/types';
+  import type { RankedUser, ResolvedGroupingName, SavedGrouping } from '../lib/types';
   import { invoke, isTauriRuntime } from '../lib/runtime';
   import { importWebDatabase } from '../lib/web-database';
 
@@ -82,15 +82,15 @@
 
   const nativeRuntime = isTauriRuntime();
 
-  type LineupOrderMode = 'rank' | 'input' | 'random';
+  type GroupingOrderMode = 'rank' | 'input' | 'random';
   type BattleColorName = 'background' | 'text' | 'participant' | 'match';
   type BattleColors = Record<BattleColorName, string>;
   type BattleColorPresetName = 'classic' | 'ocean' | 'sunset';
   type BattleColorPresetSelection = BattleColorPresetName | 'custom';
   type BattleScoreGroup = 'single' | 'winner' | 'loser';
   type DesktopPanel = 'ranking' | 'history';
-  type LineupHistoryDeletion =
-    | { kind: 'one'; history: SavedLineup }
+  type GroupingHistoryDeletion =
+    | { kind: 'one'; history: SavedGrouping }
     | { kind: 'all'; confirmation: 1 | 2 };
   type BattleLoadTarget =
     | { kind: 'current' }
@@ -123,13 +123,13 @@
   let confirmedSourceText = '';
   let sourceTextarea: HTMLTextAreaElement | null = null;
   let groupCount = 4;
-  let result: RandomLineup | null = null;
+  let result: RandomGrouping | null = null;
   let resultSignature = '';
   let error = '';
   let mounted = false;
   let desktopInitialized = false;
   let resolvingNames = false;
-  let resolvedNames: ResolvedLineupName[] = [];
+  let resolvedNames: ResolvedGroupingName[] = [];
   let resolutionRequest = 0;
   let rankedUsers: RankedUser[] = [];
   let rankingLoading = false;
@@ -171,18 +171,18 @@
   let rankSelectionShortcutInput = '';
   let rankSelectionShortcutAt = 0;
   let historyStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
-  let resultOrderMode: LineupOrderMode = 'input';
-  let lineupTitle = '';
+  let resultOrderMode: GroupingOrderMode = 'input';
+  let groupingTitle = '';
   let resultSourceNames: string[] = [];
   let resultOrderedNames: string[] = [];
-  let resultHistory: SavedLineup | null = null;
-  let lineupHistories: SavedLineup[] = [];
+  let resultHistory: SavedGrouping | null = null;
+  let groupingHistories: SavedGrouping[] = [];
   let historyLoading = false;
   let historyError = '';
   let historyImportStatus = '';
   let historyStart = '';
   let historyEnd = '';
-  let pendingLineupHistoryDeletion: LineupHistoryDeletion | null = null;
+  let pendingGroupingHistoryDeletion: GroupingHistoryDeletion | null = null;
   let historyDeleting = false;
   let historyExporting: { id: string; format: 'excel' | 'json' } | null = null;
   let insertIndex: number | null = null;
@@ -198,19 +198,19 @@
   let importErrorDialog: { title: string; detail: string } | null = null;
   let pendingDatabaseImport: { name: string; bytes: Uint8Array } | null = null;
   let databaseImporting = false;
-  let clearLineupConfirmation: 0 | 1 | 2 | 3 = 0;
+  let clearGroupingConfirmation: 0 | 1 | 2 | 3 = 0;
   let clearingBattleTmp = false;
-  let lineupResultElement: HTMLElement | null = null;
+  let groupingResultElement: HTMLElement | null = null;
   const battleScoreFocusValues = new WeakMap<HTMLInputElement, string>();
   let lastConfirmedBattleScore: { matchId: string; side: 'up' | 'down' } | null = null;
   let pendingBattleScoreGroup: BattleScoreGroup | null = null;
   let slowRevealEnabled = true;
-  let revealedLineupCells = new Set<string>();
-  let allLineupCellsRevealed = false;
+  let revealedGroupingCells = new Set<string>();
+  let allGroupingCellsRevealed = false;
   let revealedBattleSlots = new Set<string>();
   let allBattleSlotsRevealed = false;
   let battleRevealFresh = false;
-  let hiddenLineupCellKeys = new Set<string>();
+  let hiddenGroupingCellKeys = new Set<string>();
   let battleFormat: BattleFormat = 'avoid-first-pair';
   let battleOrderMode: BattleOrderMode = 'input';
   let battleFixedSeedCount = 0;
@@ -242,11 +242,11 @@
   let battleColorSnapshotAvailable = false;
   let battleExporting: 'excel' | 'json' | null = null;
   let clearedBattlePreviewSignature: string | null = null;
-  const LINEUP_HISTORY_DISPLAY_LIMIT = 5;
+  const GROUPING_HISTORY_DISPLAY_LIMIT = 5;
   const BATTLE_HISTORY_DISPLAY_LIMIT = 8;
 
   $: battlePage = purpose === 'battle';
-  $: names = uniqueLineupNames(parseOptionText(confirmedSourceText));
+  $: names = uniqueGroupingNames(parseOptionText(confirmedSourceText));
   $: sourceTextDirty = sourceText !== confirmedSourceText;
   $: namesSignature = names.join('\u0000');
   $: desktopRankSignature = businessRuntime
@@ -256,13 +256,13 @@
   $: resultOutdated = result !== null && resultSignature !== inputSignature;
   $: tierPreview = names.length > 0 ? Math.ceil(names.length / Math.max(2, Number(groupCount) || 2)) : 0;
   $: unresolvedPreviewCount = businessRuntime
-    ? unresolvedLineupNameCount(names, resolvedNames)
+    ? unresolvedGroupingNameCount(names, resolvedNames)
     : 0;
   $: previewRows = names.map((name, index) => ({
     name,
     resolved: resolvedNames[index]?.inputName === name ? resolvedNames[index] : null,
   }));
-  $: previewTierStarts = new Set(lineupPreviewTierStarts(names.length, Number(groupCount)));
+  $: previewTierStarts = new Set(groupingPreviewTierStarts(names.length, Number(groupCount)));
   $: rankedPeople = rankedUsers.filter((user) => user.rank < 10_000);
   $: unrankedPeople = rankedUsers.filter((user) => user.rank >= 10_000);
   $: rankMoveSourceId = draggingUserId ?? keyboardMovingUserId;
@@ -276,9 +276,9 @@
     keyboardDropPointIndex;
     keyboardRankLabel = keyboardRankDropLabel();
   }
-  $: filteredLineupHistories = filterLineupHistories(lineupHistories, historyStart, historyEnd);
-  $: visibleHistories = filteredLineupHistories
-    .slice(0, LINEUP_HISTORY_DISPLAY_LIMIT)
+  $: filteredGroupingHistories = filterGroupingHistories(groupingHistories, historyStart, historyEnd);
+  $: visibleHistories = filteredGroupingHistories
+    .slice(0, GROUPING_HISTORY_DISPLAY_LIMIT)
     .reverse();
   $: filteredBattleHistories = battleHistories
     .filter((history) => {
@@ -291,18 +291,18 @@
   $: visibleBattleHistories = filteredBattleHistories
     .slice(0, BATTLE_HISTORY_DISPLAY_LIMIT)
     .reverse();
-  $: hiddenLineupCellKeys = (() => {
-    if (!result || !slowRevealEnabled || allLineupCellsRevealed) {
+  $: hiddenGroupingCellKeys = (() => {
+    if (!result || !slowRevealEnabled || allGroupingCellsRevealed) {
       return new Set<string>();
     }
     return new Set(result.tiers.flatMap((tier, tierIndex) => (
       tierIndex === 0
         ? []
-        : tier.map((_, groupIndex) => lineupCellKey(tierIndex, groupIndex))
-          .filter((key) => !revealedLineupCells.has(key))
+        : tier.map((_, groupIndex) => groupingCellKey(tierIndex, groupIndex))
+          .filter((key) => !revealedGroupingCells.has(key))
     )));
   })();
-  $: hiddenLineupCellCount = hiddenLineupCellKeys.size;
+  $: hiddenGroupingCellCount = hiddenGroupingCellKeys.size;
   $: hiddenBattleSlotKeys = (() => {
     if (!battleTmpSnapshot || !slowRevealEnabled || !battleRevealFresh || allBattleSlotsRevealed) return new Set<string>();
     const snapshot = battleTmpSnapshot;
@@ -323,17 +323,17 @@
   })();
   $: hiddenBattleSlotCount = hiddenBattleSlotKeys.size;
   $: groupingUnrankedCount = businessRuntime
-    ? unrankedLineupNameCount(names, resolvedNames)
+    ? unrankedGroupingNameCount(names, resolvedNames)
     : 0;
-  $: groupingUnresolvedCapacity = lineupLastTierSize(names.length, Number(groupCount));
+  $: groupingUnresolvedCapacity = groupingLastTierSize(names.length, Number(groupCount));
   $: groupingUnresolvedOverflow = Math.max(0, groupingUnrankedCount - groupingUnresolvedCapacity);
-  $: orderAvailability = lineupOrderAvailability(
+  $: orderAvailability = groupingOrderAvailability(
     names.length,
     businessRuntime,
     resolvingNames,
     unresolvedPreviewCount,
   );
-  $: groupingOrderAvailability = lineupOrderAvailability(
+  $: groupingOrderAvailabilityState = groupingOrderAvailability(
     names.length,
     businessRuntime,
     resolvingNames,
@@ -342,13 +342,13 @@
   );
   $: canGenerateByInput = !sourceTextDirty && orderAvailability.input;
   $: canGenerateByRandom = !sourceTextDirty && names.length >= 2;
-  $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailability.rank;
+  $: canGenerateGroupingByRank = !sourceTextDirty && groupingOrderAvailabilityState.rank;
   $: battleFixedOptions = battleFixedSeedOptions(names.length);
   $: if (battleFixedSeedCount !== 0 && !battleFixedOptions.includes(battleFixedSeedCount)) {
     battleFixedSeedCount = 0;
   }
   $: battleConfiguredFixedCount = battleFixedOptions.length > 0 ? battleFixedSeedCount : 0;
-  $: battleRankedNameCount = rankedBattleLineupNameCount(names, resolvedNames);
+  $: battleRankedNameCount = rankedBattleGroupingNameCount(names, resolvedNames);
   $: battleRankCountReady = businessRuntime
     && names.length >= 4
     && battleRankedNameCount >= battleConfiguredFixedCount;
@@ -396,7 +396,7 @@
       && battleOrderMode === 'rank'
       && battleRankReady
       && battleConfiguredFixedCount > 0
-      ? rankScoresForLineup(battleOrderedPreviewNames, resolvedNames)
+      ? rankScoresForGrouping(battleOrderedPreviewNames, resolvedNames)
       : undefined,
   );
   $: if (mounted && businessRuntime && !desktopInitialized) {
@@ -539,7 +539,7 @@
       }
       battleFullscreen = fullscreen;
       await tick();
-      lineupResultElement?.focus({ preventScroll: true });
+      groupingResultElement?.focus({ preventScroll: true });
     } catch (reason) {
       error = messageFrom(reason, fullscreen ? '无法进入窗口全屏' : '无法退出窗口全屏');
     } finally {
@@ -557,7 +557,7 @@
     await loadBattleHistories();
     await Promise.all([
       loadRankedUsers(),
-      battlePage ? loadBattleTmpState() : loadLineupHistories(),
+      battlePage ? loadBattleTmpState() : loadGroupingHistories(),
     ]);
     await tick();
     await resolveNames();
@@ -573,9 +573,9 @@
     const request = ++resolutionRequest;
     resolvingNames = true;
     try {
-      const resolved = await invoke<ResolvedLineupName[]>('resolve_lineup_names', { names });
+      const resolved = await invoke<ResolvedGroupingName[]>('resolve_grouping_names', { names });
       if (request === resolutionRequest) {
-        const uniquePeople = uniqueResolvedLineupPeople(resolved);
+        const uniquePeople = uniqueResolvedGroupingPeople(resolved);
         resolvedNames = uniquePeople;
         if (uniquePeople.length !== names.length) {
           const keepDraft = sourceTextDirty;
@@ -597,7 +597,7 @@
   }
 
   async function commitSourceNames(nextNames: readonly string[]) {
-    const text = uniqueLineupNames(nextNames).join('\n');
+    const text = uniqueGroupingNames(nextNames).join('\n');
     confirmedSourceText = text;
     sourceText = text;
     historyStatus = 'idle';
@@ -628,7 +628,7 @@
 
   function orderBattleNamesForCurrentVariant(
     currentNames: readonly string[],
-    currentPeople: readonly ResolvedLineupName[],
+    currentPeople: readonly ResolvedGroupingName[],
     fixedCount: number,
     currentVariant: AppVariant,
   ): string[] {
@@ -641,26 +641,26 @@
     if (!canGenerateGroupingByRank) return;
     cancelPreviewInsertion();
     try {
-      await commitSourceNames(orderPartiallyResolvedLineupNames(resolvedNames));
+      await commitSourceNames(orderPartiallyResolvedGroupingNames(resolvedNames));
     } catch (reason) {
       error = messageFrom(reason, '排名预览失败');
     }
   }
 
-  function orderedNamesForGrouping(orderMode: LineupOrderMode): string[] {
+  function orderedNamesForGrouping(orderMode: GroupingOrderMode): string[] {
     if (orderMode === 'random') {
-      return shuffleLineupNames(names);
+      return shuffleGroupingNames(names);
     }
     if (!businessRuntime) return names;
     if (orderMode === 'input') {
       return resolvedNames.map((person) => person.inputName);
     }
-    return orderPartiallyResolvedLineupNames(resolvedNames);
+    return orderPartiallyResolvedGroupingNames(resolvedNames);
   }
 
-  function rankScoresForLineup(
+  function rankScoresForGrouping(
     orderedNames: readonly string[],
-    currentPeople: readonly ResolvedLineupName[] = resolvedNames,
+    currentPeople: readonly ResolvedGroupingName[] = resolvedNames,
   ): number[] {
     if (!businessRuntime) return orderedNames.map((_, index) => index + 1);
     const rankByName = new Map(
@@ -675,13 +675,13 @@
     ));
   }
 
-  async function generate(orderMode: LineupOrderMode = businessRuntime ? 'rank' : 'input') {
+  async function generate(orderMode: GroupingOrderMode = businessRuntime ? 'rank' : 'input') {
     error = '';
     historyStatus = 'idle';
     try {
       if (businessRuntime) {
-        const unresolvedCount = unrankedLineupNameCount(names, resolvedNames);
-        const allowedUnresolvedCount = lineupLastTierSize(names.length, Number(groupCount));
+        const unresolvedCount = unrankedGroupingNameCount(names, resolvedNames);
+        const allowedUnresolvedCount = groupingLastTierSize(names.length, Number(groupCount));
         if (
           orderMode === 'rank'
           && unresolvedCount > allowedUnresolvedCount
@@ -691,11 +691,11 @@
       }
       const orderedNames = orderedNamesForGrouping(orderMode);
       const rankingSnapshot = orderMode === 'rank'
-        ? createLineupRankingSnapshot(orderedNames, resolvedNames, true)
+        ? createGroupingRankingSnapshot(orderedNames, resolvedNames, true)
         : [];
-      const generated = createRandomLineup(orderedNames, Number(groupCount));
+      const generated = createRandomGrouping(orderedNames, Number(groupCount));
       result = variant === 'caimi' && orderMode !== 'random'
-        ? applyCaimiLineupSwap(generated, rankScoresForLineup(orderedNames))
+        ? applyCaimiGroupingSwap(generated, rankScoresForGrouping(orderedNames))
         : generated;
       resultOrderMode = orderMode;
       resultSourceNames = [...names];
@@ -705,10 +705,10 @@
       resultHistory = {
         id: typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
-          : `lineup-${createdAt}-${Math.random().toString(16).slice(2)}`,
+          : `grouping-${createdAt}-${Math.random().toString(16).slice(2)}`,
         createdAt,
         input: {
-          title: lineupTitle.trim() || null,
+          title: groupingTitle.trim() || null,
           sourceNames: resultSourceNames,
           orderedNames,
           groupCount,
@@ -723,7 +723,7 @@
         ? resolvedNames.map((person) => `${person.inputName}:${person.userId}:${person.rank}`).join('|')
         : 'web';
       resultSignature = `${groupCount}|${names.join('\u0000')}|${resolvedSignature}`;
-      resetLineupReveal();
+      resetGroupingReveal();
     } catch (reason) {
       result = null;
       resultHistory = null;
@@ -771,7 +771,7 @@
           caimiRankScores: variant === 'caimi'
             && battleOrderMode === 'rank'
             && battleConfiguredFixedCount > 0
-            ? rankScoresForLineup(orderedNames)
+            ? rankScoresForGrouping(orderedNames)
             : undefined,
         });
       lastConfirmedBattleScore = null;
@@ -793,7 +793,7 @@
         battleSyncStatus = 'saved';
       }
       await tick();
-      focusLineupResult();
+      focusGroupingResult();
     } catch (reason) {
       battleTmpSnapshot = null;
       battleHistorySaved = false;
@@ -801,12 +801,12 @@
     }
   }
 
-  async function saveHistory(lineup: SavedLineup) {
+  async function saveHistory(grouping: SavedGrouping) {
     historyStatus = 'saving';
     try {
-      await invoke('save_lineup_history', { lineup, variant });
+      await invoke('save_grouping_history', { grouping, variant });
       historyStatus = 'saved';
-      await loadLineupHistories();
+      await loadGroupingHistories();
     } catch (reason) {
       historyStatus = 'error';
       error = messageFrom(reason, '分组已生成，但无法保存历史');
@@ -825,48 +825,48 @@
     await saveHistory(resultHistory);
   }
 
-  async function exportLineupJson() {
+  async function exportGroupingJson() {
     if (!resultHistory) return;
     error = '';
     try {
-      await downloadFormattedJson('分组结果', createLineupHistoryTransfer(resultHistory, variant));
+      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(resultHistory, variant));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 JSON');
     }
   }
 
-  async function exportLineupExcel() {
+  async function exportGroupingExcel() {
     if (!result) return;
     error = '';
     try {
-      await downloadExcel(lineupTitle.trim() || '分组结果', lineupExcelRows(result));
+      await downloadExcel(groupingTitle.trim() || '分组结果', groupingExcelRows(result));
     } catch (reason) {
       error = messageFrom(reason, '无法导出分组结果 Excel');
     }
   }
 
-  function lineupExcelRows(lineup: RandomLineup): (string | number)[][] {
+  function groupingExcelRows(grouping: RandomGrouping): (string | number)[][] {
     return [
-      ['档位', ...lineup.groupNames.map((group) => `${group}组`)],
-      ...lineup.tiers.map((tier, tierIndex) => [
+      ['档位', ...grouping.groupNames.map((group) => `${group}组`)],
+      ...grouping.tiers.map((tier, tierIndex) => [
         `t${tierIndex + 1}`,
         ...tier.map((entry) => entry?.name ?? ''),
       ]),
     ];
   }
 
-  function historyResult(history: SavedLineup): RandomLineup | null {
-    const candidate = history.result as Partial<RandomLineup>;
+  function historyResult(history: SavedGrouping): RandomGrouping | null {
+    const candidate = history.result as Partial<RandomGrouping>;
     if (!Array.isArray(candidate.groupNames) || !Array.isArray(candidate.tiers)) return null;
-    return candidate as RandomLineup;
+    return candidate as RandomGrouping;
   }
 
-  async function exportLineupHistoryJson(history: SavedLineup) {
+  async function exportGroupingHistoryJson(history: SavedGrouping) {
     if (historyExporting) return;
     historyExporting = { id: history.id, format: 'json' };
     historyError = '';
     try {
-      await downloadFormattedJson('分组结果', createLineupHistoryTransfer(history, variant));
+      await downloadFormattedJson('分组结果', createGroupingHistoryTransfer(history, variant));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 JSON');
     } finally {
@@ -874,7 +874,7 @@
     }
   }
 
-  async function exportLineupHistoryExcel(history: SavedLineup) {
+  async function exportGroupingHistoryExcel(history: SavedGrouping) {
     if (historyExporting) return;
     const historicalResult = historyResult(history);
     if (!historicalResult) {
@@ -884,7 +884,7 @@
     historyExporting = { id: history.id, format: 'excel' };
     historyError = '';
     try {
-      await downloadExcel(lineupHistoryTitle(history) || '分组结果', lineupExcelRows(historicalResult));
+      await downloadExcel(groupingHistoryTitle(history) || '分组结果', groupingExcelRows(historicalResult));
     } catch (reason) {
       historyError = messageFrom(reason, '无法导出分组历史 Excel');
     } finally {
@@ -1103,7 +1103,7 @@
         }
         await tick();
         await resolveNames();
-        focusLineupResult();
+        focusGroupingResult();
       }
     } catch (reason) {
       battleSyncStatus = 'error';
@@ -1159,7 +1159,7 @@
       snapshot: structuredClone(history.snapshot),
     };
     await tick();
-    focusLineupResult();
+    focusGroupingResult();
   }
 
   async function returnToCurrentBattle() {
@@ -1169,7 +1169,7 @@
       battleTitleBeforeHistoryView = null;
     }
     await tick();
-    focusLineupResult();
+    focusGroupingResult();
   }
 
   async function loadBattleHistories() {
@@ -1188,9 +1188,10 @@
     markCurrent = false,
     titleOverride?: string | null,
   ): Promise<boolean> {
+    const savedAt = Date.now();
     const record: BattleHistory = {
-      id: `battle-${snapshot.updatedAt}-${Math.random().toString(16).slice(2)}`,
-      createdAt: snapshot.updatedAt,
+      id: `battle-${savedAt}-${Math.random().toString(16).slice(2)}`,
+      createdAt: savedAt,
       updatedAt: snapshot.updatedAt,
       title: titleOverride === undefined ? (battleTitle.trim() || null) : (titleOverride?.trim() || null),
       snapshot: structuredClone(snapshot),
@@ -1307,12 +1308,12 @@
     battleHistoryDeleteConfirmation = 0;
   }
 
-  async function loadLineupHistories() {
+  async function loadGroupingHistories() {
     if (!businessRuntime) return;
     historyLoading = true;
     historyError = '';
     try {
-      lineupHistories = await invoke<SavedLineup[]>('list_lineup_histories', { variant });
+      groupingHistories = await invoke<SavedGrouping[]>('list_grouping_histories', { variant });
     } catch (reason) {
       historyError = messageFrom(reason, '无法读取分组历史');
     } finally {
@@ -1320,21 +1321,21 @@
     }
   }
 
-  function requestDeleteLineupHistory(history: SavedLineup) {
-    pendingLineupHistoryDeletion = { kind: 'one', history };
+  function requestDeleteGroupingHistory(history: SavedGrouping) {
+    pendingGroupingHistoryDeletion = { kind: 'one', history };
   }
 
-  function requestClearLineupHistories() {
-    if (lineupHistories.length > 0) {
-      pendingLineupHistoryDeletion = { kind: 'all', confirmation: 1 };
+  function requestClearGroupingHistories() {
+    if (groupingHistories.length > 0) {
+      pendingGroupingHistoryDeletion = { kind: 'all', confirmation: 1 };
     }
   }
 
-  async function confirmLineupHistoryDeletion() {
-    const pending = pendingLineupHistoryDeletion;
+  async function confirmGroupingHistoryDeletion() {
+    const pending = pendingGroupingHistoryDeletion;
     if (!businessRuntime || !pending || historyDeleting) return;
     if (pending.kind === 'all' && pending.confirmation === 1) {
-      pendingLineupHistoryDeletion = { kind: 'all', confirmation: 2 };
+      pendingGroupingHistoryDeletion = { kind: 'all', confirmation: 2 };
       return;
     }
 
@@ -1343,16 +1344,16 @@
     historyImportStatus = '';
     try {
       if (pending.kind === 'one') {
-        await invoke('delete_lineup_history', { variant, id: pending.history.id });
-        lineupHistories = lineupHistories.filter((history) => history.id !== pending.history.id);
+        await invoke('delete_grouping_history', { variant, id: pending.history.id });
+        groupingHistories = groupingHistories.filter((history) => history.id !== pending.history.id);
       } else {
-        await invoke('clear_lineup_histories', { variant });
-        lineupHistories = [];
+        await invoke('clear_grouping_histories', { variant });
+        groupingHistories = [];
       }
-      pendingLineupHistoryDeletion = null;
+      pendingGroupingHistoryDeletion = null;
     } catch (reason) {
       historyError = messageFrom(reason, pending.kind === 'one' ? '无法删除分组历史' : '无法清空分组历史');
-      pendingLineupHistoryDeletion = null;
+      pendingGroupingHistoryDeletion = null;
     } finally {
       historyDeleting = false;
     }
@@ -1466,9 +1467,9 @@
     }
   }
 
-  function resetLineupReveal() {
-    revealedLineupCells = new Set();
-    allLineupCellsRevealed = false;
+  function resetGroupingReveal() {
+    revealedGroupingCells = new Set();
+    allGroupingCellsRevealed = false;
   }
 
   function resetBattleReveal(fresh = false) {
@@ -1479,25 +1480,25 @@
 
   function updateSlowReveal(enabled: boolean) {
     slowRevealEnabled = enabled;
-    resetLineupReveal();
+    resetGroupingReveal();
     if (!slowRevealEnabled) resetBattleReveal();
   }
 
-  function lineupCellKey(tierIndex: number, groupIndex: number): string {
+  function groupingCellKey(tierIndex: number, groupIndex: number): string {
     return `${tierIndex}:${groupIndex}`;
   }
 
-  function isLineupCellHidden(tierIndex: number, groupIndex: number): boolean {
-    return hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex));
+  function isGroupingCellHidden(tierIndex: number, groupIndex: number): boolean {
+    return hiddenGroupingCellKeys.has(groupingCellKey(tierIndex, groupIndex));
   }
 
-  function revealLineupCell(tierIndex: number, groupIndex: number) {
-    if (!isLineupCellHidden(tierIndex, groupIndex)) return;
-    revealedLineupCells = new Set(revealedLineupCells).add(lineupCellKey(tierIndex, groupIndex));
+  function revealGroupingCell(tierIndex: number, groupIndex: number) {
+    if (!isGroupingCellHidden(tierIndex, groupIndex)) return;
+    revealedGroupingCells = new Set(revealedGroupingCells).add(groupingCellKey(tierIndex, groupIndex));
   }
 
-  function revealAllLineupCells() {
-    allLineupCellsRevealed = true;
+  function revealAllGroupingCells() {
+    allGroupingCellsRevealed = true;
   }
 
   function battleSlotKey(match: BattleTmpMatch, slot: 'up' | 'down'): string {
@@ -1523,7 +1524,7 @@
   function confirmPreviewInsertion() {
     if (insertIndex === null) return;
     try {
-      const updated = insertLineupPreviewName(names, insertIndex, insertName);
+      const updated = insertGroupingPreviewName(names, insertIndex, insertName);
       cancelPreviewInsertion();
       void commitSourceNames(updated);
     } catch (reason) {
@@ -1575,23 +1576,23 @@
     void openDesktopPanel(panel);
   }
 
-  function historySummary(history: SavedLineup): string {
-    const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number; orderMode: LineupOrderMode }>;
+  function historySummary(history: SavedGrouping): string {
+    const input = history.input as Partial<{ sourceNames: unknown[]; groupCount: number; orderMode: GroupingOrderMode }>;
     const peopleCount = Array.isArray(input.sourceNames) ? input.sourceNames.length : 0;
     const mode = input.orderMode === 'input' ? '输入顺序' : input.orderMode === 'random' ? '全随机' : '排名';
     return `${peopleCount} 项 · ${Number(input.groupCount) || '—'} 组 · ${mode}`;
   }
 
-  function lineupHistoryTitle(history: SavedLineup): string | null {
+  function groupingHistoryTitle(history: SavedGrouping): string | null {
     const input = history.input as { title?: unknown };
     return typeof input.title === 'string' && input.title.trim() ? input.title.trim() : null;
   }
 
-  function openLineupHistoryImporter() {
+  function openGroupingHistoryImporter() {
     historyFileInput?.click();
   }
 
-  async function importLineupHistoryFile(event: Event) {
+  async function importGroupingHistoryFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
@@ -1605,8 +1606,8 @@
     historyError = '';
     historyImportStatus = '';
     try {
-      const history = parseLineupHistoryTransfer(await file.text());
-      lineupHistories = await invoke<SavedLineup[]>('import_lineup_history', {
+      const history = parseGroupingHistoryTransfer(await file.text());
+      groupingHistories = await invoke<SavedGrouping[]>('import_grouping_history', {
         variant,
         history,
       });
@@ -1618,7 +1619,7 @@
     }
   }
 
-  async function openLineupDatabaseFolder() {
+  async function openGroupingDatabaseFolder() {
     rankingError = '';
     try {
       await invoke('open_database_folder');
@@ -1667,7 +1668,7 @@
     }
   }
 
-  async function openLineupDownloadFolder() {
+  async function openGroupingDownloadFolder() {
     error = '';
     try {
       await invoke('open_download_folder');
@@ -1680,7 +1681,7 @@
     return message.startsWith('数据库文件错误：');
   }
 
-  async function viewHistory(history: SavedLineup) {
+  async function viewHistory(history: SavedGrouping) {
     const historicalResult = historyResult(history);
     if (!historicalResult) {
       historyError = '这条历史记录内容不完整';
@@ -1688,9 +1689,9 @@
     }
     result = historicalResult;
     resultHistory = history;
-    lineupTitle = lineupHistoryTitle(history) ?? '';
+    groupingTitle = groupingHistoryTitle(history) ?? '';
     const input = history.input as Partial<{
-      orderMode: LineupOrderMode;
+      orderMode: GroupingOrderMode;
       orderedNames: unknown[];
       sourceNames: unknown[];
     }>;
@@ -1706,9 +1707,9 @@
       : [];
     resultSignature = inputSignature;
     historyStatus = 'saved';
-    resetLineupReveal();
+    resetGroupingReveal();
     await tick();
-    focusLineupResult();
+    focusGroupingResult();
   }
 
   function formatHistoryDate(createdAt: number): string {
@@ -1718,6 +1719,18 @@
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(createdAt));
+  }
+
+  function formatDateTime(value: number): string {
+    return new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(new Date(value));
   }
 
   function historyCountLabel(filtered: number, limit: number): string {
@@ -2270,15 +2283,15 @@
     }
   }
 
-  function handleLineupKeydown(event: KeyboardEvent) {
+  function handleGroupingKeydown(event: KeyboardEvent) {
     const target = event.target;
     const battleFocusActive = battlePage
       && target instanceof Node
-      && Boolean(lineupResultElement?.contains(target));
+      && Boolean(groupingResultElement?.contains(target));
     const battleMagicFocusActive = battleFocusActive || (
       battlePage
       && lastConfirmedBattleScore !== null
-      && (target === document.body || target === lineupResultElement)
+      && (target === document.body || target === groupingResultElement)
     );
     const key = event.key.toLowerCase();
     if (
@@ -2288,7 +2301,7 @@
       && !event.metaKey
       && !event.altKey
       && !event.shiftKey
-      && (target === document.body || target === lineupResultElement)
+      && (target === document.body || target === groupingResultElement)
       && moveFromLastConfirmedBattleScore(event)
     ) return;
     if (
@@ -2298,7 +2311,7 @@
       && !event.altKey
       && !event.shiftKey
       && key === 'f'
-      && (target === lineupResultElement || target === document.body)
+      && (target === groupingResultElement || target === document.body)
     ) {
       event.preventDefault();
       void setBattleFullscreen(!battleFullscreen);
@@ -2318,7 +2331,7 @@
     }
     if (
       battlePage
-      && event.target === lineupResultElement
+      && event.target === groupingResultElement
       && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
       && !event.ctrlKey
       && !event.metaKey
@@ -2418,12 +2431,12 @@
       return;
     }
 
-    if (clearLineupConfirmation) {
+    if (clearGroupingConfirmation) {
       if (event.key === 'Escape') {
         event.preventDefault();
         // 第三次确认的取消按钮只保留设置和名单，但仍必须清空当前对战区。
-        if (battlePage && clearLineupConfirmation === 3) void cancelClearAll();
-        else clearLineupConfirmation = 0;
+        if (battlePage && clearGroupingConfirmation === 3) void cancelClearAll();
+        else clearGroupingConfirmation = 0;
       } else if (key === 'n') {
         event.preventDefault();
         void cancelClearAll();
@@ -2456,13 +2469,13 @@
       return;
     }
 
-    if (pendingLineupHistoryDeletion) {
+    if (pendingGroupingHistoryDeletion) {
       if (event.key === 'Escape' || key === 'n') {
         event.preventDefault();
-        pendingLineupHistoryDeletion = null;
+        pendingGroupingHistoryDeletion = null;
       } else if (event.key === 'Enter' || key === 'y') {
         event.preventDefault();
-        void confirmLineupHistoryDeletion();
+        void confirmGroupingHistoryDeletion();
       }
       return;
     }
@@ -2530,7 +2543,7 @@
       : null;
     if (battlePage && event.key === 'Escape' && focusedBattleMatch) {
       event.preventDefault();
-      lineupResultElement?.focus({ preventScroll: true });
+      groupingResultElement?.focus({ preventScroll: true });
       return;
     }
 
@@ -2565,7 +2578,7 @@
     if (key === 'x') {
       event.preventDefault();
       cancelKeyboardRankMove();
-      focusLineupResult();
+      focusGroupingResult();
       return;
     }
     if (key === 'w') {
@@ -2658,9 +2671,9 @@
   }
 
   function scrollBattleByKey(key: string) {
-    if (!lineupResultElement) return;
+    if (!groupingResultElement) return;
     if (key === 'v' || key === 'n') {
-      const scroller = lineupResultElement.querySelector<HTMLElement>(
+      const scroller = groupingResultElement.querySelector<HTMLElement>(
         '.double-battle-scroll, .single-battle-bracket, .battle-bracket',
       );
       scroller?.scrollBy({
@@ -2669,18 +2682,18 @@
       });
       return;
     }
-    lineupResultElement.scrollBy({
+    groupingResultElement.scrollBy({
       top: (key === 'g' ? -1 : 1) * 36,
       behavior: 'smooth',
     });
   }
 
   function focusBattleScoreGroup(group: BattleScoreGroup) {
-    if (!lineupResultElement) return;
+    if (!groupingResultElement) return;
     const selector = group === 'single'
       ? '.single-battle-bracket .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)'
       : `.double-${group}-section .battle-match:not([data-battle-status="completed"]):not([data-battle-status="skipped"]) input:not(:disabled)`;
-    const inputs = [...lineupResultElement.querySelectorAll<HTMLInputElement>(selector)];
+    const inputs = [...groupingResultElement.querySelectorAll<HTMLInputElement>(selector)];
     // 魔法键按“未填写优先、层级优先、签位顺序”找目标，不能让左侧已完成的首轮把右侧首轮空位挤掉。
     const orderedInputs = inputs
       .map((input, index) => ({
@@ -2923,14 +2936,14 @@
 
   function requestClearAll() {
     if (!battlePage) {
-      if (sourceText || confirmedSourceText) clearLineupConfirmation = 1;
+      if (sourceText || confirmedSourceText) clearGroupingConfirmation = 1;
       return;
     }
     if (battleTmpSnapshot && battleHistorySaved) {
       void clearAll(false);
       return;
     }
-    if (battleTmpSnapshot) clearLineupConfirmation = 1;
+    if (battleTmpSnapshot) clearGroupingConfirmation = 1;
   }
 
   function clearConfirmationTitle(step: 0 | 1 | 2 | 3): string {
@@ -2964,8 +2977,8 @@
 
   async function confirmClearAll() {
     if (clearingBattleTmp) return;
-    if (battlePage && clearLineupConfirmation < 3) {
-      clearLineupConfirmation = (clearLineupConfirmation + 1) as 2 | 3;
+    if (battlePage && clearGroupingConfirmation < 3) {
+      clearGroupingConfirmation = (clearGroupingConfirmation + 1) as 2 | 3;
       return;
     }
     await clearAll(true);
@@ -2973,11 +2986,11 @@
 
   async function cancelClearAll() {
     if (clearingBattleTmp) return;
-    if (battlePage && clearLineupConfirmation === 3) {
+    if (battlePage && clearGroupingConfirmation === 3) {
       await clearAll(false);
       return;
     }
-    clearLineupConfirmation = 0;
+    clearGroupingConfirmation = 0;
   }
 
   async function clearAll(clearBattleSetup = true) {
@@ -2994,7 +3007,7 @@
           clearingBattleTmp = false;
         }
       }
-      clearLineupConfirmation = 0;
+      clearGroupingConfirmation = 0;
       battleTmpSnapshot = null;
       battleTmpAvailable = false;
       battleHistorySaved = false;
@@ -3017,7 +3030,7 @@
       }
       return;
     }
-    clearLineupConfirmation = 0;
+    clearGroupingConfirmation = 0;
     sourceText = '';
     confirmedSourceText = '';
     resolutionRequest += 1;
@@ -3029,10 +3042,10 @@
     historyStatus = 'idle';
   }
 
-  function focusLineupResult() {
+  function focusGroupingResult() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    lineupResultElement?.focus({ preventScroll: true });
-    lineupResultElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    groupingResultElement?.focus({ preventScroll: true });
+    groupingResultElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   function createBattlePreviewSnapshot(
@@ -3163,17 +3176,17 @@
 </script>
 
 <svelte:window
-  on:keydown={handleLineupKeydown}
+  on:keydown={handleGroupingKeydown}
   on:pointermove={moveRankPointerDrag}
   on:pointerup={finishRankPointerDrag}
   on:pointercancel={cancelRankPointerDrag}
 />
 
-<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="lineup-page app-page-frame" id={battlePage ? 'battle' : 'lineup'} aria-keyshortcuts={battlePage ? 'A Z X W S L F G B V N' : undefined}>
+<main class:battle-page={battlePage} class:battle-fullscreen-active={battleFullscreen} class="grouping-page app-page-frame" id={battlePage ? 'battle' : 'grouping'} aria-keyshortcuts={battlePage ? 'A Z X W S L F G B V N' : undefined}>
   <!-- Web 端也启用了完整业务工作区，宽屏布局需要与 Tauri 保持一致。 -->
-  <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="lineup-workbench">
+  <div class:battle-workbench={battlePage} class:desktop={desktopRuntime || businessRuntime} class:web-layout={!desktopRuntime && businessRuntime} class="grouping-workbench">
     {#if businessRuntime}
-      <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="lineup-sidebar">
+      <aside class:battle-sidebar={battlePage} class:ranking-open={desktopPanel === 'ranking'} class:history-open={desktopPanel === 'history'} class="grouping-sidebar">
         <section class:open={desktopPanel === 'ranking'} class="desktop-accordion">
           <button type="button" class="desktop-accordion-toggle" on:click={() => toggleDesktopPanel('ranking')}>
             <span>排名</span><strong>{rankedUsers.length} 项</strong><i>{desktopPanel === 'ranking' ? '−' : '+'}</i>
@@ -3184,18 +3197,18 @@
               {#if rankingError}
                 <div class="ranking-error" role="alert">{rankingError}</div>
                 {#if isDatabaseFileError(rankingError)}
-                  <UiButton size="xs" tone="danger" on:click={openLineupDatabaseFolder}>打开文件夹</UiButton>
+                  <UiButton size="xs" tone="danger" on:click={openGroupingDatabaseFolder}>打开文件夹</UiButton>
                 {/if}
               {/if}
-              <input bind:this={rankingFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
-              <input bind:this={databaseFileInput} class="lineup-file-input" type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" on:change={readDatabaseFile} />
+              <input bind:this={rankingFileInput} class="grouping-file-input" type="file" accept=".json,application/json" on:change={readRankingFile} />
+              <input bind:this={databaseFileInput} class="grouping-file-input" type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" on:change={readDatabaseFile} />
               {#if rankingFocusActive}
                 <div class="ranking-transfer-actions">
                   <UiButton size="xs" disabled={rankedUsers.length === 0} on:click={exportRanking}>导出 JSON</UiButton>
                   {#if nativeRuntime}
-                    <UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                    <UiButton size="xs" on:click={openGroupingDownloadFolder}>打开下载</UiButton>
                   {:else}
-                    <UiButton size="xs" on:click={openLineupDatabaseFolder}>导出 SQLite</UiButton>
+                    <UiButton size="xs" on:click={openGroupingDatabaseFolder}>导出 SQLite</UiButton>
                     <UiButton size="xs" disabled={databaseImporting} on:click={openDatabaseImporter}>导入 SQLite</UiButton>
                   {/if}
                   <UiButton
@@ -3373,12 +3386,12 @@
           >
             <span>{battlePage ? '对战历史' : '分组历史'}</span><strong>{battlePage
               ? historyCountLabel(filteredBattleHistories.length, BATTLE_HISTORY_DISPLAY_LIMIT)
-              : historyCountLabel(filteredLineupHistories.length, LINEUP_HISTORY_DISPLAY_LIMIT)}</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
+              : historyCountLabel(filteredGroupingHistories.length, GROUPING_HISTORY_DISPLAY_LIMIT)}</strong><i>{desktopPanel === 'history' ? '−' : '+'}</i>
           </button>
           {#if desktopPanel === 'history'}
             {#if battlePage}
               <div class="desktop-accordion-content history-panel">
-                <input bind:this={battleHistoryFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importBattleHistoryFile} />
+                <input bind:this={battleHistoryFileInput} class="grouping-file-input" type="file" accept=".json,application/json" on:change={importBattleHistoryFile} />
                 <UiHistoryPanel
                   bind:start={battleHistoryStart}
                   bind:end={battleHistoryEnd}
@@ -3405,14 +3418,14 @@
                   <svelte:fragment slot="actions">
                     <UiButton size="xs" disabled={!battleTmpAvailable || battleLoadingTarget} on:click={() => requestBattleLoad({ kind: 'current' })}>加载当前</UiButton>
                     <UiButton size="xs" disabled={battleHistoryImporting} on:click={() => battleHistoryFileInput?.click()}>{battleHistoryImporting ? '导入中…' : '导入 JSON'}</UiButton>
-                  {#if nativeRuntime}<UiButton size="xs" on:click={openLineupDownloadFolder}>打开下载</UiButton>{/if}
+                  {#if nativeRuntime}<UiButton size="xs" on:click={openGroupingDownloadFolder}>打开下载</UiButton>{/if}
                     <UiButton size="xs" tone="danger" disabled={battleHistories.length === 0} on:click={requestClearBattleHistories}>删除全部</UiButton>
                   </svelte:fragment>
                 </UiHistoryPanel>
               </div>
             {:else}
               <div class="desktop-accordion-content history-panel">
-              <input bind:this={historyFileInput} class="lineup-file-input" type="file" accept=".json,application/json" on:change={importLineupHistoryFile} />
+              <input bind:this={historyFileInput} class="grouping-file-input" type="file" accept=".json,application/json" on:change={importGroupingHistoryFile} />
               <UiHistoryPanel
                 bind:start={historyStart}
                 bind:end={historyEnd}
@@ -3424,18 +3437,18 @@
                   {#each visibleHistories as history (history.id)}
                     <UiHistoryRow
                       eyebrow={formatHistoryDate(history.createdAt)}
-                      title={lineupHistoryTitle(history) ?? historySummary(history)}
+                      title={groupingHistoryTitle(history) ?? historySummary(history)}
                       hint="查看分组 →"
                       on:select={() => viewHistory(history)}
                     >
-                      <UiButton size="xs" data-export="lineup-history-excel" disabled={historyExporting !== null} on:click={() => void exportLineupHistoryExcel(history)}>{historyExporting?.id === history.id && historyExporting.format === 'excel' ? '导出中…' : 'Excel'}</UiButton>
-                      <UiButton size="xs" data-export="lineup-history-json" disabled={historyExporting !== null} on:click={() => void exportLineupHistoryJson(history)}>{historyExporting?.id === history.id && historyExporting.format === 'json' ? '导出中…' : 'JSON'}</UiButton>
+                      <UiButton size="xs" data-export="grouping-history-excel" disabled={historyExporting !== null} on:click={() => void exportGroupingHistoryExcel(history)}>{historyExporting?.id === history.id && historyExporting.format === 'excel' ? '导出中…' : 'Excel'}</UiButton>
+                      <UiButton size="xs" data-export="grouping-history-json" disabled={historyExporting !== null} on:click={() => void exportGroupingHistoryJson(history)}>{historyExporting?.id === history.id && historyExporting.format === 'json' ? '导出中…' : 'JSON'}</UiButton>
                       <UiButton
                         size="xs"
                         tone="danger"
                         aria-label={`删除 ${formatHistoryDate(history.createdAt)} 的分组历史`}
                         disabled={historyDeleting}
-                        on:click={() => requestDeleteLineupHistory(history)}
+                        on:click={() => requestDeleteGroupingHistory(history)}
                       >删除</UiButton>
                     </UiHistoryRow>
                   {/each}
@@ -3443,8 +3456,8 @@
                   {#if historyError}<div class="ranking-error" role="alert">{historyError}</div>{/if}
                 </svelte:fragment>
                 <svelte:fragment slot="actions">
-                  <UiButton size="xs" disabled={historyImporting} on:click={openLineupHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</UiButton>
-                  <UiButton size="xs" tone="danger" disabled={lineupHistories.length === 0 || historyDeleting} on:click={requestClearLineupHistories}>删除全部</UiButton>
+                  <UiButton size="xs" disabled={historyImporting} on:click={openGroupingHistoryImporter}>{historyImporting ? '导入中…' : '导入 JSON'}</UiButton>
+                  <UiButton size="xs" tone="danger" disabled={groupingHistories.length === 0 || historyDeleting} on:click={requestClearGroupingHistories}>删除全部</UiButton>
                 </svelte:fragment>
                 <svelte:fragment slot="status">
                   {#if historyImportStatus}<div class="history-import-status" role="status">{historyImportStatus}</div>{/if}
@@ -3457,7 +3470,7 @@
       </aside>
     {/if}
 
-    <section class="lineup-center" aria-live="polite">
+    <section class="grouping-center" aria-live="polite">
       <fieldset class="preview-panel app-surface-dark" disabled={battlePage && battleTmpSnapshot !== null}>
         <div class="result-heading">
           <div><div><h2>{battlePage ? '对战设置' : '名单预览'}</h2></div></div>
@@ -3485,14 +3498,14 @@
                   {#if insertError}<small role="alert">{insertError}</small>{/if}
                 </form>
               {/if}
-              <LineupPreviewRow
+              <GroupingPreviewRow
                 variant={battlePage ? 'battle' : 'grouping'}
                 name={row.name}
                 {index}
                 resolved={row.resolved}
                 desktopRuntime={businessRuntime}
                 {resolvingNames}
-                unknown={businessRuntime && !resolvingNames && !isResolvedLineupName(row.name, row.resolved)}
+                unknown={businessRuntime && !resolvingNames && !isResolvedGroupingName(row.name, row.resolved)}
                 insertActive={insertIndex === index}
                 {rankingSaving}
                 onRename={(name) => updatePreviewName(index, name)}
@@ -3606,7 +3619,7 @@
           </div>
         {/if}
 
-        {#if error}<div class="lineup-error" role="alert">{error}</div>{/if}
+        {#if error}<div class="grouping-error" role="alert">{error}</div>{/if}
 
         {#if businessRuntime && !resolvingNames && (battlePage ? battleOrderMode === 'rank' && !battleRankCountReady : groupingUnrankedCount > 0)}
           <div class="rank-order-lock" role="status">
@@ -3624,7 +3637,7 @@
           <UiCheckbox compact reveal class="slow-reveal-setting" bind:checked={slowRevealEnabled} on:change={() => updateSlowReveal(slowRevealEnabled)}>悬念揭晓</UiCheckbox>
         {/if}
         {#if !battlePage}
-          <div class="lineup-actions" class:desktop-actions={desktopRuntime}>
+          <div class="grouping-actions" class:desktop-actions={desktopRuntime}>
             {#if businessRuntime}
             <button type="button" class="rank-preview-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名按原序置后' : '按排名预览'} disabled={!canGenerateGroupingByRank} on:click={sortGroupingPreviewByRank}>按排名顺序预览</button>
             <button type="button" class="generate-button rank-generate-button" title={sourceTextDirty ? '先确认名单' : groupingUnresolvedOverflow > 0 ? `末档限 ${groupingUnresolvedCapacity} 个，还差 ${groupingUnresolvedOverflow} 个` : groupingUnrankedCount > 0 ? '未排名进入末档' : '按排名分档'} disabled={!canGenerateGroupingByRank} on:click={() => generate('rank')}><span>按排名顺序分组</span><i>→</i></button>
@@ -3639,10 +3652,10 @@
       </fieldset>
 
       <div
-        bind:this={lineupResultElement}
+        bind:this={groupingResultElement}
         class:battle-result={battlePage}
         class:battle-fullscreen={battleFullscreen}
-        class="lineup-result app-surface-dark"
+        class="grouping-result app-surface-dark"
         style={battlePage ? `--battle-background-color: ${battleColors.background}; --battle-text-color: ${battleColors.text}; --battle-participant-color: ${battleColors.participant}; --battle-match-color: ${battleColors.match};` : undefined}
         tabindex="-1"
         aria-keyshortcuts={battlePage ? 'F G B V N L W S' : undefined}
@@ -3693,11 +3706,17 @@
                 <UiButton size="md" data-export="battle-excel" disabled={battleExporting !== null} on:click={exportBattleTmpExcel}>{battleExporting === 'excel' ? '导出中…' : 'Excel'}</UiButton>
                 <UiButton size="md" data-export="battle-json" disabled={battleExporting !== null} on:click={exportBattleTmpJson}>{battleExporting === 'json' ? '导出中…' : 'JSON'}</UiButton>
                 {#if nativeRuntime}
-                  <UiButton size="md" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                  <UiButton size="md" on:click={openGroupingDownloadFolder}>打开下载</UiButton>
                 {/if}
               </div>
             {/if}
           </div>
+          {#if battleTmpSnapshot && !battleHistoryView}
+            <div class="battle-time-meta" aria-label="对战时间">
+              <span>创建时间：{formatDateTime(battleTmpSnapshot.createdAt)}</span>
+              <span>更新时间：{formatDateTime(battleTmpSnapshot.updatedAt)}</span>
+            </div>
+          {/if}
           {#if battleHistoryView}
             <div class="battle-history-bracket" aria-label="历史对战只读查看">
               {#key `history-${battleHistoryView.id}`}
@@ -3728,16 +3747,16 @@
           {/if}
         {:else}
         <div class="result-heading">
-          <div><div><h2>{lineupTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : resultOrderMode === 'random' ? '全随机' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
+          <div><div><h2>{groupingTitle.trim() || '分组结果'}</h2><p>{result ? `${result.peopleCount} 项 · ${result.groupCount} 组 · ${result.tiers.length} 档 · ${resultOrderMode === 'rank' ? '排名' : resultOrderMode === 'random' ? '全随机' : '输入顺序'}` : '点击上方分组后生成表格'}</p></div></div>
           {#if result}
             <div class="result-output-actions">
-              {#if hiddenLineupCellCount > 0}
-                <UiButton size="sm" tone="accent" on:click={revealAllLineupCells}>显示全部</UiButton>
+              {#if hiddenGroupingCellCount > 0}
+                <UiButton size="sm" tone="accent" on:click={revealAllGroupingCells}>显示全部</UiButton>
               {/if}
-              <UiButton size="sm" on:click={exportLineupExcel}>Excel</UiButton>
-              <UiButton size="sm" on:click={exportLineupJson}>JSON</UiButton>
+              <UiButton size="sm" on:click={exportGroupingExcel}>Excel</UiButton>
+              <UiButton size="sm" on:click={exportGroupingJson}>JSON</UiButton>
               {#if nativeRuntime}
-                <UiButton size="sm" on:click={openLineupDownloadFolder}>打开下载</UiButton>
+                <UiButton size="sm" on:click={openGroupingDownloadFolder}>打开下载</UiButton>
               {/if}
               {#if businessRuntime}
                 <div class="history-save-control">
@@ -3759,17 +3778,17 @@
         </div>
         {#if resultOutdated}<div class="outdated-notice">名单、排名或组数已变化，请重新分组。</div>{/if}
         {#if result}
-          <div class:outdated={resultOutdated} class="lineup-table-wrap">
-            <table style={`--lineup-group-count: ${result.groupCount}`}>
+          <div class:outdated={resultOutdated} class="grouping-table-wrap">
+            <table style={`--grouping-group-count: ${result.groupCount}`}>
               <thead><tr><th scope="col">档位</th>{#each result.groupNames as group}<th scope="col"><span>{group}</span>组</th>{/each}</tr></thead>
               <tbody>
                 {#each result.tiers as tier, tierIndex}
                   <tr>
                     <th scope="row"><span>t{tierIndex + 1}</span><small>第 {tierIndex + 1} 档</small></th>
                     {#each tier as entry, groupIndex}
-                      <td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'} class:slow-hidden={hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex))}>
-                        {#if hiddenLineupCellKeys.has(lineupCellKey(tierIndex, groupIndex))}
-                          <button type="button" class="slow-reveal-cell" aria-label={`显示 t${tierIndex + 1} ${result.groupNames[groupIndex]} 组`} on:click={() => revealLineupCell(tierIndex, groupIndex)}>·</button>
+                      <td class:empty={!entry} class:caimi-swapped={Boolean(entry?.caimiSwap)} class:caimi-favored={entry?.caimiSwap?.kind === 'favored'} class:slow-hidden={hiddenGroupingCellKeys.has(groupingCellKey(tierIndex, groupIndex))}>
+                        {#if hiddenGroupingCellKeys.has(groupingCellKey(tierIndex, groupIndex))}
+                          <button type="button" class="slow-reveal-cell" aria-label={`显示 t${tierIndex + 1} ${result.groupNames[groupIndex]} 组`} on:click={() => revealGroupingCell(tierIndex, groupIndex)}>·</button>
                         {:else if entry}
                           {#if entry.caimiSwap}<i class="caimi-swap-badge">{entry.caimiSwap.kind === 'favored' ? '守护' : '支援'}</i>{/if}
                           <strong>{entry.name}</strong><small>#{entry.sourceIndex + 1}{entry.caimiSwap ? ` · 原 ${result.groupNames[entry.caimiSwap.fromGroupIndex]} 组` : ''}</small>
@@ -3788,7 +3807,7 @@
       </div>
     </section>
 
-    <aside class:battle-config={battlePage} class="lineup-config app-surface-light">
+    <aside class:battle-config={battlePage} class="grouping-config app-surface-light">
       <div class="config-heading"><div><span>01</span><h2>名单</h2></div><strong>{names.length}<small>项</small></strong></div>
       <label class="names-field"><span>每行一个，也支持空格、逗号和 Excel 粘贴</span><UiTextarea bind:element={sourceTextarea} bind:value={sourceText} stretch={desktopRuntime} aria-keyshortcuts="Alt+Enter" placeholder="粘贴名称…" spellcheck="false" disabled={battlePage && battleTmpSnapshot !== null} /></label>
       <div class="list-actions">
@@ -3797,30 +3816,30 @@
           <button type="button" class="clear-list" disabled={!sourceText && !confirmedSourceText} on:click={requestClearAll}>清空</button>
         {/if}
       </div>
-      <label class="lineup-title-field">
+      <label class="grouping-title-field">
         <span>{battlePage ? '对战名称（可选）' : '分组名称（可选）'}</span>
         {#if battlePage}
           <input bind:value={battleTitle} maxlength="40" placeholder="例如：周五单败赛" />
         {:else}
-          <input bind:value={lineupTitle} maxlength="40" placeholder="例如：季度分组" />
+          <input bind:value={groupingTitle} maxlength="40" placeholder="例如：季度分组" />
         {/if}
       </label>
       {#if !battlePage}
-        <div class="group-setting"><label for="lineup-group-count"><span>组数</span><input id="lineup-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
+        <div class="group-setting"><label for="grouping-group-count"><span>组数</span><input id="grouping-group-count" type="number" min="2" max="26" step="1" bind:value={groupCount} /></label><div><span>预计档位</span><strong>{tierPreview || '—'}</strong></div></div>
       {/if}
     </aside>
   </div>
 </main>
 
-{#if clearLineupConfirmation}
+{#if clearGroupingConfirmation}
   <UiConfirmDialog
-    titleId="clear-lineup-title"
-    detailId="clear-lineup-detail"
-    title={clearConfirmationTitle(clearLineupConfirmation)}
-    detail={clearConfirmationDetail(clearLineupConfirmation)}
-    confirmLabel={clearConfirmationAction(clearLineupConfirmation)}
-    cancelLabel={battlePage && clearLineupConfirmation === 3 ? '保留设置和名单' : '取消'}
-    cancelShortcuts={battlePage && clearLineupConfirmation === 3 ? 'N' : 'N Escape'}
+    titleId="clear-grouping-title"
+    detailId="clear-grouping-detail"
+    title={clearConfirmationTitle(clearGroupingConfirmation)}
+    detail={clearConfirmationDetail(clearGroupingConfirmation)}
+    confirmLabel={clearConfirmationAction(clearGroupingConfirmation)}
+    cancelLabel={battlePage && clearGroupingConfirmation === 3 ? '保留设置和名单' : '取消'}
+    cancelShortcuts={battlePage && clearGroupingConfirmation === 3 ? 'N' : 'N Escape'}
     confirmDisabled={clearingBattleTmp}
     cancelDisabled={clearingBattleTmp}
     on:cancel={cancelClearAll}
@@ -3874,24 +3893,24 @@
   />
 {/if}
 
-{#if pendingLineupHistoryDeletion}
+{#if pendingGroupingHistoryDeletion}
   <UiConfirmDialog
-    titleId="delete-lineup-history-title"
-    detailId="delete-lineup-history-detail"
+    titleId="delete-grouping-history-title"
+    detailId="delete-grouping-history-detail"
     icon="×"
-    title={pendingLineupHistoryDeletion.kind === 'one'
+    title={pendingGroupingHistoryDeletion.kind === 'one'
         ? '删除这条分组历史？'
-        : pendingLineupHistoryDeletion.confirmation === 1
+        : pendingGroupingHistoryDeletion.confirmation === 1
           ? '删除全部分组历史？'
           : '真的删除全部分组历史？'}
-    detail={pendingLineupHistoryDeletion.kind === 'all' && pendingLineupHistoryDeletion.confirmation === 1
+    detail={pendingGroupingHistoryDeletion.kind === 'all' && pendingGroupingHistoryDeletion.confirmation === 1
         ? '全部分组历史都会删除。'
         : '删除后无法恢复。'}
     confirmLabel={historyDeleting ? '删除中…' : '确认'}
     confirmDisabled={historyDeleting}
     cancelDisabled={historyDeleting}
-    on:cancel={() => (pendingLineupHistoryDeletion = null)}
-    on:confirm={confirmLineupHistoryDeletion}
+    on:cancel={() => (pendingGroupingHistoryDeletion = null)}
+    on:confirm={confirmGroupingHistoryDeletion}
   />
 {/if}
 
@@ -3986,12 +4005,12 @@
 {/if}
 
 <style>
-  .lineup-page {
-    --lineup-muted-on-dark: var(--on-dark-muted);
-    --lineup-dim-on-dark: color-mix(in srgb, var(--on-dark-muted) 84%, transparent);
-    --lineup-muted-on-light: var(--color-app-text);
-    --lineup-dim-on-light: var(--color-app-muted);
-    --lineup-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
+  .grouping-page {
+    --grouping-muted-on-dark: var(--on-dark-muted);
+    --grouping-dim-on-dark: color-mix(in srgb, var(--on-dark-muted) 84%, transparent);
+    --grouping-muted-on-light: var(--color-app-text);
+    --grouping-dim-on-light: var(--color-app-muted);
+    --grouping-layout-scale: calc(0.667 + var(--font-scale, 1) * 0.333);
     --battle-control-width: calc(115px + 135px * var(--font-scale, 1));
     --battle-control-height: calc(56px * var(--app-component-scale, 1));
     min-height: 0;
@@ -4007,7 +4026,7 @@
   }
 
   /* 页面画布使用隔离层；全屏签表需抬到顶栏之上才能接收点击。 */
-  .lineup-page.battle-fullscreen-active { z-index: 20; }
+  .grouping-page.battle-fullscreen-active { z-index: 20; }
 
   .config-heading,
   .group-setting,
@@ -4027,37 +4046,37 @@
     color: var(--accent-ink);
   }
 
-  .lineup-workbench {
+  .grouping-workbench {
     --ranking-width-scale: 0.85;
     --ranking-row-height-scale: 0.9;
     --workspace-font-scale: var(--font-scale, 1);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
     align-items: stretch;
-    gap: calc(clamp(18px, 2.5vw, 34px) * var(--lineup-layout-scale, 1));
+    gap: calc(clamp(18px, 2.5vw, 34px) * var(--grouping-layout-scale, 1));
     max-width: 1580px;
     margin: 0 auto;
   }
 
-  .lineup-workbench.desktop {
+  .grouping-workbench.desktop {
     grid-template-columns:
-      minmax(calc(260px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(310px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)))
+      minmax(calc(260px * var(--grouping-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(310px * var(--grouping-layout-scale, 1) * var(--ranking-width-scale, 1)))
       minmax(0, 1fr)
-      minmax(calc(300px * var(--lineup-layout-scale, 1)), calc(360px * var(--lineup-layout-scale, 1)));
-    gap: calc(clamp(14px, 1.7vw, 25px) * var(--lineup-layout-scale, 1));
+      minmax(calc(300px * var(--grouping-layout-scale, 1)), calc(360px * var(--grouping-layout-scale, 1)));
+    gap: calc(clamp(14px, 1.7vw, 25px) * var(--grouping-layout-scale, 1));
   }
 
-  .lineup-config,
+  .grouping-config,
   .preview-panel,
-  .lineup-result {
+  .grouping-result {
     border: 1px solid var(--app-surface-border, rgba(255, 255, 255, 0.08));
-    border-radius: var(--app-surface-radius, calc(19px * var(--lineup-layout-scale, 1)));
+    border-radius: var(--app-surface-radius, calc(19px * var(--grouping-layout-scale, 1)));
   }
 
-  .lineup-config {
+  .grouping-config {
     min-width: 0;
     align-self: start;
-    padding: calc(22px * var(--lineup-layout-scale, 1));
+    padding: calc(22px * var(--grouping-layout-scale, 1));
     background: var(--app-surface-background, #efede6);
     color: var(--app-surface-color, #24251f);
   }
@@ -4066,22 +4085,22 @@
   .result-heading {
     align-items: center;
     justify-content: space-between;
-    gap: calc(16px * var(--lineup-layout-scale, 1));
+    gap: calc(16px * var(--grouping-layout-scale, 1));
   }
 
-  .config-heading > div { display: flex; align-items: baseline; gap: calc(9px * var(--lineup-layout-scale, 1)); }
+  .config-heading > div { display: flex; align-items: baseline; gap: calc(9px * var(--grouping-layout-scale, 1)); }
   .config-heading h2,
   .result-heading h2 { font-size: calc(23px * var(--font-scale, 1)); letter-spacing: -0.04em; }
   .config-heading > strong { font-size: calc(27px * var(--font-scale, 1)); }
-  .config-heading small { margin-left: 2px; color: var(--lineup-dim-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .config-heading small { margin-left: 2px; color: var(--grouping-dim-on-light); font-size: calc(12px * var(--font-scale, 1)); }
 
-  .names-field { display: block; margin-top: calc(18px * var(--lineup-layout-scale, 1)); }
-  .names-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .lineup-file-input { display: none; }
+  .names-field { display: block; margin-top: calc(18px * var(--grouping-layout-scale, 1)); }
+  .names-field > span { color: var(--grouping-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .grouping-file-input { display: none; }
 
-  .list-actions { display: flex; justify-content: flex-end; gap: calc(7px * var(--lineup-layout-scale, 1)); margin-top: calc(7px * var(--lineup-layout-scale, 1)); }
+  .list-actions { display: flex; justify-content: flex-end; gap: calc(7px * var(--grouping-layout-scale, 1)); margin-top: calc(7px * var(--grouping-layout-scale, 1)); }
   .list-actions button {
-    padding: calc(6px * var(--lineup-layout-scale, 1)) calc(9px * var(--lineup-layout-scale, 1));
+    padding: calc(6px * var(--grouping-layout-scale, 1)) calc(9px * var(--grouping-layout-scale, 1));
     border: 1px solid var(--line-strong);
     border-radius: 7px;
     background: var(--surface-field);
@@ -4096,9 +4115,9 @@
   .list-actions .clear-list { border-color: #c5a49d; background: #fbf0ed; color: #7e3c31; }
   .list-actions .clear-list:hover:not(:disabled) { border-color: #b85b49; background: #f7ded8; color: #6d2419; }
 
-  .lineup-title-field { display: grid; gap: 5px; margin-top: 12px; }
-  .lineup-title-field > span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .lineup-title-field input {
+  .grouping-title-field { display: grid; gap: 5px; margin-top: 12px; }
+  .grouping-title-field > span { color: var(--grouping-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .grouping-title-field input {
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
@@ -4125,7 +4144,7 @@
     border-radius: 10px;
     background: var(--color-app-surface-raised);
   }
-  .group-setting span { color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .group-setting span { color: var(--grouping-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
   .group-setting input {
     width: 56px;
     border: 0;
@@ -4142,21 +4161,21 @@
   .battle-radio-group {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: calc(7px * var(--lineup-layout-scale, 1));
-    margin: calc(17px * var(--lineup-layout-scale, 1)) 0 0;
+    gap: calc(7px * var(--grouping-layout-scale, 1));
+    margin: calc(17px * var(--grouping-layout-scale, 1)) 0 0;
     padding: 0;
     border: 0;
   }
   .battle-format-group { grid-template-columns: minmax(0, 1fr); }
   .battle-fixed-group { grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); }
-  .battle-radio-group legend { width: 100%; margin-bottom: calc(7px * var(--lineup-layout-scale, 1)); color: var(--lineup-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
-  .battle-count-status { margin-top: calc(10px * var(--lineup-layout-scale, 1)); padding: calc(9px * var(--lineup-layout-scale, 1)) calc(11px * var(--lineup-layout-scale, 1)); border-radius: calc(8px * var(--lineup-layout-scale, 1)); background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-radio-group legend { width: 100%; margin-bottom: calc(7px * var(--grouping-layout-scale, 1)); color: var(--grouping-muted-on-light); font-size: calc(12px * var(--font-scale, 1)); }
+  .battle-count-status { margin-top: calc(10px * var(--grouping-layout-scale, 1)); padding: calc(9px * var(--grouping-layout-scale, 1)) calc(11px * var(--grouping-layout-scale, 1)); border-radius: calc(8px * var(--grouping-layout-scale, 1)); background: rgba(218, 91, 63, 0.1); color: #ad4b35; font-size: calc(12px * var(--font-scale, 1)); }
   .battle-count-status.valid { background: rgba(138, 153, 62, 0.13); color: #52601d; }
   .battle-preview-settings {
     display: grid;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    margin-top: calc(18px * var(--lineup-layout-scale, 1));
-    padding-top: calc(12px * var(--lineup-layout-scale, 1));
+    gap: calc(6px * var(--grouping-layout-scale, 1));
+    margin-top: calc(18px * var(--grouping-layout-scale, 1));
+    padding-top: calc(12px * var(--grouping-layout-scale, 1));
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     min-width: 0;
     overflow-x: hidden;
@@ -4168,7 +4187,7 @@
     min-width: 0;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--battle-control-width)), 1fr));
     align-items: stretch;
-    gap: calc(10px * var(--lineup-layout-scale, 1));
+    gap: calc(10px * var(--grouping-layout-scale, 1));
   }
   .battle-option-groups {
     align-items: start;
@@ -4183,10 +4202,10 @@
     flex: 0 0 auto;
     align-content: start;
     margin: 0;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    padding: calc(6px * var(--lineup-layout-scale, 1));
+    gap: calc(6px * var(--grouping-layout-scale, 1));
+    padding: calc(6px * var(--grouping-layout-scale, 1));
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: calc(10px * var(--lineup-layout-scale, 1));
+    border-radius: calc(10px * var(--grouping-layout-scale, 1));
     background: rgba(255, 255, 255, 0.025);
   }
   .battle-preview-settings .battle-format-group,
@@ -4196,7 +4215,7 @@
   }
   .battle-preview-settings .battle-fixed-group legend { grid-column: 1 / -1; }
   .battle-preview-settings .battle-radio-group legend {
-    color: var(--lineup-muted-on-dark);
+    color: var(--grouping-muted-on-dark);
     font-weight: 850;
     letter-spacing: 0.08em;
   }
@@ -4204,8 +4223,8 @@
     width: 100%;
     max-width: 100%;
     min-height: var(--battle-control-height);
-    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
-    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    padding: calc(4px * var(--grouping-layout-scale, 1)) calc(6px * var(--grouping-layout-scale, 1));
+    border-radius: calc(8px * var(--grouping-layout-scale, 1));
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 900;
     line-height: 1;
@@ -4234,8 +4253,8 @@
     min-width: 0;
     min-height: var(--battle-control-height);
     margin: 0;
-    padding: calc(4px * var(--lineup-layout-scale, 1)) calc(6px * var(--lineup-layout-scale, 1));
-    border-radius: calc(8px * var(--lineup-layout-scale, 1));
+    padding: calc(4px * var(--grouping-layout-scale, 1)) calc(6px * var(--grouping-layout-scale, 1));
+    border-radius: calc(8px * var(--grouping-layout-scale, 1));
     font-size: calc(15px * var(--font-scale, 1));
     font-weight: 900;
     line-height: 1.2;
@@ -4268,14 +4287,14 @@
     font-size: calc(15px * var(--font-scale, 1));
   }
 
-  .lineup-error,
+  .grouping-error,
   .outdated-notice {
     margin-top: 10px;
     padding: 9px 11px;
     border-radius: 8px;
     font-size: calc(12px * var(--font-scale, 1));
   }
-  .lineup-error { background: rgba(218, 91, 63, 0.1); color: #ad4b35; }
+  .grouping-error { background: rgba(218, 91, 63, 0.1); color: #ad4b35; }
   .outdated-notice { background: rgb(var(--app-accent-rgb, 231 255 114) / 0.1); color: var(--on-dark); }
 
   .generate-button {
@@ -4295,18 +4314,18 @@
   }
   .generate-button i { color: var(--accent); font-family: var(--font-mono); font-size: calc(21px * var(--font-scale, 1)); font-style: normal; }
 
-  .lineup-result {
+  .grouping-result {
     min-width: 0;
-    padding: calc(clamp(20px, 3vw, 34px) * var(--lineup-layout-scale, 1));
+    padding: calc(clamp(20px, 3vw, 34px) * var(--grouping-layout-scale, 1));
     background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
 
-  .lineup-result:focus {
+  .grouping-result:focus {
     outline: 2px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.42);
     outline-offset: 3px;
   }
 
-  .lineup-result.battle-result {
+  .grouping-result.battle-result {
     --accent: var(--battle-participant-color);
     --app-accent-rgb: 231 255 114;
     --accent-strong: #829638;
@@ -4324,7 +4343,7 @@
     color: var(--battle-text-color);
   }
 
-  .lineup-result.battle-fullscreen {
+  .grouping-result.battle-fullscreen {
     position: fixed;
     z-index: 900;
     inset: 0;
@@ -4343,6 +4362,16 @@
     justify-content: space-between;
     gap: 14px;
     margin-bottom: 18px;
+  }
+
+  .battle-time-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: -8px 0 16px;
+    color: var(--grouping-dim-on-dark);
+    font-family: var(--font-mono);
+    font-size: calc(11px * var(--font-scale, 1));
   }
 
   .battle-clear-button {
@@ -4435,21 +4464,21 @@
 
   .battle-color-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
 
-  .lineup-center {
+  .grouping-center {
     display: grid;
     min-width: 0;
     align-content: start;
-    gap: calc(18px * var(--lineup-layout-scale, 1));
+    gap: calc(18px * var(--grouping-layout-scale, 1));
   }
 
   .preview-panel {
     min-width: 0;
     margin: 0;
-    padding: calc(clamp(20px, 2.4vw, 30px) * var(--lineup-layout-scale, 1));
+    padding: calc(clamp(20px, 2.4vw, 30px) * var(--grouping-layout-scale, 1));
     background: var(--app-surface-background, rgba(11, 12, 9, 0.27));
   }
   .result-heading > div { align-items: center; gap: 11px; }
-  .result-heading p { margin-top: 3px; color: var(--lineup-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
+  .result-heading p { margin-top: 3px; color: var(--grouping-muted-on-dark); font-size: calc(12px * var(--font-scale, 1)); }
   .result-output-actions,
   .history-save-control { display: flex; align-items: center; gap: 8px; }
   .result-output-actions { justify-content: flex-end; flex-wrap: wrap; }
@@ -4465,24 +4494,24 @@
   }
   .result-heading .history-save-button:disabled { cursor: default; opacity: 0.58; }
 
-  .lineup-table-wrap { margin-top: calc(20px * var(--lineup-layout-scale, 1)); overflow: auto; transition: opacity 180ms ease; }
-  .lineup-table-wrap.outdated { opacity: 0.45; }
+  .grouping-table-wrap { margin-top: calc(20px * var(--grouping-layout-scale, 1)); overflow: auto; transition: opacity 180ms ease; }
+  .grouping-table-wrap.outdated { opacity: 0.45; }
   .battle-fullscreen .result-heading { justify-content: flex-end; }
   .battle-fullscreen .result-heading > div:first-child { display: none; }
   .battle-fullscreen .battle-result-toolbar { margin-bottom: 8px; }
   .battle-preview-bracket { overflow: hidden; }
   table {
     width: 100%;
-    min-width: max(650px, calc(68px + var(--lineup-group-count, 4) * 140px));
+    min-width: max(650px, calc(68px + var(--grouping-group-count, 4) * 140px));
     border-collapse: separate;
-    border-spacing: calc(7px * var(--lineup-layout-scale, 1));
+    border-spacing: calc(7px * var(--grouping-layout-scale, 1));
     table-layout: fixed;
   }
-  th, td { padding: calc(8px + 5px * var(--lineup-layout-scale, 1)) calc(6px + 3px * var(--lineup-layout-scale, 1)); border-radius: calc(7px + 3px * var(--lineup-layout-scale, 1)); text-align: center; }
-  thead th { color: var(--lineup-muted-on-dark); font-size: calc(11px * var(--font-scale, 1)); font-weight: 600; }
+  th, td { padding: calc(8px + 5px * var(--grouping-layout-scale, 1)) calc(6px + 3px * var(--grouping-layout-scale, 1)); border-radius: calc(7px + 3px * var(--grouping-layout-scale, 1)); text-align: center; }
+  thead th { color: var(--grouping-muted-on-dark); font-size: calc(11px * var(--font-scale, 1)); font-weight: 600; }
   thead th:first-child { width: 68px; }
   thead th span { margin-right: 4px; color: var(--accent); font-family: var(--font-mono); font-size: calc(20px * var(--font-scale, 1)); font-weight: 900; }
-  tbody th { background: rgba(255, 255, 255, 0.04); color: var(--lineup-muted-on-dark); }
+  tbody th { background: rgba(255, 255, 255, 0.04); color: var(--grouping-muted-on-dark); }
   tbody th span,
   tbody th small,
   td strong,
@@ -4491,8 +4520,8 @@
   tbody th small { margin-top: 3px; font-size: calc(10px * var(--font-scale, 1)); font-weight: 500; }
   td { border: 1px solid rgba(255, 255, 255, 0.07); background: rgba(255, 255, 255, 0.045); }
   td strong { overflow: hidden; color: var(--on-dark); font-size: calc(14px * var(--font-scale, 1)); text-overflow: ellipsis; white-space: nowrap; }
-  td small { margin-top: 4px; color: var(--lineup-dim-on-dark); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
-  td.empty { color: var(--lineup-dim-on-dark); }
+  td small { margin-top: 4px; color: var(--grouping-dim-on-dark); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale, 1)); }
+  td.empty { color: var(--grouping-dim-on-dark); }
   td.slow-hidden {
     padding: 4px;
     border-color: rgb(var(--app-accent-rgb, 231 255 114) / 0.1);
@@ -4552,11 +4581,11 @@
     min-height: 0;
     align-content: center;
     justify-items: center;
-    color: var(--lineup-dim-on-dark);
+    color: var(--grouping-dim-on-dark);
     text-align: center;
   }
   .battle-empty-result { gap: 8px; }
-  .battle-empty-result p { color: var(--lineup-dim-on-dark); font-size: calc(12px * var(--font-scale, 1)); text-align: center; }
+  .battle-empty-result p { color: var(--grouping-dim-on-dark); font-size: calc(12px * var(--font-scale, 1)); text-align: center; }
   .empty-grid { display: grid; grid-template-columns: repeat(3, 42px); gap: 7px; margin-bottom: 18px; transform: rotate(-4deg); }
   .empty-grid i { display: grid; height: 42px; border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.2); border-radius: 9px; background: rgb(var(--app-accent-rgb, 231 255 114) / 0.055); color: var(--accent); font-family: var(--font-mono); font-size: calc(14px * var(--font-scale, 1)); font-style: normal; place-items: center; }
 
@@ -4570,12 +4599,12 @@
   .preview-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: calc(7px * var(--lineup-layout-scale, 1));
-    margin-top: calc(18px * var(--lineup-layout-scale, 1));
+    gap: calc(7px * var(--grouping-layout-scale, 1));
+    margin-top: calc(18px * var(--grouping-layout-scale, 1));
   }
 
   /* 三列工作区在大字号下会压缩中间列，卡片不足一列时自动降为单列。 */
-  .lineup-workbench.desktop .preview-list {
+  .grouping-workbench.desktop .preview-list {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   }
 
@@ -4672,7 +4701,7 @@
   .preview-insert-form button.cancel {
     border-color: rgba(255, 255, 255, 0.1);
     background: transparent;
-    color: var(--lineup-dim-on-dark);
+    color: var(--grouping-dim-on-dark);
   }
 
   .preview-insert-form small {
@@ -4687,7 +4716,7 @@
     margin-top: 16px;
     border: 1px dashed rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    color: var(--lineup-dim-on-dark);
+    color: var(--grouping-dim-on-dark);
     font-size: calc(12px * var(--font-scale, 1));
     gap: 12px;
     padding: 18px;
@@ -4705,25 +4734,25 @@
     line-height: 1.55;
   }
 
-  .lineup-actions {
+  .grouping-actions {
     display: flex;
     align-items: stretch;
-    gap: calc(9px * var(--lineup-layout-scale, 1));
-    margin-top: calc(13px * var(--lineup-layout-scale, 1));
+    gap: calc(9px * var(--grouping-layout-scale, 1));
+    margin-top: calc(13px * var(--grouping-layout-scale, 1));
   }
 
-  .lineup-actions.desktop-actions {
+  .grouping-actions.desktop-actions {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 3fr);
   }
-  .battle-page .lineup-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .lineup-actions .generate-button {
+  .battle-page .grouping-actions.desktop-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .grouping-actions .generate-button {
     min-height: 48px;
     flex: 1;
     margin-top: 0;
   }
 
-  .lineup-actions .rank-generate-button {
+  .grouping-actions .rank-generate-button {
     width: auto;
     padding: 10px 16px;
     border: 1px solid color-mix(in srgb, var(--accent) 72%, white);
@@ -4733,7 +4762,7 @@
     font-size: calc(14px * var(--font-scale, 1));
   }
 
-  .lineup-actions .rank-generate-button i {
+  .grouping-actions .rank-generate-button i {
     margin-left: 12px;
     color: var(--accent-ink);
     font-size: calc(17px * var(--font-scale, 1));
@@ -4760,8 +4789,8 @@
     transform: translateY(-1px);
   }
 
-  .lineup-actions .rank-preview-button:disabled,
-  .lineup-actions .rank-generate-button:disabled {
+  .grouping-actions .rank-preview-button:disabled,
+  .grouping-actions .rank-generate-button:disabled {
     cursor: not-allowed;
     filter: grayscale(0.8);
     opacity: 0.32;
@@ -4794,7 +4823,7 @@
     opacity: 0.32;
   }
 
-  .lineup-sidebar {
+  .grouping-sidebar {
     /* 排名区使用略紧凑的字号，避免缩小列宽后内容显得拥挤。 */
     --font-scale: calc(var(--workspace-font-scale, 1) * 0.9);
     display: grid;
@@ -4803,13 +4832,13 @@
     min-width: 0;
     align-content: start;
     align-self: stretch;
-    gap: calc(9px * var(--lineup-layout-scale, 1));
+    gap: calc(9px * var(--grouping-layout-scale, 1));
     /* 排名只跟随右侧两排的高度，自身条目数量不能反向撑开页面。 */
     contain: size;
   }
 
-  .lineup-sidebar.ranking-open { grid-template-rows: minmax(0, 1fr) auto; }
-  .lineup-sidebar.history-open { grid-template-rows: auto minmax(0, 1fr); }
+  .grouping-sidebar.ranking-open { grid-template-rows: minmax(0, 1fr) auto; }
+  .grouping-sidebar.history-open { grid-template-rows: auto minmax(0, 1fr); }
 
   .desktop-accordion {
     overflow: hidden;
@@ -4824,8 +4853,8 @@
     width: 100%;
     grid-template-columns: minmax(0, 1fr) auto 18px;
     align-items: center;
-    gap: calc(8px * var(--lineup-layout-scale, 1));
-    padding: calc(13px * var(--lineup-layout-scale, 1)) calc(14px * var(--lineup-layout-scale, 1));
+    gap: calc(8px * var(--grouping-layout-scale, 1));
+    padding: calc(13px * var(--grouping-layout-scale, 1)) calc(14px * var(--grouping-layout-scale, 1));
     border: 0;
     background: transparent;
     color: var(--color-app-text);
@@ -4841,7 +4870,7 @@
   }
 
   .desktop-accordion-toggle i {
-    color: var(--lineup-dim-on-light);
+    color: var(--grouping-dim-on-light);
     font-family: var(--font-mono);
     font-size: calc(16px * var(--font-scale, 1));
     font-style: normal;
@@ -4858,13 +4887,13 @@
     flex-direction: column;
   }
 
-  .desktop-accordion-content { padding: calc(12px * var(--lineup-layout-scale, 1)); }
+  .desktop-accordion-content { padding: calc(12px * var(--grouping-layout-scale, 1)); }
 
   .rank-manager {
     --rank-gold: var(--accent);
     --rank-lime: var(--accent);
     --rank-ink: var(--workspace-deep);
-    --rank-number-size: calc(40px * var(--lineup-layout-scale, 1));
+    --rank-number-size: calc(40px * var(--grouping-layout-scale, 1));
     display: flex;
     min-height: 0;
     flex: 1;
@@ -4960,8 +4989,8 @@
   .ranking-transfer-actions {
     display: flex;
     justify-content: flex-end;
-    gap: calc(6px * var(--lineup-layout-scale, 1));
-    margin: calc(3px * var(--lineup-layout-scale, 1)) 0 calc(8px * var(--lineup-layout-scale, 1));
+    gap: calc(6px * var(--grouping-layout-scale, 1));
+    margin: calc(3px * var(--grouping-layout-scale, 1)) 0 calc(8px * var(--grouping-layout-scale, 1));
   }
 
   .rank-keyboard-order {
@@ -4969,9 +4998,9 @@
     min-width: 0;
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: calc(5px * var(--lineup-layout-scale, 1));
-    margin: calc(2px * var(--lineup-layout-scale, 1)) 0 calc(7px * var(--lineup-layout-scale, 1));
-    padding: calc(7px * var(--lineup-layout-scale, 1)) calc(8px * var(--lineup-layout-scale, 1));
+    gap: calc(5px * var(--grouping-layout-scale, 1));
+    margin: calc(2px * var(--grouping-layout-scale, 1)) 0 calc(7px * var(--grouping-layout-scale, 1));
+    padding: calc(7px * var(--grouping-layout-scale, 1)) calc(8px * var(--grouping-layout-scale, 1));
     border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.36);
     border-radius: 10px;
     background: linear-gradient(135deg, rgb(var(--app-accent-rgb, 231 255 114) / 0.15), rgb(var(--app-accent-rgb, 231 255 114) / 0.07));
@@ -4990,7 +5019,7 @@
   .rank-keyboard-order strong { color: var(--on-dark); font-size: calc(13px * var(--font-scale, 1)); }
   .rank-keyboard-order small { margin-left: 6px; color: var(--on-dark-muted); font-size: calc(12px * var(--font-scale, 1)); }
   .rank-keyboard-order button {
-    padding: calc(5px * var(--lineup-layout-scale, 1)) calc(7px * var(--lineup-layout-scale, 1));
+    padding: calc(5px * var(--grouping-layout-scale, 1)) calc(7px * var(--grouping-layout-scale, 1));
     border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.4);
     border-radius: 6px;
     background: var(--workspace-highlight);
@@ -5007,8 +5036,8 @@
     min-height: 240px;
     flex: 1;
     align-content: start;
-    margin-top: calc(4px * var(--lineup-layout-scale, 1));
-    padding: calc(9px * var(--lineup-layout-scale, 1)) calc(3px * var(--lineup-layout-scale, 1)) calc(13px * var(--lineup-layout-scale, 1)) 0;
+    margin-top: calc(4px * var(--grouping-layout-scale, 1));
+    padding: calc(9px * var(--grouping-layout-scale, 1)) calc(3px * var(--grouping-layout-scale, 1)) calc(13px * var(--grouping-layout-scale, 1)) 0;
     overflow-y: auto;
   }
 
@@ -5027,12 +5056,12 @@
   .rank-zone {
     display: grid;
     align-content: start;
-    gap: calc(8px * var(--lineup-layout-scale, 1));
+    gap: calc(8px * var(--grouping-layout-scale, 1));
   }
 
   .rank-zone.unranked-zone {
-    margin-top: calc(13px * var(--lineup-layout-scale, 1));
-    padding-top: calc(9px * var(--lineup-layout-scale, 1));
+    margin-top: calc(13px * var(--grouping-layout-scale, 1));
+    padding-top: calc(9px * var(--grouping-layout-scale, 1));
     border-top: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.28);
     transition: border-color 120ms ease, background 120ms ease;
   }
@@ -5344,7 +5373,7 @@
 
   .inline-rank-edit small {
     overflow: hidden;
-    color: var(--lineup-dim-on-light);
+    color: var(--grouping-dim-on-light);
     font-size: calc(11px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5421,47 +5450,47 @@
   .history-status.error { color: #dc725b; }
 
   @media (min-width: 1251px) {
-    .lineup-workbench:not(.desktop) .lineup-sidebar {
+    .grouping-workbench:not(.desktop) .grouping-sidebar {
       grid-column: 1 / -1;
       grid-row: 3;
       height: auto;
       contain: none;
     }
-    .lineup-workbench:not(.desktop) .lineup-center { display: contents; }
-    .lineup-workbench:not(.desktop) .preview-panel { grid-column: 1; grid-row: 1; }
-    .lineup-workbench:not(.desktop) .lineup-config { grid-column: 2; grid-row: 1; }
-    .lineup-workbench:not(.desktop) .lineup-result {
+    .grouping-workbench:not(.desktop) .grouping-center { display: contents; }
+    .grouping-workbench:not(.desktop) .preview-panel { grid-column: 1; grid-row: 1; }
+    .grouping-workbench:not(.desktop) .grouping-config { grid-column: 2; grid-row: 1; }
+    .grouping-workbench:not(.desktop) .grouping-result {
       grid-column: 1 / 3;
       grid-row: 2;
       margin-top: clamp(18px, 2.5vw, 34px);
     }
-    .lineup-workbench.desktop {
+    .grouping-workbench.desktop {
       grid-template-rows: minmax(360px, 1fr) auto;
     }
-    .lineup-workbench.desktop.web-layout {
+    .grouping-workbench.desktop.web-layout {
       /* Web 端字号放大时保留三列位置，同时不让侧栏按字号挤占中间预览区。 */
       grid-template-columns: minmax(calc(260px * var(--ranking-width-scale, 1)), calc(310px * var(--ranking-width-scale, 1))) minmax(0, 1fr) minmax(300px, 360px);
       gap: clamp(14px, 1.7vw, 25px);
     }
-    .lineup-workbench.desktop .lineup-center { display: contents; }
-    .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
-    .lineup-workbench.desktop .preview-panel {
+    .grouping-workbench.desktop .grouping-center { display: contents; }
+    .grouping-workbench.desktop .grouping-sidebar { grid-column: 1; grid-row: 1 / span 2; }
+    .grouping-workbench.desktop .preview-panel {
       grid-column: 2;
       grid-row: 1;
     }
-    .lineup-workbench.desktop .lineup-config {
+    .grouping-workbench.desktop .grouping-config {
       display: flex;
       grid-column: 3;
       grid-row: 1;
       align-self: stretch;
       flex-direction: column;
     }
-    .lineup-workbench.desktop .names-field {
+    .grouping-workbench.desktop .names-field {
       display: flex;
       flex: 1;
       flex-direction: column;
     }
-    .lineup-workbench.desktop .lineup-result {
+    .grouping-workbench.desktop .grouping-result {
       grid-column: 2 / 4;
       grid-row: 2;
       margin-top: clamp(18px, 2.5vw, 34px);
@@ -5469,21 +5498,21 @@
   }
 
   @media (max-width: 1250px) {
-    .lineup-workbench:not(.desktop) .lineup-sidebar {
+    .grouping-workbench:not(.desktop) .grouping-sidebar {
       grid-column: 1 / -1;
       grid-row: 3;
       height: auto;
       contain: none;
     }
-    .lineup-workbench.desktop {
+    .grouping-workbench.desktop {
       grid-template-columns:
-        minmax(calc(250px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(290px * var(--lineup-layout-scale, 1) * var(--ranking-width-scale, 1)))
+        minmax(calc(250px * var(--grouping-layout-scale, 1) * var(--ranking-width-scale, 1)), calc(290px * var(--grouping-layout-scale, 1) * var(--ranking-width-scale, 1)))
         minmax(0, 1fr);
     }
 
-    .lineup-workbench.desktop .lineup-sidebar { grid-column: 1; grid-row: 1 / span 2; }
-    .lineup-workbench.desktop .lineup-center { grid-column: 2; grid-row: 1; }
-    .lineup-workbench.desktop .lineup-config { grid-column: 2; grid-row: 2; width: min(100%, 420px); }
+    .grouping-workbench.desktop .grouping-sidebar { grid-column: 1; grid-row: 1 / span 2; }
+    .grouping-workbench.desktop .grouping-center { grid-column: 2; grid-row: 1; }
+    .grouping-workbench.desktop .grouping-config { grid-column: 2; grid-row: 2; width: min(100%, 420px); }
 
     /* 对战结果区在中等窗口也会比整页窄，颜色控件需要换到工具栏下一行，不能横向裁掉。 */
     .battle-result-toolbar { flex-wrap: wrap; }
@@ -5495,30 +5524,30 @@
   }
 
   @media (max-width: 900px) {
-    .lineup-page { min-height: 0; border-radius: 19px 19px 0 0; }
-    .lineup-workbench,
-    .lineup-workbench.desktop { grid-template-columns: minmax(0, 1fr); }
-    .lineup-workbench.desktop .lineup-sidebar,
-    .lineup-workbench.desktop .lineup-center,
-    .lineup-workbench.desktop .lineup-config { grid-column: 1; grid-row: auto; width: 100%; }
-    .lineup-config { width: 100%; }
-    .lineup-sidebar,
-    .lineup-sidebar.ranking-open,
-    .lineup-sidebar.history-open { height: auto; grid-template-rows: auto; contain: none; }
+    .grouping-page { min-height: 0; border-radius: 19px 19px 0 0; }
+    .grouping-workbench,
+    .grouping-workbench.desktop { grid-template-columns: minmax(0, 1fr); }
+    .grouping-workbench.desktop .grouping-sidebar,
+    .grouping-workbench.desktop .grouping-center,
+    .grouping-workbench.desktop .grouping-config { grid-column: 1; grid-row: auto; width: 100%; }
+    .grouping-config { width: 100%; }
+    .grouping-sidebar,
+    .grouping-sidebar.ranking-open,
+    .grouping-sidebar.history-open { height: auto; grid-template-rows: auto; contain: none; }
     .ranked-user-list { height: min(540px, 56vh); flex: none; }
     .battle-preview-settings { grid-template-columns: minmax(0, 1fr); }
     .battle-preview-settings .battle-fixed-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @media (max-width: 600px) {
-    .lineup-page { padding: 24px 14px; }
-    .lineup-config, .preview-panel, .lineup-result { padding: 17px; }
+    .grouping-page { padding: 24px 14px; }
+    .grouping-config, .preview-panel, .grouping-result { padding: 17px; }
     .preview-list { grid-template-columns: minmax(0, 1fr); }
     .battle-result-toolbar { align-items: flex-start; flex-direction: column; }
     .battle-color-controls { grid-template-columns: minmax(0, 1fr); }
     .battle-color-actions { flex-direction: row; }
     .battle-color-actions :global(button) { flex: 1; }
-    .lineup-actions { flex-direction: column; }
-    .lineup-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
+    .grouping-actions { flex-direction: column; }
+    .grouping-actions.desktop-actions { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { ResolvedLineupName } from '../lib/types';
+  import type { ResolvedGroupingName } from '../lib/types';
 
   export let variant: 'grouping' | 'battle' = 'grouping';
   export let name: string;
   export let index: number;
-  export let resolved: ResolvedLineupName | null | undefined = undefined;
+  export let resolved: ResolvedGroupingName | null | undefined = undefined;
   export let desktopRuntime = false;
   export let resolvingNames = false;
   export let unknown = false;
@@ -65,13 +65,13 @@
     position: relative;
     display: grid;
     min-width: 0;
-    min-height: calc(44px + 22px * var(--lineup-layout-scale, 1));
+    min-height: calc(44px + 22px * var(--grouping-layout-scale, 1));
     grid-template-columns: minmax(0, 1fr) minmax(90px, 1.35fr) minmax(0, 1fr);
     align-items: center;
-    gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
-    padding: calc(5px + 4px * var(--lineup-layout-scale, 1)) calc(6px + 4px * var(--lineup-layout-scale, 1));
+    gap: calc(4px + 2px * var(--grouping-layout-scale, 1));
+    padding: calc(5px + 4px * var(--grouping-layout-scale, 1)) calc(6px + 4px * var(--grouping-layout-scale, 1));
     border: 1px solid rgb(var(--app-accent-rgb, 231 255 114) / 0.13);
-    border-radius: calc(7px + 4px * var(--lineup-layout-scale, 1));
+    border-radius: calc(7px + 4px * var(--grouping-layout-scale, 1));
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
   }
 
@@ -83,7 +83,7 @@
 
   .preview-row.battle {
     border-color: color-mix(in srgb, var(--battle-participant-color, var(--accent)) 18%, transparent);
-    border-radius: calc(4px + 3px * var(--lineup-layout-scale, 1));
+    border-radius: calc(4px + 3px * var(--grouping-layout-scale, 1));
     background:
       linear-gradient(90deg, color-mix(in srgb, var(--battle-participant-color, var(--accent)) 7%, transparent), transparent 48%),
       color-mix(in srgb, var(--battle-match-color, #3e4451) 26%, transparent);
@@ -98,7 +98,7 @@
 
   .preview-position {
     padding: 0;
-    color: var(--lineup-dim-on-dark);
+    color: var(--grouping-dim-on-dark);
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: calc(11px * var(--font-scale, 1));
     text-align: center;
@@ -109,7 +109,7 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: calc(4px + 2px * var(--lineup-layout-scale, 1));
+    gap: calc(4px + 2px * var(--grouping-layout-scale, 1));
   }
 
   .preview-leading-actions { justify-content: flex-start; }
@@ -118,10 +118,10 @@
 
   .preview-name {
     display: grid;
-    min-height: calc(30px + 16px * var(--lineup-layout-scale, 1));
+    min-height: calc(30px + 16px * var(--grouping-layout-scale, 1));
     align-content: center;
     justify-items: stretch;
-    padding: 0 calc(4px + 4px * var(--lineup-layout-scale, 1));
+    padding: 0 calc(4px + 4px * var(--grouping-layout-scale, 1));
     text-align: center;
   }
 
@@ -153,7 +153,7 @@
     display: block;
     overflow: hidden;
     margin-top: 3px;
-    color: var(--lineup-muted-on-dark);
+    color: var(--grouping-muted-on-dark);
     font-size: calc(9px * var(--font-scale, 1));
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -80,7 +80,7 @@
 {/if}
 
 <style>
-  .battle-bye-explanation { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--battle-text-color, var(--lineup-text-on-dark)); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.55; }
+  .battle-bye-explanation { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--battle-text-color, var(--grouping-text-on-dark)); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.55; }
   .battle-bye-explanation strong { flex: 0 0 auto; color: var(--accent); }
   .battle-bye-explanation span { min-width: 0; }
   .battle-bracket { --battle-round-width: calc(235px * var(--battle-layout-scale, 1)); display: flex; gap: calc(108px * var(--battle-layout-scale, 1)); margin-top: 18px; overflow: auto; transition: opacity 180ms ease; }

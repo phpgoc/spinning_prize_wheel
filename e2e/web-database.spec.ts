@@ -26,7 +26,7 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
     INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1);
     CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, rank INTEGER NOT NULL);
     CREATE TABLE alias (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, user_id INTEGER NOT NULL);
-    CREATE TABLE lineup_history (
+    CREATE TABLE grouping_history (
       id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, input_json TEXT NOT NULL,
       result_json TEXT NOT NULL, variant TEXT NOT NULL
     );
@@ -34,7 +34,7 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
     INSERT INTO alias (id, name, user_id) VALUES (1, '桌面排名', 1), (2, '桌面别名', 1);
     CREATE TABLE battle_tmp (
       id INTEGER PRIMARY KEY, variant TEXT NOT NULL, rules_version INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL, format TEXT NOT NULL, order_mode TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, format TEXT NOT NULL, order_mode TEXT NOT NULL,
       participant_count INTEGER NOT NULL, bracket_size INTEGER NOT NULL, fixed_seed_count INTEGER NOT NULL
     );
     CREATE TABLE battle_tmp_participant (
@@ -48,15 +48,15 @@ async function createDesktopDatabaseBackup(): Promise<Buffer> {
     );
   `);
   database.run(
-    `INSERT INTO lineup_history (id, created_at, input_json, result_json, variant)
-      VALUES ('desktop-lineup', 1700000000000, ?, ?, 'standard')`,
+    `INSERT INTO grouping_history (id, created_at, input_json, result_json, variant)
+      VALUES ('desktop-grouping', 1700000000000, ?, ?, 'standard')`,
     [JSON.stringify({ sourceNames: ['桌面甲'] }), JSON.stringify({ groups: [] })],
   );
   database.run(
     `INSERT INTO battle_tmp
-      (id, variant, rules_version, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count)
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [snapshot.variant, snapshot.rulesVersion, snapshot.updatedAt, snapshot.format, snapshot.orderMode,
+      (id, variant, rules_version, created_at, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [snapshot.variant, snapshot.rulesVersion, snapshot.createdAt, snapshot.updatedAt, snapshot.format, snapshot.orderMode,
       snapshot.participantCount, snapshot.bracketSize, snapshot.fixedSeedCount],
   );
   for (const participant of snapshot.participants) {

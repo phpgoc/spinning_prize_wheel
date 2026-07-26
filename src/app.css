@@ -298,7 +298,7 @@ button:not(:disabled):active { filter: brightness(0.94); }
   box-shadow: none;
 }
 
-.app-shell.desktop-runtime .lineup-page {
+.app-shell.desktop-runtime .grouping-page {
   min-height: calc(100vh - var(--desktop-page-offset));
   padding: 0;
   border: 0;
@@ -306,7 +306,7 @@ button:not(:disabled):active { filter: brightness(0.94); }
   box-shadow: none;
 }
 
-.app-shell.desktop-runtime .lineup-workbench.desktop {
+.app-shell.desktop-runtime .grouping-workbench.desktop {
   max-width: none;
   min-height: calc(100vh - var(--desktop-page-offset));
 }
@@ -1680,7 +1680,7 @@ kbd {
 .shortcut-statistics h3 { --shortcut-heading-color: #a16b24; }
 .shortcut-battle h3 { --shortcut-heading-color: #4169a1; }
 .shortcut-battle-area h3 { --shortcut-heading-color: #257a78; }
-.shortcut-lineup h3 { --shortcut-heading-color: #287568; }
+.shortcut-grouping h3 { --shortcut-heading-color: #287568; }
 .shortcut-ranking h3 { --shortcut-heading-color: #8a476f; }
 .shortcut-confirm h3 { --shortcut-heading-color: #9a4939; }
 

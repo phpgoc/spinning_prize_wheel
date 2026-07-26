@@ -1,33 +1,33 @@
 import type { AppVariant } from './app-variant';
-import type { SavedLineup } from './types';
+import type { SavedGrouping } from './types';
 
-export interface LineupHistoryTransferFile {
+export interface GroupingHistoryTransferFile {
   version: 2;
-  kind: 'lineup-history';
+  kind: 'grouping-history';
   variant: AppVariant;
-  history: SavedLineup;
+  history: SavedGrouping;
 }
 
-export function createLineupHistoryTransfer(
-  history: SavedLineup,
+export function createGroupingHistoryTransfer(
+  history: SavedGrouping,
   variant: AppVariant,
-): LineupHistoryTransferFile {
+): GroupingHistoryTransferFile {
   return {
     version: 2,
-    kind: 'lineup-history',
+    kind: 'grouping-history',
     variant,
     history: { ...history },
   };
 }
 
-export function parseLineupHistoryTransfer(content: string): SavedLineup {
+export function parseGroupingHistoryTransfer(content: string): SavedGrouping {
   let value: unknown;
   try {
     value = JSON.parse(content.replace(/^\uFEFF/u, ''));
   } catch {
     throw new Error('分组历史 JSON 格式不正确');
   }
-  if (!isRecord(value) || value.kind !== 'lineup-history') {
+  if (!isRecord(value) || value.kind !== 'grouping-history') {
     throw new Error('不是转盘导出的分组历史文件');
   }
   let history: unknown;

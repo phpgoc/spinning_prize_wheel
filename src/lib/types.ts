@@ -86,7 +86,7 @@ export interface RankedUser {
   aliases: AliasRecord[];
 }
 
-export interface ResolvedLineupName {
+export interface ResolvedGroupingName {
   inputName: string;
   known: boolean;
   userId: number | null;
@@ -94,7 +94,7 @@ export interface ResolvedLineupName {
   rank: number | null;
 }
 
-export interface SavedLineup {
+export interface SavedGrouping {
   id: string;
   createdAt: number;
   title?: string | null;

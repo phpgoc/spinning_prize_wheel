@@ -103,7 +103,7 @@ test('X 只聚焦分组结果，不会在文本编辑时抢走按键', async ({ 
 
   await textarea.press('Escape');
   await page.keyboard.press('x');
-  await expect(page.locator('.lineup-result')).toBeFocused();
+  await expect(page.locator('.grouping-result')).toBeFocused();
 });
 
 test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) => {
@@ -112,7 +112,7 @@ test('Web 分组支持悬念揭晓并默认显示第一档', async ({ page }) =>
   await expect(page.getByText('悬念揭晓', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '按输入顺序分组' }).click();
 
-  const resultRows = page.locator('.lineup-result tbody tr');
+  const resultRows = page.locator('.grouping-result tbody tr');
   await expect(resultRows).toHaveCount(2);
   await expect(resultRows.first().locator('.slow-reveal-cell')).toHaveCount(0);
   await expect(resultRows.nth(1).locator('.slow-reveal-cell')).toHaveCount(4);

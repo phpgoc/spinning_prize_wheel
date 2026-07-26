@@ -110,7 +110,7 @@ test('网页版不显示无法使用的打开下载按钮', async ({ page }) => 
 
 test('分组和对战直达时不预加载转盘页面模块', async ({ page }) => {
   await page.goto('/grouping');
-  await expect(page.locator('.lineup-page')).toBeVisible();
+  await expect(page.locator('.grouping-page')).toBeVisible();
   const groupingResources = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
   expect(groupingResources.some((name) => name.includes('/src/routes/WheelPage.svelte'))).toBe(false);
 
@@ -159,7 +159,7 @@ test('全局界面风格不会覆盖对战签表自己的配色令牌', async ({
     expect(battleStyle.workspace).toBe('#22231d');
     expect(battleStyle.background).toBe(battleStyle.selectedBackground);
     battleBackgrounds.add(battleStyle.background);
-    await expect(page.locator('.lineup-config')).toHaveCSS('background-color', theme.surface);
+    await expect(page.locator('.grouping-config')).toHaveCSS('background-color', theme.surface);
     const drawButton = page.locator('.battle-generate-button');
     const drawButtonBackground = await drawButton.evaluate((element) => getComputedStyle(element).backgroundImage);
     expect(drawButtonBackground).toContain(`rgb(${theme.accent.replaceAll(' ', ', ')})`);
@@ -303,7 +303,7 @@ test('对战赛制切换会保留单败和双败的配置', async ({ page }) => 
   const previewSettings = page.locator('.preview-panel .battle-preview-settings');
   await expect(previewSettings).toBeVisible();
   await expect(previewSettings.getByRole('radio')).toHaveCount(3);
-  await expect(page.locator('.lineup-config input[type="radio"]')).toHaveCount(0);
+  await expect(page.locator('.grouping-config input[type="radio"]')).toHaveCount(0);
   await expect(page.getByRole('radio', { name: '同组不对战1对2' })).toBeChecked();
   await expect(page.getByRole('group', { name: '名单顺序' })).toHaveCount(0);
 
@@ -543,7 +543,7 @@ test('大字号下分组预览和结果载具不溢出', async ({ page }) => {
   const previewOverflow = await preview.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(previewOverflow).toBeLessThanOrEqual(1);
   await page.getByRole('button', { name: '按输入顺序分组' }).click();
-  const result = page.locator('.lineup-result');
+  const result = page.locator('.grouping-result');
   const resultOverflow = await result.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(resultOverflow).toBeLessThanOrEqual(1);
 });
@@ -684,7 +684,7 @@ test('双败查看和编辑使用同一套胜败组布局且查看不显示比�
   await expect(view.locator('input:visible')).toHaveCount(0);
 
   await page.getByRole('button', { name: /^抽签/ }).click();
-  const editor = page.locator('.lineup-result .double-battle-bracket');
+  const editor = page.locator('.grouping-result .double-battle-bracket');
   await expect(editor).toBeVisible();
   await expect(editor.locator('.double-winner-section')).toBeVisible();
   await expect(editor.locator('.double-loser-section')).toBeVisible();

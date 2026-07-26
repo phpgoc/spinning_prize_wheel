@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installTauriMock, mockedRankedNames } from './helpers/tauri-mock';
 
-async function openDesktopLineup(page: Page) {
+async function openDesktopGrouping(page: Page) {
   await installTauriMock(page);
   await page.goto('/grouping', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
@@ -127,7 +127,7 @@ test('桌面快捷键总表记录完整对战页操作', async ({ page }) => {
 });
 
 test('排名字号放大时排名框同步扩容', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   const normalNumber = page.locator('.ranked-user-list .rank-number').first();
   const normalBox = await normalNumber.boundingBox();
   const normalAlignment = await rankNumberAlignment(normalNumber);
@@ -150,7 +150,7 @@ test('排名字号放大时排名框同步扩容', async ({ page }) => {
 });
 
 test('全局界面风格覆盖桌面排名与公共历史组件', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.evaluate(() => {
     const settings = JSON.parse(localStorage.getItem('wheel-settings-v1') ?? '{}');
     localStorage.setItem('wheel-settings-v1', JSON.stringify({ ...settings, uiTheme: 'sand' }));
@@ -192,7 +192,7 @@ test('抽奖、分组和对战历史共用同一套日期、列表与底部操�
     expect(boxes[1].y).toBeGreaterThan(boxes[0].y);
   };
 
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
 
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
   await expect(page.locator('.ui-history-panel .ui-date-range')).toBeVisible();
@@ -215,8 +215,8 @@ test('抽奖、分组和对战历史共用同一套日期、列表与底部操�
 });
 
 test('分组历史显示总数并按日期显示查询结果数量', async ({ page }) => {
-  const lineupHistories = Array.from({ length: 7 }, (_, index) => ({
-    id: `lineup-history-${index}`,
+  const groupingHistories = Array.from({ length: 7 }, (_, index) => ({
+    id: `grouping-history-${index}`,
     createdAt: new Date(2026, 0, index + 1, 12).getTime(),
     input: {
       sourceNames: ['甲', '乙', '丙', '丁'],
@@ -225,7 +225,7 @@ test('分组历史显示总数并按日期显示查询结果数量', async ({ pa
     },
     result: {},
   }));
-  await installTauriMock(page, [], { lineupHistories });
+  await installTauriMock(page, [], { groupingHistories });
   await page.goto('/grouping', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell.desktop-runtime')).toBeVisible({ timeout: 30_000 });
 
@@ -245,7 +245,7 @@ test('分组历史显示总数并按日期显示查询结果数量', async ({ pa
 });
 
 test('日期范围输入框有足够大的手写区和日历点击区，并随字号放大', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.locator('.desktop-accordion-toggle').filter({ hasText: '分组历史' }).click();
   const dateRange = page.locator('.ui-date-range');
   const normalInput = dateRange.locator('input').first();
@@ -428,7 +428,7 @@ test('开启自动保存后关闭窗口会等当前旋转结束并归档', async
 });
 
 test('点击排名或按 A 选择第一项，N 聚焦添加排名', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   const firstCard = page.locator('[data-rank-user-id="1"]');
   const rankingToggle = page.locator('.desktop-accordion:first-child > .desktop-accordion-toggle');
   const addInput = page.locator('.rank-person-form input');
@@ -462,7 +462,7 @@ test('点击排名或按 A 选择第一项，N 聚焦添加排名', async ({ pag
 });
 
 test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.keyboard.press('z');
   await expect(page.locator('.desktop-accordion').filter({ hasText: '分组历史' })).toHaveClass(/open/);
   await page.keyboard.press('z');
@@ -475,12 +475,12 @@ test('Z 切换历史，X 聚焦结果，Esc 逐层退出局部区域', async ({ 
   await expect(page.locator('.desktop-accordion').filter({ hasText: '排名' })).not.toHaveClass(/open/);
 
   await page.keyboard.press('x');
-  await expect(page.locator('.lineup-result')).toBeFocused();
+  await expect(page.locator('.grouping-result')).toBeFocused();
 });
 
 test('按排名分组允许末档未排名', async ({ page }) => {
-  await openDesktopLineup(page);
-  await page.locator('#lineup-group-count').fill('2');
+  await openDesktopGrouping(page);
+  await page.locator('#grouping-group-count').fill('2');
   await confirmDesktopNames(page, ['乙', '甲', '未录入']);
   const sortPreview = page.getByRole('button', { name: '按排名顺序预览' });
   const groupByRank = page.getByRole('button', { name: '按排名顺序分组' });
@@ -492,7 +492,7 @@ test('按排名分组允许末档未排名', async ({ page }) => {
     inputs.map((input) => (input as HTMLInputElement).value)
   ))).toEqual(['甲', '乙', '未录入']);
   await groupByRank.click();
-  await expect(page.locator('.lineup-table-wrap tbody tr')).toHaveCount(2);
+  await expect(page.locator('.grouping-table-wrap tbody tr')).toHaveCount(2);
   await page.getByRole('button', { name: '打开下载', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (
     (window as any).__E2E_TAURI_STATE__.invocations.some(
@@ -557,13 +557,13 @@ test('对战只要求固定人数有排名', async ({ page }) => {
   })));
   await page.getByRole('button', { name: /^抽签/ }).click();
   await expect(page.locator('.battle-round')).toHaveCount(2);
-  const resultStructure = await page.locator('.lineup-result > .single-battle-bracket .battle-match').evaluateAll((matches) => matches.map((match) => ({
+  const resultStructure = await page.locator('.grouping-result > .single-battle-bracket .battle-match').evaluateAll((matches) => matches.map((match) => ({
     stage: match.getAttribute('data-battle-stage'),
     level: match.getAttribute('data-battle-level'),
     position: match.getAttribute('data-battle-position'),
   })));
   expect(resultStructure).toEqual(previewStructure);
-  await expect(page.locator('.lineup-result .result-heading')).toContainText('排名');
+  await expect(page.locator('.grouping-result .result-heading')).toContainText('排名');
   await expect(page.getByRole('button', { name: /^抽签/ })).toBeDisabled();
 });
 
@@ -1153,8 +1153,8 @@ test('分组历史导出在失败后显示错误并恢复按钮', async ({ page 
   const pageErrors: string[] = [];
   page.on('pageerror', (reason) => pageErrors.push(reason.message));
   await installTauriMock(page, undefined, {
-    lineupHistories: [{
-      id: 'lineup-export',
+    groupingHistories: [{
+      id: 'grouping-export',
       createdAt: new Date(2026, 6, 20, 12).getTime(),
       input: { sourceNames: ['甲', '乙'], groupCount: 2, orderMode: 'input' },
       result: { groupNames: ['A', 'B'], tiers: [[{ name: '甲' }, { name: '乙' }]] },
@@ -1165,8 +1165,8 @@ test('分组历史导出在失败后显示错误并恢复按钮', async ({ page 
   await page.getByRole('button', { name: /分组历史/u }).click();
 
   const historyPanel = page.locator('.history-panel');
-  const excelButton = historyPanel.locator('[data-export="lineup-history-excel"]');
-  const jsonButton = historyPanel.locator('[data-export="lineup-history-json"]');
+  const excelButton = historyPanel.locator('[data-export="grouping-history-excel"]');
+  const jsonButton = historyPanel.locator('[data-export="grouping-history-json"]');
   await page.evaluate(() => {
     (window as any).__E2E_TAURI_STATE__.commandFailures.export_binary_file = ['分组历史 Excel 写入失败'];
   });
@@ -1200,15 +1200,15 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
     prizes: [{ id: 'p-1', name: '甲', weight: 1, color: '#111111', enabled: true }],
     records: [],
   };
-  const lineupHistories = [1, 2].map((index) => ({
-    id: `lineup-${index}`,
+  const groupingHistories = [1, 2].map((index) => ({
+    id: `grouping-${index}`,
     createdAt: createdAt + index,
     input: { sourceNames: ['甲', '乙'], groupCount: 2, orderMode: 'input' },
     result: { groupNames: ['A', 'B'], tiers: [[{ name: '甲' }, { name: '乙' }]] },
   }));
   await installTauriMock(page, undefined, {
     drawHistories: [drawHistory],
-    lineupHistories,
+    groupingHistories,
   });
 
   await page.goto('/wheel');
@@ -1231,23 +1231,23 @@ test('抽奖和分组的删除全部历史都需要二次确认', async ({ page 
   await page.goto('/grouping');
   await expect(page.locator('[data-rank-user-id]')).toHaveCount(4);
   await page.getByRole('button', { name: /分组历史/u }).click();
-  const lineupHistoryPanel = page.locator('.history-panel');
-  await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
-  await lineupHistoryPanel.locator('.ui-history-summary').first().click();
-  await expect(page.locator('.lineup-result tbody tr')).toHaveCount(1);
-  await expect(page.locator('.lineup-result').getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
-  await expect(page.locator('.lineup-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
+  const groupingHistoryPanel = page.locator('.history-panel');
+  await expect(page.locator('.grouping-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(0);
+  await groupingHistoryPanel.locator('.ui-history-summary').first().click();
+  await expect(page.locator('.grouping-result tbody tr')).toHaveCount(1);
+  await expect(page.locator('.grouping-result').getByRole('button', { name: 'Excel', exact: true })).toHaveCount(1);
+  await expect(page.locator('.grouping-result').getByRole('button', { name: 'JSON', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /删除 .* 的分组历史/u }).first().click();
   await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.groupingHistories.length)).toBe(1);
 
   await page.getByRole('button', { name: '删除全部', exact: true }).click();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: '真的删除全部分组历史？' })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.groupingHistories.length)).toBe(1);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('alertdialog')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.lineupHistories.length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => (window as any).__E2E_TAURI_STATE__.groupingHistories.length)).toBe(0);
 });
 
 test('抽奖历史导出期间锁定单条和汇总按钮，避免重复写文件', async ({ page }) => {
@@ -1308,7 +1308,7 @@ test('抽奖历史导出期间锁定单条和汇总按钮，避免重复写文�
 });
 
 test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   const selectedBefore = await page.locator('[data-rank-user-id].keyboard-selected').evaluateAll((cards) => (
     cards.map((card) => card.getAttribute('data-rank-user-id'))
   ));
@@ -1365,7 +1365,7 @@ test('数字跳转、方向选择、回车编辑、S 新别名和 F 删除别名
 });
 
 test('鼠标选中后数字跳转仍可用空格提交排序', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.locator('[data-rank-user-id="1"]').click({ position: { x: 8, y: 8 } });
   await page.keyboard.press('3');
   await expect(page.locator('[data-rank-user-id="3"]')).toHaveClass(/keyboard-selected/);
@@ -1376,7 +1376,7 @@ test('鼠标选中后数字跳转仍可用空格提交排序', async ({ page }) 
 });
 
 test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   const thirdCard = page.locator('[data-rank-user-id="3"]');
   await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
@@ -1395,7 +1395,7 @@ test('取消名称或别名编辑后仍选择原条目', async ({ page }) => {
 });
 
 test('左右键遍历当前项操作，D 的确认框支持 N 取消和回车确认', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   const firstCard = page.locator('[data-rank-user-id="1"]');
   await firstCard.focus();
   await page.keyboard.press('1');
@@ -1434,7 +1434,7 @@ test('左右键遍历当前项操作，D 的确认框支持 N 取消和回车确
 });
 
 test('键盘排序中间落点执行替换', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('1');
   await page.keyboard.press('Space');
@@ -1445,7 +1445,7 @@ test('键盘排序中间落点执行替换', async ({ page }) => {
 });
 
 test('键盘排序上方落点执行插入', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await page.locator('[data-rank-user-id="1"]').focus();
   await page.keyboard.press('3');
   await page.keyboard.press('Space');
@@ -1455,7 +1455,7 @@ test('键盘排序上方落点执行插入', async ({ page }) => {
 });
 
 test('鼠标拖拽中间区域替换，无排名项的中间区域只插入', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await dragToRatio(
     page,
     page.locator('[data-rank-user-id="1"]'),
@@ -1485,7 +1485,7 @@ test('鼠标拖拽中间区域替换，无排名项的中间区域只插入', as
 });
 
 test('未识别预览可按数字选排名并用空格关联，Enter 不会误确认', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await confirmDesktopNames(page, ['甲', '神秘']);
   const mysteryInput = page.getByLabel('第 2 个名称');
   const unknownRow = page.locator('.preview-row.unknown').filter({ has: mysteryInput });
@@ -1519,7 +1519,7 @@ test('未识别预览可按数字选排名并用空格关联，Enter 不会误�
 });
 
 test('未录入预览可直接加入无排名', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await confirmDesktopNames(page, ['甲', '新项']);
   const newItemInput = page.getByLabel('第 2 个名称');
   const unknownRow = page.locator('.preview-row.unknown').filter({ has: newItemInput });
@@ -1532,7 +1532,7 @@ test('未录入预览可直接加入无排名', async ({ page }) => {
 });
 
 test('桌面预览添加后集中核对并可用 Esc 取消关联', async ({ page }) => {
-  await openDesktopLineup(page);
+  await openDesktopGrouping(page);
   await confirmDesktopNames(page, ['甲', '乙']);
   await page.getByRole('button', { name: '＋ 添加到名单末尾' }).click();
   const append = page.getByLabel('添加到名单末尾');

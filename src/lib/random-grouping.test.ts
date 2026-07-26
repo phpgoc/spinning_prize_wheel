@@ -1,32 +1,32 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  applyCaimiLineupSwap,
-  createLineupRankingSnapshot,
-  createRandomLineup,
+  applyCaimiGroupingSwap,
+  createGroupingRankingSnapshot,
+  createRandomGrouping,
   groupName,
-  insertLineupPreviewName,
-  isResolvedLineupName,
-  lineupLastTierSize,
-  lineupOrderAvailability,
-  lineupPreviewTierStarts,
+  insertGroupingPreviewName,
+  isResolvedGroupingName,
+  groupingLastTierSize,
+  groupingOrderAvailability,
+  groupingPreviewTierStarts,
   nextRankedUserActionIndex,
   orderBattleNamesByFixedRank,
   orderCaimiBattleNamesByFixedRank,
-  orderPartiallyResolvedLineupNames,
-  orderResolvedLineupNames,
-  rankedBattleLineupNameCount,
+  orderPartiallyResolvedGroupingNames,
+  orderResolvedGroupingNames,
+  rankedBattleGroupingNameCount,
   rankedUserIdAtShortcut,
   rankedUserDropTargetForCard,
   rankedUserKeyboardDropPoints,
-  shuffleLineupNames,
-  filterLineupHistories,
-  unrankedLineupNameCount,
-  unresolvedLineupNameCount,
-  uniqueLineupNames,
-  uniqueResolvedLineupPeople,
+  shuffleGroupingNames,
+  filterGroupingHistories,
+  unrankedGroupingNameCount,
+  unresolvedGroupingNameCount,
+  uniqueGroupingNames,
+  uniqueResolvedGroupingPeople,
   updateRankShortcutInput,
-} from './random-lineup';
-import type { ResolvedLineupName, SavedLineup } from './types';
+} from './random-grouping';
+import type { ResolvedGroupingName, SavedGrouping } from './types';
 
 function sequence(values: number[]): () => number {
   let index = 0;
@@ -36,7 +36,7 @@ function sequence(values: number[]): () => number {
 describe('随机排阵', () => {
   test('24 人分为 6 组和 4 档，同档不会重复进组', () => {
     const names = Array.from({ length: 24 }, (_, index) => `选手${index + 1}`);
-    const result = createRandomLineup(names, 6, sequence([0.2, 0.8, 0.4, 0.6, 0.1]));
+    const result = createRandomGrouping(names, 6, sequence([0.2, 0.8, 0.4, 0.6, 0.1]));
 
     expect(result.groupNames).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
     expect(result.tiers).toHaveLength(4);
@@ -50,7 +50,7 @@ describe('随机排阵', () => {
 
   test('最后一档人数不足时保留空位且不重复分配', () => {
     const names = Array.from({ length: 10 }, (_, index) => `选手${index + 1}`);
-    const result = createRandomLineup(names, 4, () => 0);
+    const result = createRandomGrouping(names, 4, () => 0);
 
     expect(result.tiers).toHaveLength(3);
     expect(result.tiers[2].filter(Boolean)).toHaveLength(2);
@@ -59,8 +59,8 @@ describe('随机排阵', () => {
 
   test('全随机打乱名单并保证各组人数最多相差一人', () => {
     const names = Array.from({ length: 33 }, (_, index) => `选手${index + 1}`);
-    const result = createRandomLineup(
-      shuffleLineupNames(names, () => 0),
+    const result = createRandomGrouping(
+      shuffleGroupingNames(names, () => 0),
       5,
       () => 0.5,
     );
@@ -74,14 +74,14 @@ describe('随机排阵', () => {
   });
 
   test('猜蜜版把自己换进最弱组并标记交换双方', () => {
-    const lineup = createRandomLineup(
+    const grouping = createRandomGrouping(
       ['猜蜜本人', '同档甲', '同档乙', '第二档甲', '第二档乙', '第二档丙'],
       3,
       () => 0,
     );
-    const favoredBefore = lineup.tiers.flat().find((entry) => entry?.name === '猜蜜本人')!;
+    const favoredBefore = grouping.tiers.flat().find((entry) => entry?.name === '猜蜜本人')!;
     const scores = [1, 20, 8, 2, 20, 8];
-    const result = applyCaimiLineupSwap(lineup, scores);
+    const result = applyCaimiGroupingSwap(grouping, scores);
     const favoredAfter = result.tiers.flat().find((entry) => entry?.name === '猜蜜本人')!;
     const displaced = result.tiers[favoredAfter.tierIndex][favoredBefore.groupIndex]!;
 
@@ -92,22 +92,22 @@ describe('随机排阵', () => {
   });
 
   test('猜蜜版也识别 cai 特权字', () => {
-    const lineup = createRandomLineup(
+    const grouping = createRandomGrouping(
       ['cai本人', '同档甲', '同档乙', '第二档甲', '第二档乙', '第二档丙'],
       3,
       () => 0,
     );
-    const before = lineup.tiers.flat().find((entry) => entry?.name === 'cai本人')!;
-    const result = applyCaimiLineupSwap(lineup, [1, 20, 8, 2, 20, 8]);
+    const before = grouping.tiers.flat().find((entry) => entry?.name === 'cai本人')!;
+    const result = applyCaimiGroupingSwap(grouping, [1, 20, 8, 2, 20, 8]);
     const after = result.tiers.flat().find((entry) => entry?.name === 'cai本人')!;
     expect(after.groupIndex).not.toBe(before.groupIndex);
     expect(after.caimiSwap?.kind).toBe('favored');
   });
 
   test('校验组数和人数', () => {
-    expect(() => createRandomLineup(['甲', '乙'], 1)).toThrow('组数至少为 2');
-    expect(() => createRandomLineup(['甲', '乙'], 3)).toThrow('人数不能少于组数');
-    expect(() => createRandomLineup(Array.from({ length: 27 }, (_, index) => `${index}`), 27))
+    expect(() => createRandomGrouping(['甲', '乙'], 1)).toThrow('组数至少为 2');
+    expect(() => createRandomGrouping(['甲', '乙'], 3)).toThrow('人数不能少于组数');
+    expect(() => createRandomGrouping(Array.from({ length: 27 }, (_, index) => `${index}`), 27))
       .toThrow('当前最多支持 26 组');
   });
 
@@ -118,19 +118,19 @@ describe('随机排阵', () => {
   });
 
   test('桌面排名使用数据库顺序但保留输入别名', () => {
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '小B', known: true, userId: 2, canonicalName: 'B', rank: 2 },
       { inputName: '小A', known: true, userId: 1, canonicalName: 'A', rank: 1 },
       { inputName: '另一个小A', known: true, userId: 1, canonicalName: 'A', rank: 1 },
       { inputName: '另一个A', known: true, userId: 3, canonicalName: 'C', rank: 2 },
     ];
 
-    expect(orderResolvedLineupNames(people)).toEqual(['小A', '小B', '另一个A']);
-    expect(orderResolvedLineupNames([...people].reverse())).toEqual(['另一个小A', '小B', '另一个A']);
+    expect(orderResolvedGroupingNames(people)).toEqual(['小A', '小B', '另一个A']);
+    expect(orderResolvedGroupingNames([...people].reverse())).toEqual(['另一个小A', '小B', '另一个A']);
   });
 
   test('分组按排名排序时把未排名项按输入顺序放在末尾', () => {
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '未录入甲', known: false, userId: null, canonicalName: null, rank: null },
       { inputName: '第二名', known: true, userId: 2, canonicalName: '乙', rank: 2 },
       { inputName: '未排名乙', known: true, userId: 3, canonicalName: '丙', rank: 10_000 },
@@ -138,7 +138,7 @@ describe('随机排阵', () => {
       { inputName: '未关联丙', known: true, userId: 4, canonicalName: '丁', rank: null },
     ];
 
-    expect(orderPartiallyResolvedLineupNames(people)).toEqual([
+    expect(orderPartiallyResolvedGroupingNames(people)).toEqual([
       '第一名',
       '第二名',
       '未录入甲',
@@ -149,7 +149,7 @@ describe('随机排阵', () => {
 
   test('对战固定前四只要求四个参赛者有排名', () => {
     const names = ['丁', '甲别名', '陌生', '乙', '无排名', '丙'];
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '丁', known: true, userId: 4, canonicalName: '丁', rank: 4 },
       { inputName: '甲别名', known: true, userId: 1, canonicalName: '甲', rank: 1 },
       { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
@@ -158,7 +158,7 @@ describe('随机排阵', () => {
       { inputName: '丙', known: true, userId: 3, canonicalName: '丙', rank: 3 },
     ];
 
-    expect(rankedBattleLineupNameCount(names, people)).toBe(4);
+    expect(rankedBattleGroupingNameCount(names, people)).toBe(4);
     expect(orderBattleNamesByFixedRank(names, people, 4))
       .toEqual(['甲别名', '乙', '丙', '丁', '陌生', '无排名']);
     expect(() => orderBattleNamesByFixedRank(names, people, 5))
@@ -166,7 +166,7 @@ describe('随机排阵', () => {
   });
 
   test('猜蜜版按排名对战把特权第一名放到前 N 固定区的最末种子', () => {
-    const people = Array.from({ length: 16 }, (_, index): ResolvedLineupName => ({
+    const people = Array.from({ length: 16 }, (_, index): ResolvedGroupingName => ({
       inputName: index === 0 ? '头号猜选手' : `第${index + 1}名`,
       known: true,
       userId: index + 1,
@@ -194,7 +194,7 @@ describe('随机排阵', () => {
   });
 
   test('猜蜜版会提升已有排名的特权项，全随机则完全保持原名单', () => {
-    const people = Array.from({ length: 10 }, (_, index): ResolvedLineupName => ({
+    const people = Array.from({ length: 10 }, (_, index): ResolvedGroupingName => ({
       inputName: index === 9 ? 'cai第10名' : `普通第${index + 1}名`,
       known: true,
       userId: index + 1,
@@ -214,36 +214,36 @@ describe('随机排阵', () => {
   });
 
   test('同一排名项的不同别名在预览中只保留首次出现的一项', () => {
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '小甲', known: true, userId: 1, canonicalName: '甲', rank: 1 },
       { inputName: '甲同学', known: true, userId: 1, canonicalName: '甲', rank: 1 },
       { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
     ];
 
-    expect(uniqueResolvedLineupPeople(people).map((person) => person.inputName))
+    expect(uniqueResolvedGroupingPeople(people).map((person) => person.inputName))
       .toEqual(['小甲', '陌生']);
   });
 
   test('排名快照按分组使用顺序记录输入名、本名和当时排名', () => {
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '小乙', known: true, userId: 2, canonicalName: '乙', rank: 2 },
       { inputName: '小甲', known: true, userId: 1, canonicalName: '甲', rank: 1 },
     ];
 
-    expect(createLineupRankingSnapshot(['小甲', '小乙'], people)).toEqual([
+    expect(createGroupingRankingSnapshot(['小甲', '小乙'], people)).toEqual([
       { inputName: '小甲', name: '甲', rank: 1 },
       { inputName: '小乙', name: '乙', rank: 2 },
     ]);
   });
 
   test('排名快照可以跳过最后一档的未排名项', () => {
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '第一名', known: true, userId: 1, canonicalName: '甲', rank: 1 },
       { inputName: '未录入', known: false, userId: null, canonicalName: null, rank: null },
       { inputName: '未排名', known: true, userId: 2, canonicalName: '乙', rank: 10_000 },
     ];
 
-    expect(createLineupRankingSnapshot(['第一名', '未录入', '未排名'], people, true)).toEqual([
+    expect(createGroupingRankingSnapshot(['第一名', '未录入', '未排名'], people, true)).toEqual([
       { inputName: '第一名', name: '甲', rank: 1 },
     ]);
   });
@@ -263,73 +263,73 @@ describe('随机排阵', () => {
   });
 
   test('桌面排名拒绝未识别选项', () => {
-    expect(() => orderResolvedLineupNames([
+    expect(() => orderResolvedGroupingNames([
       { inputName: '陌生人', known: false, userId: null, canonicalName: null, rank: null },
     ])).toThrow('排名名单中存在未识别选项');
   });
 
   test('红名统计同时识别缺失、错位和无排名选项', () => {
     const names = ['已知', '陌生', '错位', '缺排名'];
-    const people: ResolvedLineupName[] = [
+    const people: ResolvedGroupingName[] = [
       { inputName: '已知', known: true, userId: 1, canonicalName: '已知', rank: 1 },
       { inputName: '陌生', known: false, userId: null, canonicalName: null, rank: null },
       { inputName: '另一个名字', known: true, userId: 2, canonicalName: '错位', rank: 2 },
       { inputName: '缺排名', known: true, userId: 3, canonicalName: '缺排名', rank: null },
     ];
 
-    expect(isResolvedLineupName(names[0], people[0])).toBeTrue();
-    expect(unresolvedLineupNameCount(names, people)).toBe(3);
-    expect(unresolvedLineupNameCount(names, [people[0]])).toBe(3);
-    const unranked: ResolvedLineupName = {
+    expect(isResolvedGroupingName(names[0], people[0])).toBeTrue();
+    expect(unresolvedGroupingNameCount(names, people)).toBe(3);
+    expect(unresolvedGroupingNameCount(names, [people[0]])).toBe(3);
+    const unranked: ResolvedGroupingName = {
       inputName: '未排名',
       known: true,
       userId: 4,
       canonicalName: '未排名',
       rank: 10_000,
     };
-    expect(isResolvedLineupName('未排名', unranked)).toBeTrue();
-    expect(unrankedLineupNameCount(['已知', '未排名'], [people[0], unranked])).toBe(1);
+    expect(isResolvedGroupingName('未排名', unranked)).toBeTrue();
+    expect(unrankedGroupingNameCount(['已知', '未排名'], [people[0], unranked])).toBe(1);
   });
 
   test('红名只锁定排名排阵，输入顺序仍然可用', () => {
-    expect(lineupOrderAvailability(4, true, false, 2)).toEqual({
+    expect(groupingOrderAvailability(4, true, false, 2)).toEqual({
       input: true,
       rank: false,
     });
-    expect(lineupOrderAvailability(4, true, false, 0)).toEqual({
+    expect(groupingOrderAvailability(4, true, false, 0)).toEqual({
       input: true,
       rank: true,
     });
-    expect(lineupOrderAvailability(4, true, true, 0)).toEqual({
+    expect(groupingOrderAvailability(4, true, true, 0)).toEqual({
       input: false,
       rank: false,
     });
   });
 
   test('按排名分组允许末档未排名', () => {
-    expect(lineupLastTierSize(15, 4)).toBe(3);
-    expect(lineupLastTierSize(16, 4)).toBe(4);
-    expect(lineupLastTierSize(24, 6)).toBe(6);
+    expect(groupingLastTierSize(15, 4)).toBe(3);
+    expect(groupingLastTierSize(16, 4)).toBe(4);
+    expect(groupingLastTierSize(24, 6)).toBe(6);
 
-    expect(lineupOrderAvailability(15, true, false, 3, lineupLastTierSize(15, 4)).rank).toBeTrue();
-    expect(lineupOrderAvailability(15, true, false, 4, lineupLastTierSize(15, 4)).rank).toBeFalse();
-    expect(lineupOrderAvailability(16, true, false, 4, lineupLastTierSize(16, 4)).rank).toBeTrue();
-    expect(lineupOrderAvailability(24, true, false, 6, lineupLastTierSize(24, 6)).rank).toBeTrue();
-    expect(lineupOrderAvailability(24, true, false, 1).rank).toBeFalse();
+    expect(groupingOrderAvailability(15, true, false, 3, groupingLastTierSize(15, 4)).rank).toBeTrue();
+    expect(groupingOrderAvailability(15, true, false, 4, groupingLastTierSize(15, 4)).rank).toBeFalse();
+    expect(groupingOrderAvailability(16, true, false, 4, groupingLastTierSize(16, 4)).rank).toBeTrue();
+    expect(groupingOrderAvailability(24, true, false, 6, groupingLastTierSize(24, 6)).rank).toBeTrue();
+    expect(groupingOrderAvailability(24, true, false, 1).rank).toBeFalse();
   });
 
   test('预览按组数标出每一档的换行位置', () => {
-    expect(lineupPreviewTierStarts(24, 6)).toEqual([0, 6, 12, 18]);
-    expect(lineupPreviewTierStarts(10, 4)).toEqual([0, 4, 8]);
-    expect(lineupPreviewTierStarts(0, 6)).toEqual([]);
+    expect(groupingPreviewTierStarts(24, 6)).toEqual([0, 6, 12, 18]);
+    expect(groupingPreviewTierStarts(10, 4)).toEqual([0, 4, 8]);
+    expect(groupingPreviewTierStarts(0, 6)).toEqual([]);
   });
 
   test('预览名单可在指定位置插入姓名', () => {
-    expect(insertLineupPreviewName(['甲', '丙'], 1, ' 乙 ')).toEqual(['甲', '乙', '丙']);
+    expect(insertGroupingPreviewName(['甲', '丙'], 1, ' 乙 ')).toEqual(['甲', '乙', '丙']);
   });
 
   test('分组文本导入按首次出现自动去重', () => {
-    expect(uniqueLineupNames(['甲', '乙', '甲', ' 乙 ', '丙'])).toEqual(['甲', '乙', '丙']);
+    expect(uniqueGroupingNames(['甲', '乙', '甲', ' 乙 ', '丙'])).toEqual(['甲', '乙', '丙']);
   });
 
   test('排名卡片上下插入且中间替换', () => {
@@ -388,17 +388,17 @@ describe('随机排阵', () => {
   });
 
   test('分组历史开始日期包含当天、结束日期不包含当天，并返回条件内全部记录', () => {
-    const histories: SavedLineup[] = Array.from({ length: 8 }, (_, index) => ({
+    const histories: SavedGrouping[] = Array.from({ length: 8 }, (_, index) => ({
       id: `history-${index}`,
       createdAt: new Date(2026, 6, index + 1, 12).getTime(),
       input: {},
       result: {},
     }));
 
-    expect(filterLineupHistories(histories).map((history) => history.id)).toEqual([
+    expect(filterGroupingHistories(histories).map((history) => history.id)).toEqual([
       'history-7', 'history-6', 'history-5', 'history-4', 'history-3', 'history-2', 'history-1', 'history-0',
     ]);
-    expect(filterLineupHistories(histories, '2026-07-03', '2026-07-05').map((history) => history.id))
+    expect(filterGroupingHistories(histories, '2026-07-03', '2026-07-05').map((history) => history.id))
       .toEqual(['history-3', 'history-2']);
   });
 });

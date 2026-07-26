@@ -25,6 +25,7 @@ fn ensure_battle_tmp_tables(connection: &Connection) -> Result<(), String> {
                id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
                variant TEXT NOT NULL CHECK (variant IN ('standard', 'caimi')),
                rules_version INTEGER NOT NULL CHECK (rules_version = 1),
+               created_at INTEGER NOT NULL CHECK (created_at > 0),
                updated_at INTEGER NOT NULL CHECK (updated_at > 0),
                history_saved INTEGER NOT NULL DEFAULT 0 CHECK (history_saved IN (0, 1)),
                format TEXT NOT NULL CHECK (format IN ('avoid-first-pair', 'single-elimination', 'double-elimination')),
@@ -69,6 +70,7 @@ fn validate_battle_tmp_snapshot(variant: &str, state: &BattleTmpSnapshot) -> Res
         || state.version != 1
         || state.rules_version != 1
         || state.variant != variant
+        || state.created_at == 0
         || state.updated_at == 0
         || !matches!(
             state.format.as_str(),
@@ -193,13 +195,14 @@ fn save_battle_tmp_state_with_history_in(
     transaction
         .execute(
             "INSERT INTO battle_tmp (
-               id, variant, rules_version, updated_at, format, order_mode,
+               id, variant, rules_version, created_at, updated_at, format, order_mode,
                history_saved, participant_count, bracket_size, fixed_seed_count
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 variant,
                 state.rules_version,
-                db_u64(state.updated_at, "对战临时状态时间")?,
+                db_u64(state.created_at, "对战临时状态创建时间")?,
+                db_u64(state.updated_at, "对战临时状态更新时间")?,
                 state.format,
                 state.order_mode,
                 i64::from(history_saved),
@@ -276,18 +279,19 @@ fn load_battle_tmp_state_in(
     }
     let metadata = connection
         .query_row(
-            "SELECT rules_version, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count
+            "SELECT rules_version, created_at, updated_at, format, order_mode, participant_count, bracket_size, fixed_seed_count
              FROM battle_tmp WHERE id = 1 AND variant = ?1",
             params![variant],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, i64>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, i64>(7)?,
                 ))
             },
         )
@@ -295,6 +299,7 @@ fn load_battle_tmp_state_in(
         .map_err(|error| format!("无法读取对战临时状态：{error}"))?;
     let Some((
         rules_version,
+        created_at,
         updated_at,
         format,
         order_mode,
@@ -313,6 +318,8 @@ fn load_battle_tmp_state_in(
             .map_err(|_| "对战临时状态规则版本不合法".to_string())?,
         kind: "battle-tmp".to_string(),
         variant: variant.to_string(),
+        created_at: u64::try_from(created_at)
+            .map_err(|_| "对战临时状态创建时间不合法".to_string())?,
         updated_at: u64::try_from(updated_at).map_err(|_| "对战临时状态时间不合法".to_string())?,
         format,
         order_mode,

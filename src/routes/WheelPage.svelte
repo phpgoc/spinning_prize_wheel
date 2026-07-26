@@ -2793,7 +2793,7 @@
         </section>
         {/if}
 
-        <section class="shortcut-group shortcut-lineup">
+        <section class="shortcut-group shortcut-grouping">
           <h3>分组页</h3>
           <div class="shortcut-list sidebar-shortcut-list">
             <div><span>聚焦分组结果</span><kbd>X</kbd></div>

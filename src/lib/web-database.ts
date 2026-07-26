@@ -12,11 +12,11 @@ import type {
   AliasRecord,
   CommonSelection,
   RankedUser,
-  ResolvedLineupName,
+  ResolvedGroupingName,
   SavedDraw,
-  SavedLineup,
+  SavedGrouping,
 } from './types';
-import type { RankedUserDropTarget } from './random-lineup';
+import type { RankedUserDropTarget } from './random-grouping';
 
 const DATABASE_NAME = 'spinning-prize-wheel';
 const DATABASE_STORE = 'database';
@@ -103,7 +103,7 @@ export async function importWebDatabase(bytes: Uint8Array): Promise<void> {
 function isMutation(command: string): boolean {
   return !command.startsWith('list_')
     && !command.startsWith('load_')
-    && command !== 'resolve_lineup_names'
+    && command !== 'resolve_grouping_names'
     && command !== 'open_download_folder'
     && command !== 'open_database_folder';
 }
@@ -165,8 +165,8 @@ function executeCommand<T>(
       return undefined as T;
     case 'list_ranked_users':
       return listRankedUsers(db) as T;
-    case 'resolve_lineup_names':
-      return resolveLineupNames(db, args.names as string[]) as T;
+    case 'resolve_grouping_names':
+      return resolveGroupingNames(db, args.names as string[]) as T;
     case 'save_ranked_user':
       return saveRankedUser(db, args.user as RankedUserInput) as T;
     case 'add_ranked_user_alias':
@@ -184,29 +184,29 @@ function executeCommand<T>(
         Number(args.draggedId),
         args.target as RankedUserDropTarget,
       ) as T;
-    case 'list_lineup_histories':
-      return queryJsonRows<SavedLineup>(
+    case 'list_grouping_histories':
+      return queryJsonRows<SavedGrouping>(
         db,
-        `SELECT payload_json FROM lineup_history
+        `SELECT payload_json FROM grouping_history
          ORDER BY created_at DESC`,
         [],
       ) as T;
-    case 'save_lineup_history':
-      saveLineupHistory(db, String(args.variant), args.lineup as SavedLineup);
+    case 'save_grouping_history':
+      saveGroupingHistory(db, String(args.variant), args.grouping as SavedGrouping);
       return undefined as T;
-    case 'import_lineup_history':
-      saveLineupHistory(db, String(args.variant), args.history as SavedLineup);
-      return queryJsonRows<SavedLineup>(
+    case 'import_grouping_history':
+      saveGroupingHistory(db, String(args.variant), args.history as SavedGrouping);
+      return queryJsonRows<SavedGrouping>(
         db,
-        `SELECT payload_json FROM lineup_history
+        `SELECT payload_json FROM grouping_history
          ORDER BY created_at DESC`,
         [],
       ) as T;
-    case 'delete_lineup_history':
-      db.run('DELETE FROM lineup_history WHERE id = ?', [String(args.id)]);
+    case 'delete_grouping_history':
+      db.run('DELETE FROM grouping_history WHERE id = ?', [String(args.id)]);
       return undefined as T;
-    case 'clear_lineup_histories':
-      db.run('DELETE FROM lineup_history');
+    case 'clear_grouping_histories':
+      db.run('DELETE FROM grouping_history');
       return undefined as T;
     case 'list_battle_histories':
       return listBattleHistories(db, String(args.variant) as AppVariant) as T;
@@ -345,17 +345,18 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
       user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS alias_user_id ON alias(user_id);
-    CREATE TABLE IF NOT EXISTS lineup_history (
+    CREATE TABLE IF NOT EXISTS grouping_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
     );
-    CREATE INDEX IF NOT EXISTS lineup_history_variant_created_at
-      ON lineup_history(variant, created_at DESC);
+    CREATE INDEX IF NOT EXISTS grouping_history_variant_created_at
+      ON grouping_history(variant, created_at DESC);
     CREATE TABLE IF NOT EXISTS battle_tmp (
       variant TEXT PRIMARY KEY NOT NULL,
+      created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       history_saved INTEGER NOT NULL DEFAULT 0,
       payload_json TEXT NOT NULL
@@ -363,7 +364,6 @@ function migrateDatabase(db: Database, _SQL: SqlJsStatic) {
     CREATE TABLE IF NOT EXISTS battle_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
@@ -387,7 +387,7 @@ function assertDatabaseVersion(db: Database) {
 function hasKnownDatabaseTable(db: Database): boolean {
   const result = db.exec(
     `SELECT name FROM sqlite_master
-     WHERE type = 'table' AND name IN ('schema_migrations', 'app_kv', 'draw_history', 'user', 'lineup_history', 'battle_tmp', 'battle_history')`,
+     WHERE type = 'table' AND name IN ('schema_migrations', 'app_kv', 'draw_history', 'user', 'grouping_history', 'battle_tmp', 'battle_history')`,
   )[0];
   return Boolean(result?.values.length);
 }
@@ -395,7 +395,7 @@ function hasKnownDatabaseTable(db: Database): boolean {
 /** 将当前版本 Rust 版关系化表转换成浏览器版快照表，保持桌面备份可恢复。 */
 function normalizeImportedSchema(db: Database): BattleTmpSnapshot | null {
   normalizeImportedDrawHistory(db);
-  normalizeImportedLineupHistory(db);
+  normalizeImportedGroupingHistory(db);
   return normalizeImportedBattleState(db);
 }
 
@@ -425,22 +425,22 @@ function normalizeImportedDrawHistory(db: Database) {
   });
 }
 
-function normalizeImportedLineupHistory(db: Database) {
-  const columns = tableColumns(db, 'lineup_history');
+function normalizeImportedGroupingHistory(db: Database) {
+  const columns = tableColumns(db, 'grouping_history');
   if (!columns.has('input_json') || !columns.has('result_json')) return;
   const rows = db.exec(
-    'SELECT id, created_at, variant, input_json, result_json FROM lineup_history ORDER BY created_at DESC',
+    'SELECT id, created_at, variant, input_json, result_json FROM grouping_history ORDER BY created_at DESC',
   )[0]?.values ?? [];
-  replaceTable(db, 'lineup_history', `
-    CREATE TABLE lineup_history (
+  replaceTable(db, 'grouping_history', `
+    CREATE TABLE grouping_history (
       id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       variant TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       PRIMARY KEY (id, variant)
     );
-    CREATE INDEX lineup_history_variant_created_at
-      ON lineup_history(variant, created_at DESC);
+    CREATE INDEX grouping_history_variant_created_at
+      ON grouping_history(variant, created_at DESC);
   `, () => {
     for (const [id, createdAt, variant, inputJson, resultJson] of rows) {
       let input: unknown;
@@ -452,7 +452,7 @@ function normalizeImportedLineupHistory(db: Database) {
         throw new Error('分组历史内容损坏，无法导入');
       }
       db.run(
-        'INSERT OR REPLACE INTO lineup_history (id, created_at, variant, payload_json) VALUES (?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO grouping_history (id, created_at, variant, payload_json) VALUES (?, ?, ?, ?)',
         [id, createdAt, variant, JSON.stringify({ id, createdAt, input, result })],
       );
     }
@@ -463,7 +463,7 @@ function normalizeImportedBattleState(db: Database): BattleTmpSnapshot | null {
   const columns = tableColumns(db, 'battle_tmp');
   if (!columns.has('rules_version') || columns.has('payload_json')) return null;
   const metadata = db.exec(
-    `SELECT variant, rules_version, updated_at, format, order_mode,
+    `SELECT variant, rules_version, created_at, updated_at, format, order_mode,
             participant_count, bracket_size, fixed_seed_count
      FROM battle_tmp WHERE id = 1`,
   )[0]?.values[0];
@@ -502,12 +502,13 @@ function normalizeImportedBattleState(db: Database): BattleTmpSnapshot | null {
       rulesVersion: Number(metadata[1]),
       kind: 'battle-tmp',
       variant: String(metadata[0]),
-      updatedAt: Number(metadata[2]),
-      format: String(metadata[3]),
-      orderMode: String(metadata[4]),
-      participantCount: Number(metadata[5]),
-      bracketSize: Number(metadata[6]),
-      fixedSeedCount: Number(metadata[7]),
+      createdAt: Number(metadata[2]),
+      updatedAt: Number(metadata[3]),
+      format: String(metadata[4]),
+      orderMode: String(metadata[5]),
+      participantCount: Number(metadata[6]),
+      bracketSize: Number(metadata[7]),
+      fixedSeedCount: Number(metadata[8]),
       participants,
       matches,
     }, String(metadata[0]) as AppVariant);
@@ -539,9 +540,9 @@ function validateDatabaseSchema(db: Database) {
     draw_history: ['id', 'created_at', 'variant', 'payload_json'],
     user: ['id', 'name', 'rank'],
     alias: ['id', 'name', 'user_id'],
-    lineup_history: ['id', 'created_at', 'variant', 'payload_json'],
-    battle_tmp: ['variant', 'updated_at', 'history_saved', 'payload_json'],
-    battle_history: ['id', 'created_at', 'updated_at', 'variant', 'payload_json'],
+    grouping_history: ['id', 'created_at', 'variant', 'payload_json'],
+    battle_tmp: ['variant', 'created_at', 'updated_at', 'history_saved', 'payload_json'],
+    battle_history: ['id', 'created_at', 'variant', 'payload_json'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const actual = tableColumns(db, table);
@@ -554,7 +555,7 @@ function validateDatabaseSchema(db: Database) {
   }
   queryJsonRows<CommonSelection>(db, 'SELECT payload_json FROM common_selection');
   queryJsonRows<SavedDraw>(db, 'SELECT payload_json FROM draw_history');
-  queryJsonRows<SavedLineup>(db, 'SELECT payload_json FROM lineup_history');
+  queryJsonRows<SavedGrouping>(db, 'SELECT payload_json FROM grouping_history');
   listBattleHistories(db, 'standard');
   listBattleHistories(db, 'caimi');
   listRankedUsers(db);
@@ -590,7 +591,7 @@ function queryAliases(db: Database, userId: number): AliasRecord[] {
   })) ?? [];
 }
 
-function resolveLineupNames(db: Database, names: string[]): ResolvedLineupName[] {
+function resolveGroupingNames(db: Database, names: string[]): ResolvedGroupingName[] {
   const users = listRankedUsers(db);
   const byAlias = new Map<string, RankedUser>();
   for (const user of users) {
@@ -747,9 +748,9 @@ function assertUniqueAlias(db: Database, value: string, ownerId: number | null =
   if (duplicate) throw new Error('名称或别名已经存在');
 }
 
-function saveLineupHistory(db: Database, variant: string, history: SavedLineup) {
+function saveGroupingHistory(db: Database, variant: string, history: SavedGrouping) {
   db.run(
-    `INSERT OR REPLACE INTO lineup_history (id, created_at, variant, payload_json)
+    `INSERT OR REPLACE INTO grouping_history (id, created_at, variant, payload_json)
      VALUES (?, ?, ?, ?)`,
     [history.id, history.createdAt, variant, JSON.stringify(history)],
   );
@@ -772,9 +773,14 @@ function saveBattleHistory(
       if (status?.historySaved) throw new Error('同一对战状态已经保存过历史');
     }
     db.run(
-      `INSERT OR REPLACE INTO battle_history (id, created_at, updated_at, variant, payload_json)
-       VALUES (?, ?, ?, ?, ?)`,
-      [history.id, history.createdAt, history.updatedAt, variant, JSON.stringify({ title: history.title ?? null, snapshot })],
+      `INSERT OR REPLACE INTO battle_history (id, created_at, variant, payload_json)
+       VALUES (?, ?, ?, ?)`,
+      [history.id, history.createdAt, variant, JSON.stringify({
+        title: history.title ?? null,
+        createdAt: snapshot.createdAt,
+        updatedAt: history.updatedAt,
+        snapshot,
+      })],
     );
     if (markCurrent) markBattleTmpHistorySaved(db, variant, snapshot.updatedAt);
   });
@@ -782,11 +788,11 @@ function saveBattleHistory(
 
 function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[] {
   const rows = db.exec(
-    `SELECT id, created_at, updated_at, payload_json FROM battle_history
+    `SELECT id, created_at, payload_json FROM battle_history
      ORDER BY created_at DESC`,
     [],
   )[0]?.values ?? [];
-  return rows.map(([id, createdAt, updatedAt, payload]) => {
+  return rows.map(([id, createdAt, payload]) => {
     const payloadValue = JSON.parse(String(payload)) as unknown;
     const rawSnapshot = unwrapBattleHistorySnapshot(payloadValue);
     const snapshotVariant = rawSnapshot && typeof rawSnapshot === 'object' && !Array.isArray(rawSnapshot)
@@ -794,7 +800,14 @@ function listBattleHistories(db: Database, variant: AppVariant): BattleHistory[]
       ? 'caimi'
       : 'standard';
     const snapshot = parseBattleTmpSnapshot(rawSnapshot, snapshotVariant);
-    if (Number(updatedAt) !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
+    const updatedAt = payloadValue && typeof payloadValue === 'object' && !Array.isArray(payloadValue)
+      ? Number((payloadValue as { updatedAt?: unknown }).updatedAt)
+      : Number.NaN;
+    const payloadCreatedAt = payloadValue && typeof payloadValue === 'object' && !Array.isArray(payloadValue)
+      ? Number((payloadValue as { createdAt?: unknown }).createdAt)
+      : Number.NaN;
+    if (updatedAt !== snapshot.updatedAt) throw new Error('对战历史更新时间不一致');
+    if (payloadCreatedAt !== snapshot.createdAt) throw new Error('对战历史创建时间不一致');
     return {
       id: String(id),
       createdAt: Number(createdAt),
@@ -817,9 +830,9 @@ function unwrapBattleHistorySnapshot(value: unknown): unknown {
 
 function saveBattleTmpState(db: Database, state: BattleTmpSnapshot, historySaved = false) {
   db.run(
-    `INSERT OR REPLACE INTO battle_tmp (variant, updated_at, history_saved, payload_json)
-     VALUES (?, ?, ?, ?)`,
-    [state.variant, state.updatedAt, historySaved ? 1 : 0, JSON.stringify(state)],
+    `INSERT OR REPLACE INTO battle_tmp (variant, created_at, updated_at, history_saved, payload_json)
+     VALUES (?, ?, ?, ?, ?)`,
+    [state.variant, state.createdAt, state.updatedAt, historySaved ? 1 : 0, JSON.stringify(state)],
   );
 }
 
